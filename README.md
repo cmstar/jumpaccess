@@ -2,7 +2,7 @@
 
 JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付物是 Go 编写的命令行程序 `jumpctl`；项目同时保留共享核心能力，便于未来在需求明确后增加桌面入口，例如采用 Wails 的 GUI。
 
-项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API 和直接 SSH 已经实现；ProxyCommand 仍在开发。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现。真实 JumpServer 与 macOS 原生环境仍需 smoke test；实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 
@@ -16,7 +16,7 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 
 ## 开发环境与当前状态
 
-项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议，以及带主机密钥校验的交互式 SSH 客户端。ProxyCommand 尚在后续阶段实现。
+项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议、直接 SSH 客户端，以及基于本地 SSH server façade 的通用 ProxyCommand。
 
 当前已经确定的 Go module 路径为：
 
@@ -52,7 +52,19 @@ jumpctl auth status [--profile <name>]
 jumpctl auth refresh [--profile <name>]
 jumpctl auth logout [--profile <name>]
 jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <account>]
+jumpctl proxy <target> [--profile <name>] [--organization <org>] [--account <account>]
 ```
+
+通用 OpenSSH 配置示例（`web` 可以是已绑定唯一 Asset 和 Account 的 Alias）：
+
+```sshconfig
+Host production-web
+    HostName web
+    User jumpaccess
+    ProxyCommand jumpctl proxy %h
+```
+
+`proxy` 模式不打开浏览器，也不提示选择 Account。缺少登录、Refresh Token 失效、目标或 Account 不唯一、上游主机尚未信任时，进程会在 SSH banner 之前失败，只向 stderr 写入可操作错误并返回非零状态。先运行 `jumpctl auth login` 完成授权；未知上游 gateway 需要先用 `jumpctl ssh` 进行一次人工指纹确认。
 
 ## 安全说明
 
@@ -61,6 +73,8 @@ jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <accou
 Windows 使用 Credential Manager 保存 OAuth 凭据。macOS 使用 Keychain；包含 Keychain 后端的 macOS 正式构建需要启用 CGO 并链接系统 Security framework。
 
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
+
+ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地 façade 的稳定 Ed25519 host key，该私钥保存在操作系统凭据存储；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
 
 ## 文档
 

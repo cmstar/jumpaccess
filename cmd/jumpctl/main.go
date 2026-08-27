@@ -18,6 +18,9 @@ import (
 	"github.com/cmstar/jumpaccess/internal/oauth"
 	"github.com/cmstar/jumpaccess/internal/sshclient"
 	"github.com/cmstar/jumpaccess/internal/sshhostkey"
+	"github.com/cmstar/jumpaccess/internal/sshproxy"
+	"github.com/cmstar/jumpaccess/internal/sshupstream"
+	"github.com/cmstar/jumpaccess/internal/stdioconn"
 	"github.com/cmstar/jumpaccess/internal/systemopen"
 	"github.com/cmstar/jumpaccess/internal/terminalprompt"
 )
@@ -42,7 +45,8 @@ func run() int {
 		return 1
 	}
 	httpClient := &http.Client{Timeout: configuration.Behavior.ConnectTimeout.Duration}
-	tokenRepository := credential.Repository{Backend: credential.NewNativeBackend()}
+	nativeCredentials := credential.NewNativeBackend()
+	tokenRepository := credential.Repository{Backend: nativeCredentials}
 	refresh := func(ctx context.Context, old credential.Token) (oauth.TokenResponse, error) {
 		metadata, err := oauth.Discover(ctx, httpClient, old.Site)
 		if err != nil {
@@ -118,6 +122,31 @@ func run() int {
 				HostKeyCallback: callback,
 				Timeout:         configuration.Behavior.ConnectTimeout.Duration,
 			}).Run(ctx, prepared.Connection)
+		},
+		RunProxy: func(ctx context.Context, prepared connectapp.Prepared) error {
+			callback, err := (sshhostkey.Store{Path: filepath.Join(rootDir, "known_hosts")}).Callback(false)
+			if err != nil {
+				return err
+			}
+			upstream, err := (sshupstream.Dialer{
+				HostKeyCallback: callback,
+				Timeout:         configuration.Behavior.ConnectTimeout.Duration,
+			}).Dial(ctx, prepared.Connection)
+			if err != nil {
+				return err
+			}
+			defer upstream.Close()
+			signer, err := (sshhostkey.SignerStore{Backend: nativeCredentials}).LoadOrCreate()
+			if err != nil {
+				return err
+			}
+			refreshContext, stopRefresh := context.WithCancel(context.Background())
+			defer stopRefresh()
+			go manager.Supervise(refreshContext, prepared.Selection.Profile, configuration.Behavior.RefreshCheckInterval.Duration, func(err error) {
+				fmt.Fprintf(os.Stderr, "warning: OAuth refresh failed: %v\n", err)
+			})
+			transport := stdioconn.New(os.Stdin, os.Stdout, nil)
+			return (sshproxy.Server{}).Run(ctx, transport, signer, upstream)
 		},
 	})
 	if err := command.Execute(); err != nil {

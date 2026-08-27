@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、配置能力、OAuth Token 生命周期、JumpServer 连接准备协议和直接 SSH 已经建立。ProxyCommand 仍在开发中；实际状态以测试和当前命令帮助为准。
+Go 工程、配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -30,6 +30,9 @@ internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
 internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
 internal/sshclient/ # 直接 SSH 客户端会话
 internal/sshhostkey/# SSH gateway 主机密钥信任
+internal/sshproxy/  # 本地 SSH server 与上游 session 桥接
+internal/sshupstream/ # 共享上游 SSH gateway 拨号
+internal/stdioconn/ # ProxyCommand stdin/stdout 的 net.Conn 适配
 internal/systemopen/# 打开配置文件的平台适配
 internal/target/    # Profile、Alias 和远程目标解析
 internal/terminalprompt/ # Account 与主机密钥的直接模式提示

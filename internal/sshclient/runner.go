@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
+	"github.com/cmstar/jumpaccess/internal/sshupstream"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
@@ -23,34 +23,10 @@ type Runner struct {
 }
 
 func (r Runner) Run(ctx context.Context, connection jumpserver.ClientConnection) error {
-	if connection.Protocol != "ssh" {
-		return fmt.Errorf("SSH client received protocol %q", connection.Protocol)
-	}
-	if r.HostKeyCallback == nil {
-		return fmt.Errorf("SSH host key verifier is unavailable")
-	}
-	address := net.JoinHostPort(connection.Endpoint.Host, fmt.Sprintf("%d", connection.Endpoint.Port))
-	dialer := net.Dialer{Timeout: r.Timeout}
-	rawConnection, err := dialer.DialContext(ctx, "tcp", address)
+	client, err := (sshupstream.Dialer{HostKeyCallback: r.HostKeyCallback, Timeout: r.Timeout}).Dial(ctx, connection)
 	if err != nil {
-		return fmt.Errorf("connect to JumpServer SSH gateway: %w", err)
+		return err
 	}
-	defer rawConnection.Close()
-	if r.Timeout > 0 {
-		_ = rawConnection.SetDeadline(time.Now().Add(r.Timeout))
-	}
-	configuration := &ssh.ClientConfig{
-		User:            connection.Username(),
-		Auth:            []ssh.AuthMethod{ssh.Password(connection.Password())},
-		HostKeyCallback: r.HostKeyCallback,
-		Timeout:         r.Timeout,
-	}
-	clientConnection, channels, requests, err := ssh.NewClientConn(rawConnection, address, configuration)
-	if err != nil {
-		return fmt.Errorf("establish JumpServer SSH connection: %w", err)
-	}
-	_ = rawConnection.SetDeadline(time.Time{})
-	client := ssh.NewClient(clientConnection, channels, requests)
 	defer client.Close()
 
 	session, err := client.NewSession()

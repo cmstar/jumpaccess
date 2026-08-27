@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议和直接 SSH 客户端。ProxyCommand 仍是目标设计，尚未实现。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
@@ -33,7 +33,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | 凭据存储 | `internal/credential` 已适配 Windows Credential Manager；macOS CGO 构建直接调用 Keychain Security framework |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
-| SSH | `internal/sshclient` 已建立直接 SSH 会话，`internal/sshhostkey` 维护严格的 gateway 主机信任；通用 `ProxyCommand` 协议中继尚未实现 |
+| SSH | `internal/sshclient` 建立直接 SSH 会话；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
 
 ## 关键数据流
 
@@ -65,7 +65,12 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 - Proxy 模式不触发需要人工操作的浏览器登录；用户应先通过独立认证命令登录。
 - 功能和文档不与 Tabby 或其他单一客户端耦合。
 
-JumpServer 动态连接凭据与下游 SSH 协议之间的桥接方式将在协议原型和集成测试中确认；不能退化为未经验证的普通 TCP 转发。
+当前实现不是普通 TCP 转发，而是先完成全部非交互 preflight，再在 stdin/stdout 上启动本地 SSH server façade，同时用 JumpServer 动态连接凭据建立已校验主机密钥的上游 SSH client。它转发 session channel 的 env、PTY、shell/exec、窗口变化、信号、stdout、extended stderr 和退出状态；拒绝端口转发、agent、X11、SFTP/subsystem 及未知请求。
+
+ProxyCommand 有两层独立主机信任：
+
+1. 外部 SSH 客户端验证 JumpAccess façade 的稳定 Ed25519 host key；私钥保存在操作系统安全凭据存储。
+2. JumpAccess 使用应用根目录的 `known_hosts` 验证上游 JumpServer gateway。Proxy 模式不接受未知密钥，用户需先通过直接 SSH 审阅指纹。
 
 ## 数据与平台边界
 
@@ -89,5 +94,5 @@ TOML 配置、已知主机等非敏感文件位于该根目录下。Access Token
 
 - OAuth Redirect URI、MFA 和 Refresh Token 轮换的真实服务器兼容性。
 - Organization、Asset、Account、Connection Token 和连接 URL 的真实服务器兼容性与版本差异。
-- ProxyCommand 协议桥接、终端窗口变化、信号和退出状态传播。
+- ProxyCommand 与真实终端客户端的兼容性，以及窗口变化、信号和退出状态的真实环境表现。
 - Windows 与 macOS 凭据存储及构建产物的实际行为。

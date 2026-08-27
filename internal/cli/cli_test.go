@@ -325,3 +325,29 @@ func TestSSHCommandPreparesInteractiveTargetAndRunsClient(t *testing.T) {
 		t.Fatalf("ran connection = %#v", ran)
 	}
 }
+
+func TestProxyCommandPreflightsNonInteractivelyAndKeepsStdoutUnused(t *testing.T) {
+	var stdout bytes.Buffer
+	preparer := &fakeConnectionPreparer{prepared: connectapp.Prepared{
+		Connection: jumpserver.ClientConnection{Protocol: "ssh", Endpoint: jumpserver.Endpoint{Host: "gateway", Port: 22}},
+	}}
+	called := false
+	root := NewRoot(Dependencies{
+		Stdout: &stdout, Connect: preparer,
+		RunProxy: func(_ context.Context, prepared connectapp.Prepared) error {
+			called = prepared.Connection.Endpoint.Host == "gateway"
+			return nil
+		},
+	})
+	root.SetArgs([]string{"proxy", "web", "--account", "root"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called || !preparer.options.NonInteractive || preparer.options.SelectAccount != nil {
+		t.Fatalf("called = %v, options = %#v", called, preparer.options)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("proxy command wrote non-protocol stdout: %q", stdout.String())
+	}
+}

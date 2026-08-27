@@ -25,6 +25,7 @@ type Dependencies struct {
 	Auth          AuthService
 	Connect       ConnectionPreparer
 	RunSSH        func(context.Context, connectapp.Prepared) error
+	RunProxy      func(context.Context, connectapp.Prepared) error
 	SelectAccount func([]jumpserver.Account) (jumpserver.Account, error)
 }
 
@@ -112,5 +113,6 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(newAliasCommand(deps))
 	root.AddCommand(newAuthCommand(deps))
 	root.AddCommand(newSSHCommand(deps))
+	root.AddCommand(newProxyCommand(deps))
 	return root
 }
