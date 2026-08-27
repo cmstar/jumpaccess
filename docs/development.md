@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程和首批配置能力已经建立。认证、JumpServer API 和 SSH 仍在开发中；实际状态以测试和当前命令帮助为准。
+Go 工程、配置能力和 OAuth Token 生命周期已经建立。JumpServer API 和 SSH 仍在开发中；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -21,8 +21,12 @@ Go 工程和首批配置能力已经建立。认证、JumpServer API 和 SSH 仍
 cmd/jumpctl/        # CLI 入口适配器
 internal/appdir/    # 单一应用数据根目录
 internal/application/settings/ # Profile 与 Alias 修改用例
+internal/application/auth/     # 登录状态、刷新与生命周期编排
 internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
+internal/credential/# Windows Credential Manager 与 macOS Keychain 适配
+internal/filelock/  # 多进程 Token 刷新锁
+internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
 internal/systemopen/# 打开配置文件的平台适配
 internal/target/    # Profile、Alias 和远程目标解析
 docs/               # 长期项目知识
@@ -35,11 +39,11 @@ docs/               # 长期项目知识
 - 非敏感配置使用 TOML。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
-- Token 使用 Windows Credential Manager 或 macOS Keychain，不能写入 TOML、测试 fixture、日志或命令输出。
+- Token 使用 Windows Credential Manager 或 macOS Keychain，不能写入 TOML、测试 fixture、日志或命令输出。macOS Keychain 的正式后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建只用于编译检查，不具备凭据读写能力。
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；认证实现落地后仍需验证实际调度。已知主机文件布局将在 SSH 实现后补充。
+配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。已知主机文件布局将在 SSH 实现后补充。
 
 ## CLI 与进程 I/O
 

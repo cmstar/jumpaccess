@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -18,6 +20,14 @@ type Dependencies struct {
 	OpenFile   func(string) error
 	Stdout     io.Writer
 	Stderr     io.Writer
+	Auth       AuthService
+}
+
+type AuthService interface {
+	Login(ctx context.Context, profile string) (authapp.Status, error)
+	Status(profile string) (authapp.Status, error)
+	Refresh(ctx context.Context, profile string) (authapp.Status, error)
+	Logout(ctx context.Context, profile string) error
 }
 
 func NewRoot(deps Dependencies) *cobra.Command {
@@ -91,5 +101,6 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(configCommand)
 	root.AddCommand(newProfileCommand(deps))
 	root.AddCommand(newAliasCommand(deps))
+	root.AddCommand(newAuthCommand(deps))
 	return root
 }

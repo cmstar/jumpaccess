@@ -2,12 +2,39 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 )
+
+type fakeAuthService struct {
+	loginProfile   string
+	status         authapp.Status
+	refreshProfile string
+	logoutProfile  string
+}
+
+func (f *fakeAuthService) Login(_ context.Context, profile string) (authapp.Status, error) {
+	f.loginProfile = profile
+	return f.status, nil
+}
+
+func (f *fakeAuthService) Status(string) (authapp.Status, error) { return f.status, nil }
+
+func (f *fakeAuthService) Refresh(_ context.Context, profile string) (authapp.Status, error) {
+	f.refreshProfile = profile
+	return f.status, nil
+}
+
+func (f *fakeAuthService) Logout(_ context.Context, profile string) error {
+	f.logoutProfile = profile
+	return nil
+}
 
 func TestVersionCommandPrintsBinaryVersion(t *testing.T) {
 	var stdout bytes.Buffer
@@ -212,5 +239,52 @@ func TestAliasListUsesCurrentProfileAndSortsNames(t *testing.T) {
 	const want = "db\tasset-db\tdba\torg-db\nweb\tasset-web\troot\t\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
+func TestAuthLoginUsesBrowserServiceWithoutPrintingSecrets(t *testing.T) {
+	var stdout bytes.Buffer
+	service := &fakeAuthService{status: authapp.Status{Profile: "work", LoggedIn: true}}
+	root := NewRoot(Dependencies{Auth: service, Stdout: &stdout})
+	root.SetArgs([]string{"auth", "login", "--profile", "work"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if service.loginProfile != "work" || stdout.String() != "authenticated profile work\n" {
+		t.Fatalf("profile = %q, stdout = %q", service.loginProfile, stdout.String())
+	}
+}
+
+func TestAuthStatusReportsExpiryWithoutPrintingTokens(t *testing.T) {
+	var stdout bytes.Buffer
+	expires := time.Date(2026, 8, 27, 13, 0, 0, 0, time.UTC)
+	service := &fakeAuthService{status: authapp.Status{Profile: "work", LoggedIn: true, RefreshAvailable: true, ExpiresAt: expires}}
+	root := NewRoot(Dependencies{Auth: service, Stdout: &stdout})
+	root.SetArgs([]string{"auth", "status"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	const want = "profile: work\nstatus: authenticated\naccess token expires: 2026-08-27T13:00:00Z\nrefresh available: yes\n"
+	if stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
+func TestAuthRefreshAndLogoutPassSelectedProfile(t *testing.T) {
+	service := &fakeAuthService{status: authapp.Status{Profile: "work", LoggedIn: true}}
+	for _, args := range [][]string{
+		{"auth", "refresh", "--profile", "work"},
+		{"auth", "logout", "--profile", "work"},
+	} {
+		root := NewRoot(Dependencies{Auth: service})
+		root.SetArgs(args)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("Execute(%v): %v", args, err)
+		}
+	}
+	if service.refreshProfile != "work" || service.logoutProfile != "work" {
+		t.Fatalf("refresh = %q, logout = %q", service.refreshProfile, service.logoutProfile)
 	}
 }

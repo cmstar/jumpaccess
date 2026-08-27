@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、Profile/Alias 应用用例和 CLI 适配器。OAuth、JumpServer API、直接 SSH 与 ProxyCommand 仍是目标设计，尚未实现。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、Profile/Alias 应用用例、OAuth Authorization Code + PKCE、loopback callback、原生凭据存储和并发安全的 Token 刷新。JumpServer API、直接 SSH 与 ProxyCommand 仍是目标设计，尚未实现。
 
 ## 系统范围与整体架构
 
@@ -28,10 +28,10 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 逻辑部分 | 目标职责 |
 | --- | --- |
 | 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
-| 应用层 | `internal/application/settings` 已承载配置修改；认证、查询和连接编排尚未实现 |
-| OAuth | Authorization Code + PKCE、浏览器启动、loopback callback、Token 获取与刷新 |
+| 应用层 | `internal/application/settings` 承载配置修改，`internal/application/auth` 承载登录状态与 Token 生命周期；查询和连接编排尚未实现 |
+| OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、loopback callback、Token 获取、刷新与撤销 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
-| 凭据存储 | Windows Credential Manager 与 macOS Keychain 的平台适配 |
+| 凭据存储 | `internal/credential` 已适配 Windows Credential Manager；macOS CGO 构建直接调用 Keychain Security framework |
 | JumpServer 集成 | 调用 Organization、Asset、Account 和连接凭据相关接口 |
 | SSH | 建立并维持直接 SSH 会话，以及实现通用 `ProxyCommand` 协议中继 |
 
@@ -45,12 +45,12 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 4. 程序交换 Token，并把敏感 Token 写入操作系统安全凭据存储。
 5. Profile、Alias 等非敏感信息继续保存在 TOML 配置中。
 
-浏览器登录的具体端点、Scope、回调细节和错误契约仍需结合 `v4.1.6` 行为与真实环境验证后固化。
+当前实现依据 `v4.1.6` 使用 OAuth Discovery、`write read` scopes、S256 PKCE 和固定 `http://127.0.0.1:14876/auth/callback`。真实环境仍需验证服务器登记的 Redirect URI、MFA 和端到端登录行为。
 
 ### 连接准备与 SSH 会话
 
 1. 应用根据当前 Profile、Organization、Asset、Account 和 Alias 解析唯一目标。
-2. 在创建新连接前检查 Access Token；临近过期时使用 Refresh Token 刷新。
+2. 在创建新连接前检查 Access Token；临近过期时使用 Refresh Token 刷新。多个 CLI 进程通过 Profile 级文件锁避免并发轮换 Refresh Token。
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
 
@@ -85,7 +85,7 @@ TOML 配置、已知主机等非敏感文件位于该根目录下。Access Token
 
 以下事项在编码阶段通过上游实现分析、模拟测试或本机 smoke test 验证，不应提前描述为已实现：
 
-- OAuth Discovery、Scope、Redirect URI 和 Refresh Token 轮换的实际契约。
+- OAuth Redirect URI、MFA 和 Refresh Token 轮换的真实服务器兼容性。
 - Organization、Asset、Account、Connection Token 和连接 URL 的字段与版本差异。
 - ProxyCommand 协议桥接、终端窗口变化、信号和退出状态传播。
 - Windows 与 macOS 凭据存储及构建产物的实际行为。
