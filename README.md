@@ -51,6 +51,9 @@ jumpctl auth login [--profile <name>]
 jumpctl auth status [--profile <name>]
 jumpctl auth refresh [--profile <name>]
 jumpctl auth logout [--profile <name>]
+jumpctl organization list [--profile <name>]
+jumpctl asset list [--profile <name>] [--organization <org>] [--search <text>]
+jumpctl account list <asset> [--profile <name>] [--organization <org>]
 jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <account>]
 jumpctl proxy <target> [--profile <name>] [--organization <org>] [--account <account>]
 ```
@@ -82,6 +85,7 @@ ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的�
 - [架构说明](docs/architecture.md)
 - [业务说明](docs/domain.md)
 - [开发说明](docs/development.md)
+- [CLI 命令参考](docs/cli.md)
 
 ## 发布
 

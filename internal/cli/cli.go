@@ -23,6 +23,7 @@ type Dependencies struct {
 	Stdout        io.Writer
 	Stderr        io.Writer
 	Auth          AuthService
+	Resources     ResourceService
 	Connect       ConnectionPreparer
 	RunSSH        func(context.Context, connectapp.Prepared) error
 	RunProxy      func(context.Context, connectapp.Prepared) error
@@ -38,6 +39,12 @@ type AuthService interface {
 
 type ConnectionPreparer interface {
 	Prepare(context.Context, connectapp.Options) (connectapp.Prepared, error)
+}
+
+type ResourceService interface {
+	ListOrganizations(context.Context, string) ([]jumpserver.Organization, error)
+	ListAssets(context.Context, string, string, string) (jumpserver.AssetPage, error)
+	FindAsset(context.Context, string, string, string) (jumpserver.AssetDetail, error)
 }
 
 func NewRoot(deps Dependencies) *cobra.Command {
@@ -114,5 +121,8 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(newAuthCommand(deps))
 	root.AddCommand(newSSHCommand(deps))
 	root.AddCommand(newProxyCommand(deps))
+	for _, command := range newResourceCommands(deps) {
+		root.AddCommand(command)
+	}
 	return root
 }

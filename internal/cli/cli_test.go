@@ -26,6 +26,24 @@ type fakeConnectionPreparer struct {
 	prepared connectapp.Prepared
 }
 
+type fakeResourceService struct {
+	organizations []jumpserver.Organization
+	assets        jumpserver.AssetPage
+	asset         jumpserver.AssetDetail
+}
+
+func (f fakeResourceService) ListOrganizations(context.Context, string) ([]jumpserver.Organization, error) {
+	return f.organizations, nil
+}
+
+func (f fakeResourceService) ListAssets(context.Context, string, string, string) (jumpserver.AssetPage, error) {
+	return f.assets, nil
+}
+
+func (f fakeResourceService) FindAsset(context.Context, string, string, string) (jumpserver.AssetDetail, error) {
+	return f.asset, nil
+}
+
 func (f *fakeConnectionPreparer) Prepare(_ context.Context, options connectapp.Options) (connectapp.Prepared, error) {
 	f.options = options
 	return f.prepared, nil
@@ -349,5 +367,33 @@ func TestProxyCommandPreflightsNonInteractivelyAndKeepsStdoutUnused(t *testing.T
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("proxy command wrote non-protocol stdout: %q", stdout.String())
+	}
+}
+
+func TestResourceCommandsPrintOrganizationsAssetsAndAccounts(t *testing.T) {
+	service := fakeResourceService{
+		organizations: []jumpserver.Organization{{ID: "org-2", Name: "Two"}, {ID: "org-1", Name: "One"}},
+		assets: jumpserver.AssetPage{Results: []jumpserver.Asset{
+			{ID: "asset-1", Name: "web", Address: "10.0.0.1", Type: jumpserver.LabelValue{Value: "linux"}},
+		}},
+		asset: jumpserver.AssetDetail{Asset: jumpserver.Asset{ID: "asset-1", Name: "web"}, Accounts: []jumpserver.Account{{ID: "account-1", Username: "root", Name: "Root"}}},
+	}
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"organization", "list"}, "org-1\tOne\norg-2\tTwo\n"},
+		{[]string{"asset", "list", "--search", "web"}, "asset-1\tweb\t10.0.0.1\tlinux\n"},
+		{[]string{"account", "list", "web"}, "account-1\troot\tRoot\n"},
+	} {
+		var stdout bytes.Buffer
+		root := NewRoot(Dependencies{Resources: service, Stdout: &stdout})
+		root.SetArgs(test.args)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("Execute(%v): %v", test.args, err)
+		}
+		if stdout.String() != test.want {
+			t.Fatalf("Execute(%v) stdout = %q, want %q", test.args, stdout.String(), test.want)
+		}
 	}
 }

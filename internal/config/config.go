@@ -96,6 +96,9 @@ func (c *Config) Validate() error {
 	}
 
 	for name, profile := range c.Profiles {
+		if strings.TrimSpace(name) == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+			return fmt.Errorf("profile name %q is invalid", name)
+		}
 		parsed, err := url.Parse(profile.URL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 			return fmt.Errorf("profile %q has invalid URL", name)

@@ -48,6 +48,15 @@ func (l *mutexLocker) Lock(context.Context, string) (func() error, error) {
 	return func() error { l.mu.Unlock(); return nil }, nil
 }
 
+type recordingLocker struct {
+	key string
+}
+
+func (l *recordingLocker) Lock(_ context.Context, key string) (func() error, error) {
+	l.key = key
+	return func() error { return nil }, nil
+}
+
 func TestEnsureFreshReturnsUnexpiredTokenWithoutRefresh(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	store := &memoryTokens{tokens: map[string]credential.Token{
@@ -228,5 +237,25 @@ func TestEnsureFreshMapsInvalidGrantToLoginRequired(t *testing.T) {
 	_, err := manager.EnsureFresh(context.Background(), "work")
 	if !errors.Is(err, ErrLoginRequired) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestEnsureFreshHashesUnicodeProfileIntoPortableLockKey(t *testing.T) {
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	store := &memoryTokens{tokens: map[string]credential.Token{
+		"生产": {AccessToken: "old", RefreshToken: "refresh", ExpiresAt: now},
+	}}
+	locker := &recordingLocker{}
+	manager := Manager{
+		Tokens: store, Locker: locker, Now: func() time.Time { return now }, RefreshBefore: time.Minute,
+		Refresh: func(context.Context, credential.Token) (oauth.TokenResponse, error) {
+			return oauth.TokenResponse{AccessToken: "new", RefreshToken: "refresh", ExpiresIn: 3600}, nil
+		},
+	}
+	if _, err := manager.EnsureFresh(context.Background(), "生产"); err != nil {
+		t.Fatal(err)
+	}
+	if len(locker.key) != len("oauth-")+64 || locker.key[:len("oauth-")] != "oauth-" {
+		t.Fatalf("lock key = %q", locker.key)
 	}
 }

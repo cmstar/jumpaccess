@@ -10,6 +10,7 @@ import (
 	"github.com/cmstar/jumpaccess/internal/appdir"
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
+	resourcesapp "github.com/cmstar/jumpaccess/internal/application/resources"
 	"github.com/cmstar/jumpaccess/internal/cli"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
@@ -89,6 +90,13 @@ func run() int {
 			return jumpserver.NewClient(site, accessToken, organization, httpClient)
 		},
 	}
+	resourceService := resourcesapp.Service{
+		Config: configStore,
+		Tokens: manager,
+		NewAPI: func(site, accessToken, organization string) (resourcesapp.API, error) {
+			return jumpserver.NewClient(site, accessToken, organization, httpClient)
+		},
+	}
 	command := cli.NewRoot(cli.Dependencies{
 		Version:    version,
 		ConfigPath: configPath,
@@ -98,6 +106,7 @@ func run() int {
 		Stderr:     os.Stderr,
 		Auth:       authService,
 		Connect:    connectionService,
+		Resources:  resourceService,
 		SelectAccount: func(accounts []jumpserver.Account) (jumpserver.Account, error) {
 			return terminalprompt.SelectAccount(os.Stdin, os.Stderr, accounts)
 		},

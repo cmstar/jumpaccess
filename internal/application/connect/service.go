@@ -28,9 +28,13 @@ type TokenManager interface {
 	EnsureFresh(context.Context, string) (credential.Token, error)
 }
 
-type API interface {
+type AssetAPI interface {
 	ListAssets(context.Context, jumpserver.AssetQuery) (jumpserver.AssetPage, error)
 	GetAsset(context.Context, string) (jumpserver.AssetDetail, error)
+}
+
+type API interface {
+	AssetAPI
 	CreateConnectionToken(context.Context, jumpserver.ConnectionRequest) (string, error)
 	GetClientConnection(context.Context, string) (jumpserver.ClientConnection, error)
 }
@@ -75,7 +79,7 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 		return Prepared{}, err
 	}
 
-	asset, err := resolveAsset(ctx, api, selection.Asset)
+	asset, err := ResolveAsset(ctx, api, selection.Asset)
 	if err != nil {
 		return Prepared{}, err
 	}
@@ -104,7 +108,7 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 	return Prepared{Selection: selection, Asset: asset, Account: account, Connection: connection}, nil
 }
 
-func resolveAsset(ctx context.Context, api API, reference string) (jumpserver.AssetDetail, error) {
+func ResolveAsset(ctx context.Context, api AssetAPI, reference string) (jumpserver.AssetDetail, error) {
 	page, err := api.ListAssets(ctx, jumpserver.AssetQuery{Search: reference, Limit: 100})
 	if err != nil {
 		return jumpserver.AssetDetail{}, err

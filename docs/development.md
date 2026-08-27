@@ -22,6 +22,7 @@ cmd/jumpctl/        # CLI 入口适配器
 internal/appdir/    # 单一应用数据根目录
 internal/application/settings/ # Profile 与 Alias 修改用例
 internal/application/auth/     # 登录状态、刷新与生命周期编排
+internal/application/resources/# Organization、Asset 与 Account 查询
 internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
 internal/credential/# Windows Credential Manager 与 macOS Keychain 适配

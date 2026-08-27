@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"time"
@@ -81,7 +82,8 @@ func (m Manager) ensure(ctx context.Context, profile string, force bool) (creden
 		return credential.Token{}, fmt.Errorf("OAuth refresh lock is unavailable")
 	}
 
-	unlock, err := m.Locker.Lock(ctx, "oauth-"+profile)
+	lockDigest := sha256.Sum256([]byte(profile))
+	unlock, err := m.Locker.Lock(ctx, fmt.Sprintf("oauth-%x", lockDigest))
 	if err != nil {
 		return credential.Token{}, fmt.Errorf("acquire OAuth refresh lock: %w", err)
 	}

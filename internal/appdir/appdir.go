@@ -13,6 +13,9 @@ const directoryName = "JumpAccess"
 
 // Root returns the single directory used for non-sensitive JumpAccess data.
 func Root() (string, error) {
+	if runtime.GOOS == "windows" {
+		return RootFor(runtime.GOOS, os.Getenv("LOCALAPPDATA"), "")
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user config directory: %w", err)
