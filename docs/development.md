@@ -2,11 +2,11 @@
 
 ## 当前阶段
 
-项目正在初始化应用工程。本文只记录已经确认的开发约束和目标布局；实际依赖版本、命令和目录建立后，应以可运行代码为依据更新本文。
+Go 工程和首批配置能力已经建立。认证、JumpServer API 和 SSH 仍在开发中；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
-- 主要实现语言：Go。具体 Go 版本以即将建立的 `go.mod` 为准。
+- 主要实现语言：Go 1.24 或更高版本，以根目录 `go.mod` 为准。
 - Module 路径：`github.com/cmstar/jumpaccess`。
 - 工程采用单个 Go module，支持多个入口适配器共享核心逻辑。
 - 首个可执行入口为 `jumpctl`；未来 GUI 不得迫使 OAuth、配置、JumpServer API、目标解析或 SSH 逻辑复制一份。
@@ -15,11 +15,16 @@
 
 ## 目标目录边界
 
-应用工程建立时遵守以下方向，具体包名按实现证据调整：
+当前目录边界：
 
 ```text
 cmd/jumpctl/        # CLI 入口适配器
-internal/           # 可由 CLI 和未来其他本项目入口复用的核心实现
+internal/appdir/    # 单一应用数据根目录
+internal/application/settings/ # Profile 与 Alias 修改用例
+internal/cli/       # CLI 参数和输出适配
+internal/config/    # TOML 模型、校验和存储
+internal/systemopen/# 打开配置文件的平台适配
+internal/target/    # Profile、Alias 和远程目标解析
 docs/               # 长期项目知识
 ```
 
@@ -34,7 +39,7 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-配置文件名、TOML schema、默认刷新阈值和已知主机文件布局应在实现并测试后补充，当前不得猜测为稳定契约。
+配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；认证实现落地后仍需验证实际调度。已知主机文件布局将在 SSH 实现后补充。
 
 ## CLI 与进程 I/O
 
@@ -68,6 +73,10 @@ docs/               # 长期项目知识
 
 ## 当前验证入口
 
-应用工程尚未形成，因此本文不虚构 `go test`、运行或构建命令。建立 `go.mod`、CLI 入口和首批测试后，应立即补充经过实际执行的命令、所需工具版本和任何平台限制。
+```powershell
+go test ./...
+go vet ./...
+go build -trimpath ./cmd/jumpctl
+```
 
 每次代码修改结束前，运行与本次修改最相关的测试；在交付完整阶段前运行全量测试、静态检查和目标平台构建检查。只有真实执行成功的命令才能写成当前可用入口。

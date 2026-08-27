@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 尚处于工程初始化阶段。本文记录已经确认的目标架构和边界，不表示各模块已经实现；目录、依赖和协议细节应在编码与验证过程中据实更新。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、Profile/Alias 应用用例和 CLI 适配器。OAuth、JumpServer API、直接 SSH 与 ProxyCommand 仍是目标设计，尚未实现。
 
 ## 系统范围与整体架构
 
@@ -23,14 +23,14 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 ## 目标系统组成与模块职责
 
-以下是逻辑职责，不代表当前已经存在同名包：
+以下表格同时记录已建立的边界和后续目标；未实现项会明确标注：
 
 | 逻辑部分 | 目标职责 |
 | --- | --- |
-| 入口适配器 | 解析 CLI 或未来 GUI 输入，调用共享用例，不承载 JumpServer 协议细节 |
-| 应用层 | 编排登录、刷新、资源查询、目标解析和连接流程 |
+| 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
+| 应用层 | `internal/application/settings` 已承载配置修改；认证、查询和连接编排尚未实现 |
 | OAuth | Authorization Code + PKCE、浏览器启动、loopback callback、Token 获取与刷新 |
-| 配置 | 读取和校验 TOML，管理 Profile、Alias 和非敏感行为配置 |
+| 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | 凭据存储 | Windows Credential Manager 与 macOS Keychain 的平台适配 |
 | JumpServer 集成 | 调用 Organization、Asset、Account 和连接凭据相关接口 |
 | SSH | 建立并维持直接 SSH 会话，以及实现通用 `ProxyCommand` 协议中继 |

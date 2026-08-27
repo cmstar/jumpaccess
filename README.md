@@ -16,7 +16,7 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 
 ## 开发环境与当前状态
 
-应用工程、运行命令、测试命令和构建命令正在建立中。相应入口形成并经过验证后，应在这里和 [开发说明](docs/development.md) 中据实补充。
+项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile 和 Alias 基础能力。OAuth、JumpServer API 与 SSH 尚在后续阶段实现。
 
 当前已经确定的 Go module 路径为：
 
@@ -24,9 +24,30 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 github.com/cmstar/jumpaccess
 ```
 
+环境要求：Go 1.24 或更高版本。
+
 ## 本地运行、测试与构建
 
-应用工程尚未形成，因此当前没有可以准确列出的本地运行、测试和构建命令。首批 Go 入口和测试落地并实际执行后，应立即补充这里，避免文档提供未经验证的命令。
+```powershell
+go run ./cmd/jumpctl --help
+go test ./...
+go vet ./...
+go build -trimpath ./cmd/jumpctl
+```
+
+当前已经实现的配置入口包括：
+
+```text
+jumpctl version
+jumpctl config path
+jumpctl config edit
+jumpctl config validate
+jumpctl profile add <name> --url <site>
+jumpctl profile list
+jumpctl profile use <name>
+jumpctl alias set <name> --asset <asset> [--account <account>] [--organization <org>]
+jumpctl alias list
+```
 
 ## 安全说明
 
