@@ -2,7 +2,7 @@
 
 JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付物是 Go 编写的命令行程序 `jumpctl`；项目同时保留共享核心能力，便于未来在需求明确后增加桌面入口，例如采用 Wails 的 GUI。
 
-项目当前处于首个可用版本的开发阶段。配置、Profile、Alias 和 OAuth Token 生命周期已经实现；JumpServer 资源 API、直接 SSH 与 ProxyCommand 仍在开发。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期和 JumpServer 连接准备 API 已经实现；直接 SSH 与 ProxyCommand 仍在开发。实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 
@@ -16,7 +16,7 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 
 ## 开发环境与当前状态
 
-项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储和并发安全的 Token 刷新。JumpServer API 与 SSH 尚在后续阶段实现。
+项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储、并发安全的 Token 刷新，以及 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议客户端。SSH 尚在后续阶段实现。
 
 当前已经确定的 Go module 路径为：
 

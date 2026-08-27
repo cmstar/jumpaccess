@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、Profile/Alias 应用用例、OAuth Authorization Code + PKCE、loopback callback、原生凭据存储和并发安全的 Token 刷新。JumpServer API、直接 SSH 与 ProxyCommand 仍是目标设计，尚未实现。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、Profile/Alias 应用用例、OAuth Token 生命周期，以及 JumpServer Organization、Asset、Account、Connection Token 与 client-url 协议客户端。直接 SSH 与 ProxyCommand 仍是目标设计，尚未实现。
 
 ## 系统范围与整体架构
 
@@ -32,7 +32,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、loopback callback、Token 获取、刷新与撤销 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | 凭据存储 | `internal/credential` 已适配 Windows Credential Manager；macOS CGO 构建直接调用 Keychain Security framework |
-| JumpServer 集成 | 调用 Organization、Asset、Account 和连接凭据相关接口 |
+| JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
 | SSH | 建立并维持直接 SSH 会话，以及实现通用 `ProxyCommand` 协议中继 |
 
 ## 关键数据流
@@ -86,6 +86,6 @@ TOML 配置、已知主机等非敏感文件位于该根目录下。Access Token
 以下事项在编码阶段通过上游实现分析、模拟测试或本机 smoke test 验证，不应提前描述为已实现：
 
 - OAuth Redirect URI、MFA 和 Refresh Token 轮换的真实服务器兼容性。
-- Organization、Asset、Account、Connection Token 和连接 URL 的字段与版本差异。
+- Organization、Asset、Account、Connection Token 和连接 URL 的真实服务器兼容性与版本差异。
 - ProxyCommand 协议桥接、终端窗口变化、信号和退出状态传播。
 - Windows 与 macOS 凭据存储及构建产物的实际行为。

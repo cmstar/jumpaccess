@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、配置能力和 OAuth Token 生命周期已经建立。JumpServer API 和 SSH 仍在开发中；实际状态以测试和当前命令帮助为准。
+Go 工程、配置能力、OAuth Token 生命周期和 JumpServer 连接准备协议已经建立。直接 SSH 和 ProxyCommand 仍在开发中；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -26,6 +26,7 @@ internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
 internal/credential/# Windows Credential Manager 与 macOS Keychain 适配
 internal/filelock/  # 多进程 Token 刷新锁
+internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
 internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
 internal/systemopen/# 打开配置文件的平台适配
 internal/target/    # Profile、Alias 和远程目标解析
