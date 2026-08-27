@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、Profile/Alias 应用用例、OAuth Token 生命周期，以及 JumpServer Organization、Asset、Account、Connection Token 与 client-url 协议客户端。直接 SSH 与 ProxyCommand 仍是目标设计，尚未实现。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` 入口、跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议和直接 SSH 客户端。ProxyCommand 仍是目标设计，尚未实现。
 
 ## 系统范围与整体架构
 
@@ -33,7 +33,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | 凭据存储 | `internal/credential` 已适配 Windows Credential Manager；macOS CGO 构建直接调用 Keychain Security framework |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
-| SSH | 建立并维持直接 SSH 会话，以及实现通用 `ProxyCommand` 协议中继 |
+| SSH | `internal/sshclient` 已建立直接 SSH 会话，`internal/sshhostkey` 维护严格的 gateway 主机信任；通用 `ProxyCommand` 协议中继尚未实现 |
 
 ## 关键数据流
 
@@ -53,6 +53,8 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 2. 在创建新连接前检查 Access Token；临近过期时使用 Refresh Token 刷新。多个 CLI 进程通过 Profile 级文件锁避免并发轮换 Refresh Token。
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
+
+直接模式在终端支持 Account 选择，并在首次遇到未知 gateway 主机密钥时显示 SHA-256 指纹要求确认。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
 ### 通用 ProxyCommand
 

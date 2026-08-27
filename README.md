@@ -2,7 +2,7 @@
 
 JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付物是 Go 编写的命令行程序 `jumpctl`；项目同时保留共享核心能力，便于未来在需求明确后增加桌面入口，例如采用 Wails 的 GUI。
 
-项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期和 JumpServer 连接准备 API 已经实现；直接 SSH 与 ProxyCommand 仍在开发。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API 和直接 SSH 已经实现；ProxyCommand 仍在开发。实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 
@@ -16,7 +16,7 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 
 ## 开发环境与当前状态
 
-项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储、并发安全的 Token 刷新，以及 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议客户端。SSH 尚在后续阶段实现。
+项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议，以及带主机密钥校验的交互式 SSH 客户端。ProxyCommand 尚在后续阶段实现。
 
 当前已经确定的 Go module 路径为：
 
@@ -51,6 +51,7 @@ jumpctl auth login [--profile <name>]
 jumpctl auth status [--profile <name>]
 jumpctl auth refresh [--profile <name>]
 jumpctl auth logout [--profile <name>]
+jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <account>]
 ```
 
 ## 安全说明
@@ -58,6 +59,8 @@ jumpctl auth logout [--profile <name>]
 不要把账号密码、Access Token、Refresh Token、Cookie、私钥或其他真实凭据写入仓库。真实 JumpServer 账号只用于开发者本机的手工 smoke test；常规自动化测试应使用模拟服务和脱敏 fixture。
 
 Windows 使用 Credential Manager 保存 OAuth 凭据。macOS 使用 Keychain；包含 Keychain 后端的 macOS 正式构建需要启用 CGO 并链接系统 Security framework。
+
+首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 
 ## 文档
 

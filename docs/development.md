@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、配置能力、OAuth Token 生命周期和 JumpServer 连接准备协议已经建立。直接 SSH 和 ProxyCommand 仍在开发中；实际状态以测试和当前命令帮助为准。
+Go 工程、配置能力、OAuth Token 生命周期、JumpServer 连接准备协议和直接 SSH 已经建立。ProxyCommand 仍在开发中；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -28,8 +28,11 @@ internal/credential/# Windows Credential Manager 与 macOS Keychain 适配
 internal/filelock/  # 多进程 Token 刷新锁
 internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
 internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
+internal/sshclient/ # 直接 SSH 客户端会话
+internal/sshhostkey/# SSH gateway 主机密钥信任
 internal/systemopen/# 打开配置文件的平台适配
 internal/target/    # Profile、Alias 和远程目标解析
+internal/terminalprompt/ # Account 与主机密钥的直接模式提示
 docs/               # 长期项目知识
 ```
 
@@ -44,7 +47,7 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。已知主机文件布局将在 SSH 实现后补充。
+配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 
 ## CLI 与进程 I/O
 

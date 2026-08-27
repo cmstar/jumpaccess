@@ -9,7 +9,9 @@ import (
 	"time"
 
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
+	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
+	"github.com/cmstar/jumpaccess/internal/jumpserver"
 )
 
 type fakeAuthService struct {
@@ -17,6 +19,16 @@ type fakeAuthService struct {
 	status         authapp.Status
 	refreshProfile string
 	logoutProfile  string
+}
+
+type fakeConnectionPreparer struct {
+	options  connectapp.Options
+	prepared connectapp.Prepared
+}
+
+func (f *fakeConnectionPreparer) Prepare(_ context.Context, options connectapp.Options) (connectapp.Prepared, error) {
+	f.options = options
+	return f.prepared, nil
 }
 
 func (f *fakeAuthService) Login(_ context.Context, profile string) (authapp.Status, error) {
@@ -286,5 +298,30 @@ func TestAuthRefreshAndLogoutPassSelectedProfile(t *testing.T) {
 	}
 	if service.refreshProfile != "work" || service.logoutProfile != "work" {
 		t.Fatalf("refresh = %q, logout = %q", service.refreshProfile, service.logoutProfile)
+	}
+}
+
+func TestSSHCommandPreparesInteractiveTargetAndRunsClient(t *testing.T) {
+	preparer := &fakeConnectionPreparer{prepared: connectapp.Prepared{
+		Connection: jumpserver.ClientConnection{Protocol: "ssh", Endpoint: jumpserver.Endpoint{Host: "gateway", Port: 22}},
+	}}
+	var ran jumpserver.ClientConnection
+	root := NewRoot(Dependencies{
+		Connect: preparer,
+		RunSSH: func(_ context.Context, prepared connectapp.Prepared) error {
+			ran = prepared.Connection
+			return nil
+		},
+	})
+	root.SetArgs([]string{"ssh", "web", "--profile", "work", "--organization", "org-1", "--account", "root"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if preparer.options.NonInteractive || preparer.options.Target.Target != "web" || preparer.options.Target.Profile != "work" || preparer.options.Target.Organization != "org-1" || preparer.options.Target.Account != "root" {
+		t.Fatalf("options = %#v", preparer.options)
+	}
+	if ran.Endpoint.Host != "gateway" {
+		t.Fatalf("ran connection = %#v", ran)
 	}
 }

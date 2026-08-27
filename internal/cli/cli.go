@@ -9,18 +9,23 @@ import (
 	"os"
 
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
+	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
+	"github.com/cmstar/jumpaccess/internal/jumpserver"
 	"github.com/spf13/cobra"
 )
 
 type Dependencies struct {
-	Version    string
-	ConfigPath string
-	Store      projectconfig.Store
-	OpenFile   func(string) error
-	Stdout     io.Writer
-	Stderr     io.Writer
-	Auth       AuthService
+	Version       string
+	ConfigPath    string
+	Store         projectconfig.Store
+	OpenFile      func(string) error
+	Stdout        io.Writer
+	Stderr        io.Writer
+	Auth          AuthService
+	Connect       ConnectionPreparer
+	RunSSH        func(context.Context, connectapp.Prepared) error
+	SelectAccount func([]jumpserver.Account) (jumpserver.Account, error)
 }
 
 type AuthService interface {
@@ -28,6 +33,10 @@ type AuthService interface {
 	Status(profile string) (authapp.Status, error)
 	Refresh(ctx context.Context, profile string) (authapp.Status, error)
 	Logout(ctx context.Context, profile string) error
+}
+
+type ConnectionPreparer interface {
+	Prepare(context.Context, connectapp.Options) (connectapp.Prepared, error)
 }
 
 func NewRoot(deps Dependencies) *cobra.Command {
@@ -102,5 +111,6 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(newProfileCommand(deps))
 	root.AddCommand(newAliasCommand(deps))
 	root.AddCommand(newAuthCommand(deps))
+	root.AddCommand(newSSHCommand(deps))
 	return root
 }
