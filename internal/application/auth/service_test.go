@@ -14,14 +14,14 @@ type staticConfig struct{ value projectconfig.Config }
 
 func (s staticConfig) Load() (projectconfig.Config, error) { return s.value, nil }
 
-func TestServiceLoginUsesCurrentProfileAndStoresNativeCredential(t *testing.T) {
+func TestServiceLoginDefaultsToManualFlowAndStoresNativeCredential(t *testing.T) {
 	value := projectconfig.Default()
 	value.CurrentProfile = "work"
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
 	store := &memoryTokens{tokens: make(map[string]credential.Token)}
 	service := Service{
 		Config: staticConfig{value: value}, Tokens: store,
-		LoginFlow: func(_ context.Context, site string) (credential.Token, error) {
+		ManualLoginFlow: func(_ context.Context, site string) (credential.Token, error) {
 			if site != "https://jump.example.test" {
 				t.Fatalf("site = %q", site)
 			}
@@ -29,7 +29,7 @@ func TestServiceLoginUsesCurrentProfileAndStoresNativeCredential(t *testing.T) {
 		},
 	}
 
-	status, err := service.Login(context.Background(), "")
+	status, err := service.Login(context.Background(), "", LoginOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,32 @@ func TestServiceLoginAppliesOAuthTimeout(t *testing.T) {
 			return credential.Token{AccessToken: "secret"}, nil
 		},
 	}
-	if _, err := service.Login(context.Background(), ""); err != nil {
+	if _, err := service.Login(context.Background(), "", LoginOptions{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServiceLoginManualOptionSelectsPermanentFallbackFlow(t *testing.T) {
+	value := projectconfig.Default()
+	value.CurrentProfile = "work"
+	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
+	var selected string
+	service := Service{
+		Config: staticConfig{value: value}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)},
+		LoginFlow: func(context.Context, string) (credential.Token, error) {
+			selected = "native"
+			return credential.Token{AccessToken: "native"}, nil
+		},
+		ManualLoginFlow: func(context.Context, string) (credential.Token, error) {
+			selected = "manual"
+			return credential.Token{AccessToken: "manual"}, nil
+		},
+	}
+
+	if _, err := service.Login(context.Background(), "", LoginOptions{Manual: true}); err != nil {
+		t.Fatal(err)
+	}
+	if selected != "manual" {
+		t.Fatalf("selected flow = %q", selected)
 	}
 }

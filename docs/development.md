@@ -68,13 +68,21 @@ docs/               # 长期项目知识
 默认测试不需要真实 JumpServer 账号，优先覆盖：
 
 - TOML、Profile 和 Alias 解析。
-- OAuth PKCE、loopback callback、Token 过期、轮换和并发刷新。
+- OAuth PKCE、原生 `jms` callback、JumpServer 确认页 URL、Token 过期、轮换和并发刷新。
 - 使用本地 HTTP server 模拟 JumpServer API。
 - 使用本地 SSH client/server 验证直接模式和 ProxyCommand 的协议边界。
 - stdout、stderr、退出码以及敏感信息脱敏。
 - Token 刷新失败不会关闭活动 SSH Session。
 
 真实账号只用于开发者本机手工 smoke test，用来确认浏览器登录、MFA、真实 API、Connection Token 和 SSH 完整链路。账号、密码和 Token 不通过对话传递，不进入自动 CI；程序需要登录时，由开发者本人在系统浏览器中完成。
+
+当前开发版 OAuth smoke test 使用：
+
+```powershell
+& $Jump auth login --profile $Profile --manual
+```
+
+预期浏览器完成授权后进入外部跳转确认页。不要点击“确认”；复制页面内的 `jms://auth/callback?...` 链接或地址栏完整 URL，粘贴到终端的 `OAuth callback URL:` 提示后回车。成功时命令输出 `authenticated profile <name>`；随后 `auth status` 应显示已认证、Access Token 过期时间及 Refresh Token 可用性。测试记录不得保存回调 URL、Authorization Code 或 Token。
 
 ## 跨平台约定
 

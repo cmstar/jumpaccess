@@ -22,22 +22,38 @@ type Status struct {
 	ExpiresAt        time.Time
 }
 
+type LoginOptions struct {
+	Manual bool
+}
+
 type Service struct {
 	Config    ConfigLoader
 	Tokens    TokenRepository
 	Manager   Manager
 	LoginFlow func(context.Context, string) (credential.Token, error)
-	Revoke    func(context.Context, credential.Token) error
-	Now       func() time.Time
-	Timeout   time.Duration
+	// ManualLoginFlow 是其他程序占用私有协议或系统禁止注册协议时永久保留的回退方式。
+	ManualLoginFlow func(context.Context, string) (credential.Token, error)
+	Revoke          func(context.Context, credential.Token) error
+	Now             func() time.Time
+	Timeout         time.Duration
 }
 
-func (s Service) Login(ctx context.Context, requestedProfile string) (Status, error) {
+func (s Service) Login(ctx context.Context, requestedProfile string, options LoginOptions) (Status, error) {
 	profile, configured, err := s.resolveProfile(requestedProfile)
 	if err != nil {
 		return Status{}, err
 	}
-	if s.LoginFlow == nil {
+	loginFlow := s.LoginFlow
+	if options.Manual {
+		loginFlow = s.ManualLoginFlow
+		if loginFlow == nil {
+			return Status{}, fmt.Errorf("manual browser login is unavailable")
+		}
+	} else if loginFlow == nil {
+		// 原生协议处理发布前，手工流程既是默认方式，也是显式 --manual 回退方式。
+		loginFlow = s.ManualLoginFlow
+	}
+	if loginFlow == nil {
 		return Status{}, fmt.Errorf("browser login is unavailable")
 	}
 	if s.Timeout > 0 {
@@ -45,7 +61,7 @@ func (s Service) Login(ctx context.Context, requestedProfile string) (Status, er
 		ctx, cancel = context.WithTimeout(ctx, s.Timeout)
 		defer cancel()
 	}
-	token, err := s.LoginFlow(ctx, configured.URL)
+	token, err := loginFlow(ctx, configured.URL)
 	if err != nil {
 		return Status{}, err
 	}

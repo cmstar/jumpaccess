@@ -92,6 +92,30 @@ func TestParseCallbackRequiresExactStateAndCode(t *testing.T) {
 	}
 }
 
+func TestParseCallbackURLAcceptsNativeAndJumpServerConfirmationURLs(t *testing.T) {
+	callback := NativeRedirectURI + "?code=authorization-code&state=expected"
+	confirmation := "https://jump.example.test/core/redirect/confirm/?next=" + url.QueryEscape(callback)
+
+	for name, rawURL := range map[string]string{
+		"native callback":         callback,
+		"JumpServer confirmation": confirmation,
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, err := ParseCallbackURL(rawURL, NativeRedirectURI, "expected")
+			if err != nil || code != "authorization-code" {
+				t.Fatalf("ParseCallbackURL() = %q, %v", code, err)
+			}
+		})
+	}
+}
+
+func TestParseCallbackURLRejectsUnexpectedTarget(t *testing.T) {
+	code, err := ParseCallbackURL("jms://asset/connect?code=authorization-code&state=expected", NativeRedirectURI, "expected")
+	if err == nil || code != "" || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("ParseCallbackURL() = %q, %v", code, err)
+	}
+}
+
 func TestExchangeAndRefreshUseExpectedForms(t *testing.T) {
 	requests := make(chan url.Values, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

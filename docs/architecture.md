@@ -29,7 +29,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | --- | --- |
 | 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
 | 应用层 | `internal/application/settings` 承载配置修改，`internal/application/auth` 承载登录状态与 Token 生命周期；查询和连接编排尚未实现 |
-| OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、loopback callback、Token 获取、刷新与撤销 |
+| OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | 凭据存储 | `internal/credential` 已适配 Windows Credential Manager；macOS CGO 构建直接调用 Keychain Security framework |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
@@ -41,11 +41,15 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 1. 用户执行独立的认证命令。
 2. 程序生成 PKCE 和防伪状态，启动系统浏览器。
-3. JumpServer 完成授权后回调本机 loopback listener。
-4. 程序交换 Token，并把敏感 Token 写入操作系统安全凭据存储。
+3. JumpServer 完成授权后生成 `jms://auth/callback`。当前开发版由用户把该链接或包含它的确认页 URL 粘贴回终端；发布版计划由已注册的私有协议处理程序自动接收。
+4. 程序严格校验回调目标和 `state`，使用原登录进程持有的 PKCE verifier 交换 Token，并把敏感 Token 写入操作系统安全凭据存储。
 5. Profile、Alias 等非敏感信息继续保存在 TOML 配置中。
 
-当前实现依据 `v4.1.6` 使用 OAuth Discovery、`write read` scopes、S256 PKCE 和固定 `http://127.0.0.1:14876/auth/callback`。真实环境仍需验证服务器登记的 Redirect URI、MFA 和端到端登录行为。
+当前实现依据 `v4.1.6` 使用 OAuth Discovery、`write read` scopes、S256 PKCE 和服务器已登记的 `jms://auth/callback`。真实环境已确认服务器拒绝未登记的 `http://127.0.0.1:14876/auth/callback`，并能为 `jms://auth/callback` 生成外部跳转确认页；MFA、Token 交换与完整登录仍需继续验证。
+
+当前开发版默认采用手工回调，`--manual` 也能显式选择该模式。正式发布后，默认模式计划注册 `jms` 私有协议：操作系统启动 callback 子进程，子进程通过受限于当前用户的本地 IPC 把原始 URL 交给等待中的登录进程，再由后者完成 state/PKCE 校验和换 Token。不安装 Windows Service，也不把 PKCE verifier 持久化。手工模式作为长期能力永久保留，支持官方客户端仍占用 `jms` 协议、设备策略禁止协议注册或用户主动不注册的环境。
+
+同一操作系统用户下不能按 URL 路径把 `jms` scheme 同时路由给两个程序。发布版注册协议时必须检测现有处理程序、明确告知冲突且不得静默覆盖；选择手工模式时不修改协议注册。
 
 ### 连接准备与 SSH 会话
 
@@ -92,7 +96,7 @@ TOML 配置、已知主机等非敏感文件位于该根目录下。Access Token
 
 以下事项在编码阶段通过上游实现分析、模拟测试或本机 smoke test 验证，不应提前描述为已实现：
 
-- OAuth Redirect URI、MFA 和 Refresh Token 轮换的真实服务器兼容性。
+- OAuth MFA、Token 交换、私有协议注册/IPC 和 Refresh Token 轮换的真实服务器兼容性。
 - Organization、Asset、Account、Connection Token 和连接 URL 的真实服务器兼容性与版本差异。
 - ProxyCommand 与真实终端客户端的兼容性，以及窗口变化、信号和退出状态的真实环境表现。
 - Windows 与 macOS 凭据存储及构建产物的实际行为。

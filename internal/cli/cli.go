@@ -31,7 +31,7 @@ type Dependencies struct {
 }
 
 type AuthService interface {
-	Login(ctx context.Context, profile string) (authapp.Status, error)
+	Login(ctx context.Context, profile string, options authapp.LoginOptions) (authapp.Status, error)
 	Status(profile string) (authapp.Status, error)
 	Refresh(ctx context.Context, profile string) (authapp.Status, error)
 	Logout(ctx context.Context, profile string) error

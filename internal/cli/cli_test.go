@@ -16,6 +16,7 @@ import (
 
 type fakeAuthService struct {
 	loginProfile   string
+	loginOptions   authapp.LoginOptions
 	status         authapp.Status
 	refreshProfile string
 	logoutProfile  string
@@ -49,8 +50,9 @@ func (f *fakeConnectionPreparer) Prepare(_ context.Context, options connectapp.O
 	return f.prepared, nil
 }
 
-func (f *fakeAuthService) Login(_ context.Context, profile string) (authapp.Status, error) {
+func (f *fakeAuthService) Login(_ context.Context, profile string, options authapp.LoginOptions) (authapp.Status, error) {
 	f.loginProfile = profile
+	f.loginOptions = options
 	return f.status, nil
 }
 
@@ -283,6 +285,19 @@ func TestAuthLoginUsesBrowserServiceWithoutPrintingSecrets(t *testing.T) {
 	}
 	if service.loginProfile != "work" || stdout.String() != "authenticated profile work\n" {
 		t.Fatalf("profile = %q, stdout = %q", service.loginProfile, stdout.String())
+	}
+}
+
+func TestAuthLoginManualFlagForcesPastedCallbackFlow(t *testing.T) {
+	service := &fakeAuthService{status: authapp.Status{Profile: "work", LoggedIn: true}}
+	root := NewRoot(Dependencies{Auth: service})
+	root.SetArgs([]string{"auth", "login", "--profile", "work", "--manual"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !service.loginOptions.Manual {
+		t.Fatal("manual login option was not passed to the authentication service")
 	}
 }
 

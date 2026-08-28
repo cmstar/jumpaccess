@@ -14,7 +14,7 @@ jumpctl alias set web --asset <asset-id> --account <account-id> --organization <
 jumpctl ssh web
 ```
 
-浏览器登录由 `auth login` 单独完成。真实账号、MFA 和密码不应作为命令参数传递；授权在系统浏览器中进行，OAuth Token 保存到 Windows Credential Manager 或 macOS Keychain。
+浏览器登录由 `auth login` 单独完成。真实账号、MFA 和密码不应作为命令参数传递；授权在系统浏览器中进行，OAuth Token 保存到 Windows Credential Manager 或 macOS Keychain。当前开发版本默认要求粘贴手工回调；正式发布版计划默认注册并接收 `jms` 私有协议，同时永久保留 `--manual` 作为显式回退方式。
 
 ## 通用命令
 
@@ -67,12 +67,19 @@ account = "account-id"
 
 | 命令 | 作用 |
 | --- | --- |
-| `jumpctl auth login [--profile <name>]` | 启动 loopback callback，打开浏览器并完成 Authorization Code + PKCE 登录 |
+| `jumpctl auth login [--profile <name>] [--manual]` | 打开浏览器并完成 Authorization Code + PKCE 登录；`--manual` 强制从终端读取粘贴的回调 URL，当前开发版本未实现私有协议接收时也默认使用该方式 |
 | `jumpctl auth status [--profile <name>]` | 只显示登录状态、过期时间和是否有 Refresh Token，不显示秘密 |
 | `jumpctl auth refresh [--profile <name>]` | 立即刷新；Refresh Token 轮换后原子写回原生凭据存储 |
 | `jumpctl auth logout [--profile <name>]` | 撤销并删除 Profile 的 OAuth 凭据 |
 
 程序发起 API 请求前会按需刷新。直接 SSH 和 ProxyCommand 运行期间还会定期检查；刷新成功只影响后续 API 请求，刷新失败会写入 stderr，但不会关闭已经建立的 SSH Session。
+
+手工回调时，JumpServer 授权完成后会显示外部跳转确认页。不要点击“确认”，复制以下任一种内容并直接粘贴到正在等待的终端：
+
+- 页面中显示的完整 `jms://auth/callback?...` 链接。
+- 浏览器地址栏中带有 `next=jms%3A...` 的完整 JumpServer 确认页 URL。
+
+程序只接受目标严格匹配 `jms://auth/callback` 且 `state` 与当前登录流程一致的回调。Authorization Code 只用于当前 Token 交换，不会写入配置或普通输出。
 
 ## 资源发现
 

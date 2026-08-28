@@ -18,6 +18,7 @@ func newAuthCommand(deps Dependencies) *cobra.Command {
 
 func newAuthLoginCommand(deps Dependencies) *cobra.Command {
 	var profile string
+	var manual bool
 	command := &cobra.Command{
 		Use:   "login",
 		Short: "Open a browser and authenticate the selected profile",
@@ -27,7 +28,7 @@ func newAuthLoginCommand(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			status, err := service.Login(cmd.Context(), profile)
+			status, err := service.Login(cmd.Context(), profile, authapp.LoginOptions{Manual: manual})
 			if err != nil {
 				return err
 			}
@@ -36,6 +37,7 @@ func newAuthLoginCommand(deps Dependencies) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
+	command.Flags().BoolVar(&manual, "manual", false, "paste the OAuth callback URL instead of using the registered protocol handler")
 	return command
 }
 

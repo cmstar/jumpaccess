@@ -65,10 +65,12 @@ func run() int {
 		Config:  configStore,
 		Tokens:  tokenRepository,
 		Manager: manager,
-		LoginFlow: (oauth.BrowserFlow{
+		ManualLoginFlow: (oauth.ManualFlow{
 			HTTPClient:  httpClient,
-			CallbackURL: "http://127.0.0.1:14876/auth/callback",
+			RedirectURI: oauth.NativeRedirectURI,
 			OpenBrowser: systemopen.Open,
+			Input:       os.Stdin,
+			Output:      os.Stderr,
 		}).Login,
 		Revoke: func(ctx context.Context, token credential.Token) error {
 			metadata, err := oauth.Discover(ctx, httpClient, token.Site)

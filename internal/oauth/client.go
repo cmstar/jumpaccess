@@ -134,6 +134,30 @@ func ParseCallback(request *http.Request, expectedState string) (string, error) 
 	return code, nil
 }
 
+// ParseCallbackURL 接受原生回调本身，或 next 参数中包含原生回调的 JumpServer 确认页 URL。
+func ParseCallbackURL(rawURL, expectedRedirectURI, expectedState string) (string, error) {
+	callback, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", fmt.Errorf("parse OAuth callback URL: %w", err)
+	}
+	if (callback.Scheme == "http" || callback.Scheme == "https") && callback.Query().Get("next") != "" {
+		callback, err = url.Parse(callback.Query().Get("next"))
+		if err != nil {
+			return "", fmt.Errorf("parse OAuth callback URL from confirmation page: %w", err)
+		}
+	}
+	expected, err := url.Parse(expectedRedirectURI)
+	if err != nil || expected.Scheme == "" || expected.Host == "" {
+		return "", fmt.Errorf("invalid expected OAuth redirect URI")
+	}
+	if !strings.EqualFold(callback.Scheme, expected.Scheme) ||
+		!strings.EqualFold(callback.Host, expected.Host) ||
+		callback.Path != expected.Path || callback.User != nil || callback.Fragment != "" {
+		return "", fmt.Errorf("OAuth callback target did not match %s", expectedRedirectURI)
+	}
+	return ParseCallback(&http.Request{URL: callback}, expectedState)
+}
+
 func (c Client) Exchange(ctx context.Context, code, verifier, redirectURI string) (TokenResponse, error) {
 	return c.requestToken(ctx, url.Values{
 		"grant_type":    {"authorization_code"},
