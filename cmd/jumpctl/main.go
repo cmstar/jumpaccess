@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	jumpaccess "github.com/cmstar/jumpaccess"
 	"github.com/cmstar/jumpaccess/internal/appdir"
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
@@ -101,6 +102,7 @@ func run() int {
 	}
 	command := cli.NewRoot(cli.Dependencies{
 		Version:    version,
+		Licenses:   jumpaccess.Licenses(),
 		ConfigPath: configPath,
 		Store:      configStore,
 		OpenFile:   systemopen.Open,

@@ -86,6 +86,22 @@ func TestVersionCommandPrintsBinaryVersion(t *testing.T) {
 	}
 }
 
+func TestLicensesCommandPrintsProjectAndThirdPartyNotices(t *testing.T) {
+	var stdout bytes.Buffer
+	root := NewRoot(Dependencies{
+		Licenses: "PROJECT LICENSE\n\nTHIRD-PARTY NOTICES\n",
+		Stdout:   &stdout,
+	})
+	root.SetArgs([]string{"licenses"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got, want := stdout.String(), "PROJECT LICENSE\n\nTHIRD-PARTY NOTICES\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
 func TestConfigPathPrintsTheEditableTOMLPath(t *testing.T) {
 	var stdout bytes.Buffer
 	path := filepath.Join(t.TempDir(), "config.toml")

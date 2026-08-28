@@ -17,6 +17,7 @@ import (
 
 type Dependencies struct {
 	Version       string
+	Licenses      string
 	ConfigPath    string
 	Store         projectconfig.Store
 	OpenFile      func(string) error
@@ -69,6 +70,16 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, err := fmt.Fprintf(cmd.OutOrStdout(), "jumpctl %s\n", deps.Version)
+			return err
+		},
+	})
+	root.AddCommand(&cobra.Command{
+		Use:     "licenses",
+		Aliases: []string{"license"},
+		Short:   "Print project and third-party software licenses",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, err := fmt.Fprint(cmd.OutOrStdout(), deps.Licenses)
 			return err
 		},
 	})

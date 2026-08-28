@@ -1,5 +1,7 @@
 # JumpAccess
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](LICENSE)
+
 JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付物是 Go 编写的命令行程序 `jumpctl`；项目同时保留共享核心能力，便于未来在需求明确后增加桌面入口，例如采用 Wails 的 GUI。
 
 项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
@@ -39,6 +41,7 @@ go build -trimpath ./cmd/jumpctl
 
 ```text
 jumpctl version
+jumpctl licenses
 jumpctl config path
 jumpctl config edit
 jumpctl config validate
@@ -91,4 +94,4 @@ ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的�
 
 ## 发布
 
-当前尚未建立发布和安装流程。形成可交付的 Windows、macOS 构建产物后，应补充受支持的平台、安装方式、版本策略和校验方法。
+当前尚未建立发布和安装流程。`jumpctl` 已内嵌项目 MIT 许可证和生产依赖的第三方许可材料，可通过 `jumpctl licenses` 查看；即使只拿到单个可执行文件，接收者也能读取完整声明。形成正式 Windows、macOS 发布归档时，仍应同时放入可直接阅读的 `LICENSE` 和 `THIRD-PARTY-NOTICES.txt`，并补充受支持的平台、安装方式、版本策略和校验方法。

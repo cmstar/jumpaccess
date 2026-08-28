@@ -21,6 +21,7 @@ jumpctl ssh web
 | 命令 | 作用 |
 | --- | --- |
 | `jumpctl version` | 输出程序版本 |
+| `jumpctl licenses` | 输出内嵌的 JumpAccess MIT 许可证和第三方软件许可材料；`license` 是同义命令 |
 | `jumpctl help [command]` | 查看帮助 |
 | `jumpctl completion <shell>` | 生成 bash、zsh、fish 或 PowerShell completion |
 
