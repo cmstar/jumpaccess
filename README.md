@@ -2,9 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](LICENSE)
 
-JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含 Go 编写的命令行程序 `jumpctl`，并开始建设基于 Wails 2、React 和 TypeScript 的桌面 GUI；两个入口复用同一套领域与连接核心。
+JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含 Go 编写的命令行程序 `jumpctl`，以及基于 Wails 2、React 和 TypeScript 的桌面 GUI；两个入口复用同一套领域与连接核心。
 
-项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已建立类型化资源 API、手工 OAuth 回调和多 SSH 会话后端，前端业务界面仍在接入。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已实现 Profile/Organization 切换、分页资产与 Alias 管理、手工 OAuth 回调、统一主题设置和多 xterm SSH 会话。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 
@@ -18,7 +18,7 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含
 
 ## 开发环境与当前状态
 
-项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、文件凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议、直接 SSH 客户端，以及基于本地 SSH server façade 的通用 ProxyCommand。
+项目已经建立 Go 工程、`jumpctl` 与 `jumpaccess` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、文件凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议、直接 SSH 客户端、多会话桌面终端，以及基于本地 SSH server façade 的通用 ProxyCommand。
 
 当前已经确定的 Go module 路径为：
 
@@ -37,6 +37,7 @@ go vet ./...
 go build -trimpath ./cmd/jumpctl
 
 cd cmd/jumpaccess
+npm test
 wails dev
 wails build -nopackage
 ```
@@ -100,4 +101,4 @@ ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的�
 
 ## 发布
 
-当前尚未建立发布和安装流程。`jumpctl` 已内嵌项目 MIT 许可证和生产依赖的第三方许可材料，可通过 `jumpctl licenses` 查看；即使只拿到单个可执行文件，接收者也能读取完整声明。形成正式 Windows、macOS 发布归档时，仍应同时放入可直接阅读的 `LICENSE` 和 `THIRD-PARTY-NOTICES.txt`，并补充受支持的平台、安装方式、版本策略和校验方法。
+当前尚未建立发布和安装流程。`jumpctl` 和桌面 GUI 都内嵌项目 MIT 许可证及生产依赖的第三方许可材料；CLI 可通过 `jumpctl licenses` 查看，GUI 可在设置底部查看。形成正式 Windows、macOS 发布归档时，仍应同时放入可直接阅读的 `LICENSE` 和 `THIRD-PARTY-NOTICES.txt`，并补充受支持的平台、安装方式、版本策略和校验方法。

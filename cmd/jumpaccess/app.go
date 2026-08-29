@@ -89,3 +89,7 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 func (a *desktopApp) startup(ctx context.Context) {
 	a.ctx = ctx
 }
+
+func (a *desktopApp) shutdown(context.Context) {
+	_ = a.sessions.CloseAll()
+}

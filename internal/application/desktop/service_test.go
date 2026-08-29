@@ -117,6 +117,9 @@ func TestListAssetsSearchesAliasesAndMergesWithoutDuplicates(t *testing.T) {
 	if len(got.Results[0].Aliases) != 1 || got.Results[0].Aliases[0].Name != "production-web" {
 		t.Fatalf("asset aliases = %#v", got.Results[0].Aliases)
 	}
+	if got.AliasCount != 2 {
+		t.Fatalf("AliasCount = %d, want organization total 2", got.AliasCount)
+	}
 }
 
 func TestCreateAliasDerivesOrganizationAndValidatesExistingAccount(t *testing.T) {

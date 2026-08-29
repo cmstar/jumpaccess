@@ -162,6 +162,26 @@ func TestManagerRunsIndependentSessionsAndBatchesOutput(t *testing.T) {
 	}
 }
 
+func TestManagerCloseAllClosesEveryActiveTerminal(t *testing.T) {
+	first := newFakeTerminalSession()
+	second := newFakeTerminalSession()
+	manager := &Manager{sessions: map[string]*managedSession{
+		"first":  {state: StateEvent{ID: "first", Status: StatusActive}, cancel: func() {}, terminal: first},
+		"second": {state: StateEvent{ID: "second", Status: StatusActive}, cancel: func() {}, terminal: second},
+	}}
+
+	if err := manager.CloseAll(); err != nil {
+		t.Fatal(err)
+	}
+	for name, closed := range map[string]<-chan struct{}{"first": first.closed, "second": second.closed} {
+		select {
+		case <-closed:
+		case <-time.After(time.Second):
+			t.Fatalf("terminal %s was not closed", name)
+		}
+	}
+}
+
 func waitForStatus(t *testing.T, events <-chan StateEvent, id, status string) StateEvent {
 	t.Helper()
 	deadline := time.After(time.Second)

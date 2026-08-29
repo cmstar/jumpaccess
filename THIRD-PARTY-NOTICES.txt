@@ -1,20 +1,33 @@
 THIRD-PARTY SOFTWARE NOTICES AND LICENSES
 
 JumpAccess binaries contain software from the projects listed below. The
-versions are the production dependencies used by the current go.mod and the
-Windows and macOS jumpctl package graphs.
+versions are the production dependencies used by the current Go and frontend
+package graphs for jumpctl and the Windows/macOS JumpAccess desktop app.
 
   github.com/BurntSushi/toml v1.6.0                  MIT
   github.com/spf13/cobra v1.10.2                     Apache-2.0
   github.com/inconshreveable/mousetrap v1.1.0        Apache-2.0 (Windows only)
   github.com/spf13/pflag v1.0.9                      BSD-3-Clause
-  golang.org/x/crypto v0.46.0                        BSD-3-Clause
-  golang.org/x/sys v0.41.0                           BSD-3-Clause
-  golang.org/x/term v0.38.0                          BSD-3-Clause
+  github.com/wailsapp/wails/v2 v2.14.0               MIT
+  github.com/wailsapp/go-webview2 v1.0.22            MIT (Windows only)
+  github.com/leaanthony/go-ansi-parser v1.6.1         MIT
+  github.com/leaanthony/slicer v1.6.0                 MIT
+  github.com/leaanthony/u v1.1.1                      MIT
+  github.com/rivo/uniseg v0.4.7                       MIT
+  github.com/pkg/errors v0.9.1                        BSD-2-Clause
+  golang.org/x/crypto v0.53.0                         BSD-3-Clause
+  golang.org/x/sys v0.46.0                            BSD-3-Clause
+  golang.org/x/term v0.44.0                           BSD-3-Clause
+  react v19.1.1, react-dom v19.1.1,
+    scheduler v0.26.0                                 MIT
+  lucide-react v1.37.0                                ISC and MIT
+  @xterm/xterm v6.0.0                                 MIT
+  @xterm/addon-fit v0.11.0                            MIT
   Go standard library and runtime                    BSD-3-Clause
 
-Source code is available from the module paths shown above and from
-https://go.dev/ for the Go standard library and runtime.
+Source code is available from the module or package names shown above, from
+https://www.npmjs.com/ for frontend packages, and from https://go.dev/ for the
+Go standard library and runtime.
 
 ===============================================================================
 github.com/BurntSushi/toml v1.6.0
@@ -285,8 +298,171 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ===============================================================================
-Go standard library and runtime; golang.org/x/crypto v0.46.0;
-golang.org/x/sys v0.41.0; golang.org/x/term v0.38.0
+github.com/wailsapp/wails/v2 v2.14.0;
+github.com/wailsapp/go-webview2 v1.0.22;
+github.com/leaanthony/go-ansi-parser v1.6.1;
+github.com/leaanthony/slicer v1.6.0; github.com/leaanthony/u v1.1.1;
+github.com/rivo/uniseg v0.4.7
+===============================================================================
+
+MIT License
+
+Copyright (c) 2018-Present Lea Anthony
+Copyright (c) 2020 John Chadwick
+Some portions Copyright (c) 2017 Serge Zaitsev
+Copyright (c) 2021-Present Lea Anthony
+Copyright (c) 2019 Lea Anthony
+Copyright (c) 2023-Present Lea Anthony
+Copyright (c) 2019 Oliver Kuederle
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+github.com/pkg/errors v0.9.1
+===============================================================================
+
+Copyright (c) 2015, Dave Cheney <dave@cheney.net>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+===============================================================================
+react v19.1.1; react-dom v19.1.1; scheduler v0.26.0
+===============================================================================
+
+MIT License
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+lucide-react v1.37.0
+===============================================================================
+
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE
+USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Some Lucide icons are derived from the Feather project and are licensed under
+the following terms:
+
+The MIT License (MIT)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+@xterm/xterm v6.0.0; @xterm/addon-fit v0.11.0
+===============================================================================
+
+Copyright (c) 2017-2019, The xterm.js authors
+Copyright (c) 2014-2016, SourceLair Private Company
+Copyright (c) 2012-2013, Christopher Jeffrey
+Copyright (c) 2019, The xterm.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+Go standard library and runtime; golang.org/x/crypto v0.53.0;
+golang.org/x/sys v0.46.0; golang.org/x/term v0.44.0
 ===============================================================================
 
 Copyright 2009 The Go Authors.

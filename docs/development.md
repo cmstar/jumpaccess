@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已建立类型化资源 API、手工 OAuth 回调、多 SSH 会话管理与事件桥接，前端业务界面仍在接入。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、多 xterm SSH 会话和事件桥接。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -83,6 +83,7 @@ docs/               # 长期项目知识
 - 使用本地 SSH client/server 验证直接模式和 ProxyCommand 的协议边界。
 - stdout、stderr、退出码以及敏感信息脱敏。
 - Token 刷新失败不会关闭活动 SSH Session。
+- React 界面通过可注入的类型化后端测试分页、Alias 搜索与账号选择、设置持久化、SSH 状态/输出事件和主机密钥确认。
 
 真实账号只用于开发者本机手工 smoke test，用来确认浏览器登录、MFA、真实 API、Connection Token 和 SSH 完整链路。账号、密码和 Token 不通过对话传递，不进入自动 CI；程序需要登录时，由开发者本人在系统浏览器中完成。
 
@@ -104,7 +105,7 @@ docs/               # 长期项目知识
 ## 许可证与发布物
 
 - JumpAccess 自身采用根目录 `LICENSE` 中的 MIT License；README 只使用链接到该文件的许可证徽章，不另设重复章节。
-- 当前 Windows 和 macOS 生产依赖使用 MIT、Apache-2.0 或 BSD-3-Clause，没有 GPL、AGPL、LGPL 等 copyleft 依赖。依赖版本、版权声明和完整条款汇总在 `THIRD-PARTY-NOTICES.txt`。
+- 当前 Windows 和 macOS 生产依赖使用 MIT、ISC、Apache-2.0、BSD-2-Clause 或 BSD-3-Clause，没有 GPL、AGPL、LGPL 等 copyleft 依赖。依赖版本、版权声明和完整条款汇总在 `THIRD-PARTY-NOTICES.txt`。
 - `LICENSE` 和 `THIRD-PARTY-NOTICES.txt` 通过 Go `embed` 编译进 `jumpctl`，`jumpctl licenses` 必须在单个可执行文件中保持可用；普通 `go build` 不需要复制额外文件即可保留可读声明。
 - 正式 ZIP、tar 或安装包仍应把两份文本作为独立文件一并分发，方便不执行程序的接收者阅读。嵌入是单文件分发的保障，不替代正式归档中的显式材料。
 - 新增或升级生产依赖时，必须重新检查目标平台的实际 package graph，更新第三方声明，并验证 `jumpctl licenses`。只用于测试、文档生成且不进入发布二进制的模块不需要混入发布声明。
@@ -116,6 +117,7 @@ go test ./...
 go vet ./...
 go build -trimpath ./cmd/jumpctl
 cd cmd/jumpaccess
+npm test
 npm run build
 wails build -nopackage
 ```

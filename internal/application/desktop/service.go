@@ -170,9 +170,13 @@ func (s Service) ListAssets(ctx context.Context, request AssetListRequest) (Asse
 	}
 	results := make([]AssetView, 0, len(assets))
 	aliasCount := 0
+	for _, alias := range profile.Aliases {
+		if sameOrganization(alias.Organization, organization) {
+			aliasCount++
+		}
+	}
 	for _, asset := range assets {
 		aliases := aliasesForAsset(profile.Aliases, organization, asset)
-		aliasCount += len(aliases)
 		results = append(results, assetView(asset, aliases))
 	}
 	count := page.Count

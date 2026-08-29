@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已建立类型化桌面应用 API、手工 OAuth 回调、多 SSH 会话管理与 Wails 事件桥接，前端业务界面仍在接入。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、分页资源与 Alias 管理、统一主题、多 xterm SSH 会话和 Wails 事件桥接。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
@@ -37,6 +37,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
 | SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
+| 桌面前端 | `cmd/jumpaccess/frontend` 使用 React 和 xterm.js 表现 Profile、Organization、分页 Asset、行内 Alias、GUI 偏好及多会话终端；生产环境只通过 Wails 绑定访问应用服务，Vite 开发服务器使用独立的内存预览适配器 |
 
 ## 关键数据流
 
@@ -61,7 +62,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
 
-直接模式在 CLI 终端支持 Account 选择；GUI 在创建连接前要求前端提供唯一 Account，允许多个 SSH 会话并行存在，通过 Wails 事件批量传递终端输出。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
+直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH 会话并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
 ### 通用 ProxyCommand
 

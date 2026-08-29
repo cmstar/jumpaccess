@@ -1,18 +1,508 @@
-import './App.css'
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Activity,
+  Boxes,
+  ChevronDown,
+  Clock3,
+  Command,
+  Copy,
+  FileCode2,
+  KeyRound,
+  Layers3,
+  LogIn,
+  LogOut,
+  MoreHorizontal,
+  Network,
+  Palette,
+  Plus,
+  RefreshCcw,
+  Search,
+  Server,
+  Settings,
+  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  Tags,
+  TerminalSquare,
+  Trash2,
+  Wifi,
+  X,
+} from 'lucide-react'
 
-function App() {
+import './App.css'
+import {
+  type Account,
+  type Alias,
+  type Asset,
+  type AssetDetail,
+  type AssetPage,
+  type Backend,
+  type BootstrapState,
+  type HostKeyPrompt,
+  type LoginAttempt,
+  type Organization,
+  type Preferences,
+  type SessionState,
+  type ThemeMode,
+  wailsBackend,
+} from './lib/backend'
+
+type View = 'assets' | 'sessions' | 'profiles' | 'settings'
+type AliasFilter = 'all' | 'with-alias' | 'without-alias'
+
+interface PendingConnection {
+  asset: Asset
+  target: string
+}
+
+interface AppProps {
+  backend?: Backend
+}
+
+const pageSize = 25
+const terminalBufferLimit = 1024 * 1024
+const TerminalPane = lazy(() => import('./components/TerminalPane').then((module) => ({ default: module.TerminalPane })))
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function accountLabel(account: Account): string {
+  return account.username || account.alias || account.name || account.id
+}
+
+function formatSyncTime(value: Date | null): string {
+  if (!value) return '尚未同步'
+  return value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function authDescription(expiresAt: string): string {
+  if (!expiresAt) return 'Token 有效'
+  const remaining = new Date(expiresAt).getTime() - Date.now()
+  if (remaining <= 0) return '认证已过期'
+  return `${Math.max(1, Math.round(remaining / 60_000))} 分钟后到期`
+}
+
+export default function App({ backend = wailsBackend }: AppProps) {
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [view, setView] = useState<View>('assets')
+  const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
+  const [profile, setProfile] = useState('')
+  const [organization, setOrganization] = useState('')
+  const [organizations, setOrganizations] = useState<Organization[]>([])
+  const [assets, setAssets] = useState<AssetPage>({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+  const [details, setDetails] = useState<Record<string, AssetDetail>>({})
+  const [selectedAssetID, setSelectedAssetID] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastSynced, setLastSynced] = useState<Date | null>(null)
+  const [aliasFilter, setAliasFilter] = useState<AliasFilter>('all')
+  const [sessions, setSessions] = useState<SessionState[]>([])
+  const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
+  const [activeSessionID, setActiveSessionID] = useState('')
+  const [error, setError] = useState('')
+  const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
+  const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickQuery, setQuickQuery] = useState('')
+  const [quickResults, setQuickResults] = useState<Asset[]>([])
+  const [profileDialog, setProfileDialog] = useState(false)
+  const [loginAttempt, setLoginAttempt] = useState<LoginAttempt | null>(null)
+  const [licenseOpen, setLicenseOpen] = useState(false)
+  const [licenseText, setLicenseText] = useState('')
+  const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
+
+  const preferences = bootstrap?.preferences
+  const currentProfile = bootstrap?.profiles.find((item) => item.name === profile)
+  const selectedAsset = assets.results.find((asset) => asset.id === selectedAssetID) ?? assets.results[0]
+  const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
+  const activeSession = sessions.find((session) => session.id === activeSessionID) ?? sessions[0]
+  const filteredAssets = useMemo(() => assets.results.filter((asset) => {
+    if (aliasFilter === 'with-alias') return asset.aliases.length > 0
+    if (aliasFilter === 'without-alias') return asset.aliases.length === 0
+    return true
+  }), [aliasFilter, assets.results])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([backend.bootstrap(), backend.listSSHSessions()])
+      .then(([state, initialSessions]) => {
+        if (cancelled) return
+        setBootstrap(state)
+        setProfile(state.currentProfile)
+        setOrganization(state.currentOrganization)
+        setSessions(initialSessions)
+        setActiveSessionID(initialSessions[0]?.id ?? '')
+      })
+      .catch((reason) => !cancelled && setError(errorMessage(reason)))
+    const offState = backend.onSessionState((event) => {
+      setSessions((current) => {
+        const exists = current.some((session) => session.id === event.id)
+        return exists ? current.map((session) => session.id === event.id ? event : session) : [...current, event]
+      })
+      if (event.status === 'failed' && event.error) setError(event.error)
+    })
+    const offOutput = backend.onSessionOutput((event) => {
+      setSessionOutput((current) => ({
+        ...current,
+        [event.id]: ((current[event.id] ?? '') + event.data).slice(-terminalBufferLimit),
+      }))
+    })
+    const offHostKey = backend.onHostKeyPrompt(setHostKeyPrompt)
+    return () => {
+      cancelled = true
+      offState()
+      offOutput()
+      offHostKey()
+    }
+  }, [backend])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setOffset(0)
+    }, 220)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    if (!profile) {
+      setOrganizations([])
+      return
+    }
+    let cancelled = false
+    backend.listOrganizations(profile)
+      .then((values) => !cancelled && setOrganizations(values))
+      .catch((reason) => !cancelled && setError(errorMessage(reason)))
+    return () => { cancelled = true }
+  }, [backend, profile])
+
+  useEffect(() => {
+    if (!profile || !organization) {
+      setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      return
+    }
+    let cancelled = false
+    setRefreshing(true)
+    backend.listAssets({ profile, organization, search: debouncedSearch, offset, limit: pageSize })
+      .then((page) => {
+        if (cancelled) return
+        setAssets(page)
+        setLastSynced(new Date())
+        setSelectedAssetID((current) => page.results.some((asset) => asset.id === current) ? current : (page.results[0]?.id ?? ''))
+      })
+      .catch((reason) => !cancelled && setError(errorMessage(reason)))
+      .finally(() => !cancelled && setRefreshing(false))
+    return () => { cancelled = true }
+  }, [backend, debouncedSearch, offset, organization, profile, refreshKey])
+
+  useEffect(() => {
+    if (!selectedAsset || details[selectedAsset.id] || !profile || !organization) return
+    let cancelled = false
+    backend.getAsset({ profile, organization, asset: selectedAsset.id })
+      .then((detail) => !cancelled && setDetails((current) => ({ ...current, [detail.id]: detail })))
+      .catch((reason) => !cancelled && setError(errorMessage(reason)))
+    return () => { cancelled = true }
+  }, [backend, details, organization, profile, selectedAsset])
+
+  useEffect(() => {
+    const theme = preferences?.theme ?? 'system'
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => {
+      const dark = theme === 'dark' || (theme === 'system' && media.matches)
+      document.documentElement.classList.toggle('dark', dark)
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    }
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [preferences?.theme])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setQuickOpen(true)
+      } else if (event.key === '/' && view === 'assets' && !(event.target instanceof HTMLInputElement)) {
+        event.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [view])
+
+  useEffect(() => {
+    if (!quickOpen || !profile || !organization) return
+    const timer = window.setTimeout(() => {
+      backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
+        .then(setQuickResults)
+        .catch((reason) => setError(errorMessage(reason)))
+    }, 160)
+    return () => window.clearTimeout(timer)
+  }, [backend, organization, profile, quickOpen, quickQuery])
+
+  async function reloadBootstrap(preferredProfile?: string) {
+    const state = await backend.bootstrap()
+    setBootstrap(state)
+    const nextProfile = preferredProfile ?? state.currentProfile
+    setProfile(nextProfile)
+    setOrganization(state.profiles.find((item) => item.name === nextProfile)?.organization ?? state.currentOrganization)
+  }
+
+  async function run(action: () => Promise<void>) {
+    try {
+      setError('')
+      await action()
+    } catch (reason) {
+      setError(errorMessage(reason))
+    }
+  }
+
+  async function ensureDetail(asset: Asset): Promise<AssetDetail> {
+    const cached = details[asset.id]
+    if (cached) return cached
+    const detail = await backend.getAsset({ profile, organization, asset: asset.id })
+    setDetails((current) => ({ ...current, [detail.id]: detail }))
+    return detail
+  }
+
+  async function connectAsset(asset: Asset) {
+    await run(async () => {
+      const detail = await ensureDetail(asset)
+      if (detail.accounts.length === 0) throw new Error('该资产没有可用于 SSH 的账号。')
+      if (detail.accounts.length === 1) {
+        await startConnection(asset.id, detail.accounts[0].id || detail.accounts[0].username)
+        return
+      }
+      setPendingConnection({ asset, target: asset.id })
+    })
+  }
+
+  async function connectAlias(asset: Asset, alias: Alias) {
+    await run(async () => {
+      if (alias.account) {
+        await startConnection(alias.name, alias.account)
+        return
+      }
+      const detail = await ensureDetail(asset)
+      if (detail.accounts.length === 0) throw new Error('该资产没有可用于 SSH 的账号。')
+      if (detail.accounts.length === 1) {
+        await startConnection(alias.name, detail.accounts[0].id || detail.accounts[0].username)
+        return
+      }
+      setPendingConnection({ asset, target: alias.name })
+    })
+  }
+
+  async function startConnection(target: string, account: string) {
+    const session = await backend.startSSHSession({ profile, organization, target, account, columns: 120, rows: 34 })
+    setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session])
+    setActiveSessionID(session.id)
+    setPendingConnection(null)
+    setQuickOpen(false)
+    setView('sessions')
+  }
+
+  async function changeAliasAccount(alias: Alias, account: string) {
+    await run(async () => {
+      await backend.setAliasAccount({ profile, name: alias.name, account })
+      setAssets((current) => ({
+        ...current,
+        results: current.results.map((asset) => ({
+          ...asset,
+          aliases: asset.aliases.map((item) => item.name === alias.name ? { ...item, account } : item),
+        })),
+      }))
+      setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, {
+        ...detail,
+        aliases: detail.aliases.map((item) => item.name === alias.name ? { ...item, account } : item),
+      }])))
+    })
+  }
+
+  async function deleteAlias(alias: Alias) {
+    if (!window.confirm(`确定删除 Alias “${alias.name}”吗？`)) return
+    await run(async () => {
+      await backend.deleteAlias(profile, alias.name)
+      setRefreshKey((value) => value + 1)
+      setDetails({})
+    })
+  }
+
+  async function closeSession(session: SessionState) {
+    if (preferences?.confirmCloseActiveSession && (session.status === 'active' || session.status === 'connecting')) {
+      if (!window.confirm(`关闭 SSH 会话 “${session.title}”吗？`)) return
+    }
+    await run(async () => {
+      await backend.closeSSHSession(session.id)
+      setSessions((current) => current.filter((item) => item.id !== session.id))
+      setSessionOutput((current) => {
+        const next = { ...current }
+        delete next[session.id]
+        return next
+      })
+      setActiveSessionID((current) => current === session.id ? '' : current)
+    })
+  }
+
+  async function savePreferences(next: Preferences) {
+    if (!bootstrap) return
+    const previous = bootstrap.preferences
+    setBootstrap({ ...bootstrap, preferences: next })
+    try {
+      await backend.savePreferences(next)
+    } catch (reason) {
+      setBootstrap({ ...bootstrap, preferences: previous })
+      setError(errorMessage(reason))
+    }
+  }
+
+  if (!bootstrap) {
+    return <main className="loading-shell"><div className="brand-mark"><Network /></div><h1>JumpAccess</h1><p>{error || '正在连接桌面服务…'}</p></main>
+  }
+
   return (
-    <main className="bootstrap-shell">
-      <div className="brand-mark" aria-hidden="true">J</div>
-      <div>
-        <p className="eyebrow">JumpAccess Desktop</p>
-        <h1>桌面端工程已就绪</h1>
-        <p className="description">
-          Profile、资产、Alias 与 SSH 工作区将在接下来的实现步骤中接入共享核心。
-        </p>
-      </div>
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div className="brand"><div className="brand-mark"><Network /></div><div><strong>JumpAccess</strong><span>Desktop</span></div></div>
+        <nav className="primary-nav" aria-label="主导航">
+          <span className="nav-label">工作区</span>
+          <NavButton active={view === 'assets'} icon={<Boxes />} label="资产" onClick={() => setView('assets')} />
+          <NavButton active={view === 'sessions'} badge={sessions.filter((item) => item.status === 'active' || item.status === 'connecting').length} icon={<TerminalSquare />} label="会话" onClick={() => setView('sessions')} />
+          <NavButton active={view === 'profiles'} icon={<Layers3 />} label="Profile" onClick={() => setView('profiles')} />
+        </nav>
+        <div className="sidebar-bottom"><NavButton active={view === 'settings'} icon={<Settings />} label="设置" onClick={() => setView('settings')} /><div className="sidebar-version">Desktop · {bootstrap.version}</div></div>
+      </aside>
+
+      <section className="workspace">
+        <header className="topbar">
+          <div className="context-switchers">
+            <label className="context-select"><span className="context-icon"><Server /></span><span><small>Profile</small><select aria-label="当前 Profile" value={profile} onChange={(event) => void run(async () => { await backend.useProfile(event.target.value); await reloadBootstrap(event.target.value); setOffset(0); setDetails({}) })}>{bootstrap.profiles.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></span><ChevronDown /></label>
+            <div className="context-divider" />
+            <label className="context-select organization-select"><span><small>Organization</small><select aria-label="当前 Organization" value={organization} onChange={(event) => void run(async () => { const value = event.target.value; await backend.setOrganization(profile, value); setOrganization(value); setOffset(0); setDetails({}); await reloadBootstrap(profile) })}>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></span><ChevronDown /></label>
+          </div>
+          <div className="topbar-actions"><button className="quick-connect" type="button" onClick={() => setQuickOpen(true)}><Command /><span>快速连接</span><kbd>Ctrl K</kbd></button><button className="auth-status" type="button" onClick={() => setView('profiles')}><span className={currentProfile?.auth.loggedIn ? 'status-dot' : 'status-dot offline'} /><span><strong>{currentProfile?.auth.loggedIn ? '已认证' : '需要登录'}</strong><small>{currentProfile?.auth.loggedIn ? authDescription(currentProfile.auth.expiresAt) : '打开 Profile 管理'}</small></span></button></div>
+        </header>
+
+        {error ? <div className="error-banner" role="alert"><ShieldAlert /><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div> : null}
+
+        {view === 'assets' ? (
+          <div className="content">
+            <section className="asset-pane">
+              <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={refreshing || !organization} onClick={() => setRefreshKey((value) => value + 1)} type="button"><RefreshCcw className={refreshing ? 'spin' : ''} />{refreshing ? '同步中…' : '立即同步'}</button></div></PageHeading>
+              {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { setView('profiles'); setProfileDialog(true) }} /> : <>
+                <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><details className="filter-menu"><summary className="button secondary"><SlidersHorizontal />筛选{aliasFilter !== 'all' ? <em>1</em> : null}<ChevronDown /></summary><div className="popover" role="group" aria-label="当前页 Alias 筛选"><strong>当前页 Alias 状态</strong>{([['all', '全部'], ['with-alias', '已有 Alias'], ['without-alias', '未创建 Alias']] as const).map(([value, label]) => <label key={value}><input type="radio" name="alias-filter" checked={aliasFilter === value} onChange={() => setAliasFilter(value)} />{label}</label>)}</div></details></div>
+                <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={(alias) => void deleteAlias(alias)} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
+              </>}
+            </section>
+            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onCopy={(value) => void navigator.clipboard?.writeText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
+          </div>
+        ) : null}
+
+        {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={(session) => void closeSession(session)} onNew={() => setView('assets')} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
+
+        {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><p>{item.url}</p><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Alias</dt><dd>{item.aliasCount}</dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => void run(async () => { await backend.logout(item.name); await reloadBootstrap(item.name) })}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}</div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
+
+        {view === 'settings' ? <SettingsView onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
+
+        {view !== 'sessions' ? <SessionDock sessions={sessions} onOpen={(id) => { setActiveSessionID(id); setView('sessions') }} /> : null}
+      </section>
+
+      {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void run(async () => { await backend.createAlias({ profile, asset: aliasAsset.id, name, account }); setAliasAsset(null); setRefreshKey((value) => value + 1); setDetails({}) })} /> : null}
+      {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.target, account.id || account.username))} /> : null}
+      {quickOpen ? <QuickConnectDialog assets={quickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
+      {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={(name, url) => void run(async () => { await backend.addProfile(name, url); await backend.useProfile(name); await reloadBootstrap(name); setProfileDialog(false); setLoginAttempt(await backend.startLogin(name)) })} /> : null}
+      {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(loginAttempt.profile) })} /> : null}
+      {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
+      {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
     </main>
   )
 }
 
-export default App
+function NavButton({ active, badge, icon, label, onClick }: { active: boolean; badge?: number; icon: ReactNode; label: string; onClick: () => void }) {
+  return <button className={active ? 'nav-item active' : 'nav-item'} onClick={onClick} type="button">{icon}<span>{label}</span>{badge ? <em>{badge}</em> : null}</button>
+}
+
+function PageHeading({ children, description, eyebrow, title }: { children?: ReactNode; description?: string; eyebrow: string; title: string }) {
+  return <div className="page-heading"><div><div className="eyebrow"><Activity />{eyebrow}</div><h1>{title}</h1>{description ? <p>{description}</p> : null}</div>{children}</div>
+}
+
+function EmptyState({ action, onAction, title }: { action: string; onAction: () => void; title: string }) {
+  return <div className="empty-state"><Server /><h2>{title}</h2><button className="button primary" onClick={onAction}>{action}</button></div>
+}
+
+function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAlias, onDeleteAlias, onEnsureDetail, onSelect, selected }: {
+  asset: Asset
+  detail?: AssetDetail
+  onBind: (alias: Alias, account: string) => void
+  onConnect: () => void
+  onConnectAlias: (alias: Alias) => void
+  onCreateAlias: () => void
+  onDeleteAlias: (alias: Alias) => void
+  onEnsureDetail: () => void
+  onSelect: () => void
+  selected: boolean
+}) {
+  return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={onSelect}><td><div className="asset-identity"><div className="server-glyph"><Server /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td onClick={(event) => event.stopPropagation()}><div className="inline-alias-stack">{asset.aliases.map((alias) => {
+    const knownAccounts = detail?.accounts ?? []
+    const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
+    return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select><button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
+  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td onClick={(event) => event.stopPropagation()}><details className="row-actions"><summary className="icon-button" aria-label={`${asset.name} 更多操作`}><MoreHorizontal /></summary><div className="popover right"><button aria-label={`从操作菜单连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button onClick={onCreateAlias}><Plus />创建 Alias</button> : null}<button onClick={() => void navigator.clipboard?.writeText(asset.address)}><Copy />复制地址</button><button onClick={() => void navigator.clipboard?.writeText(asset.id)}><Copy />复制 Asset ID</button></div></details></td></tr>
+}
+
+function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
+  return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono">{asset.id}<button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions"><button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div><div className="trust-note"><ShieldCheck /><p><strong>严格校验 Gateway 主机密钥</strong><span>未知密钥将在连接时显示 SHA-256 指纹。</span></p></div></aside>
+}
+
+function SessionsView({ active, backend, onActive, onClose, onNew, output, preferences, sessions }: { active?: SessionState; backend: Backend; onActive: (id: string) => void; onClose: (session: SessionState) => void; onNew: () => void; output: string; preferences: Preferences; sessions: SessionState[] }) {
+  return <section className="terminal-workspace"><div className="terminal-sidebar"><div className="terminal-sidebar-heading"><span>会话</span><span className="badge">{sessions.length}</span></div>{sessions.map((session) => <button className={session.id === active?.id ? 'terminal-session active' : 'terminal-session'} key={session.id} onClick={() => onActive(session.id)}><span className={`session-status ${session.status}`}><Wifi /></span><span><strong>{session.title}</strong><small>{session.account || session.status}</small></span></button>)}<button className="button secondary new-session-button" onClick={onNew}><Plus />新建连接</button></div>{active ? <div className="terminal-panel"><div className="terminal-toolbar"><div><span className={`status-dot ${active.status === 'active' ? '' : 'offline'}`} /><strong>{active.title}</strong><small>{active.account} · {active.status}</small></div><button className="icon-button" aria-label={`关闭 ${active.title} 会话`} onClick={() => onClose(active)}><X /></button></div><div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} output={output} preferences={preferences} session={active} /></Suspense></div><div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{active.status}</span></div></div> : <div className="terminal-empty"><TerminalSquare /><h2>没有 SSH 会话</h2><button className="button primary" onClick={onNew}>选择资产</button></div>}</section>
+}
+
+function SettingsView({ onLicense, onOpenConfig, onSave, preferences, version }: { onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+  const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
+  return <section className="full-pane settings-page"><PageHeading eyebrow="桌面偏好" title="设置"><button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button></PageHeading><div className="settings-grid"><section className="settings-card"><div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div><div className="segmented-control" aria-label="界面主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}</div></section><section className="settings-card"><div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div><label>字体<select value={preferences.terminalFontFamily} onChange={(event) => update({ terminalFontFamily: event.target.value })}><option>JetBrains Mono</option><option>Cascadia Mono</option><option>Menlo</option><option>monospace</option></select></label><label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label></section><section className="settings-card wide"><div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div><div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div></section><section className="settings-card wide about-settings-card"><div className="settings-card-title about-settings-inline"><Network /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div></section></div></section>
+}
+
+function SessionDock({ onOpen, sessions }: { onOpen: (id: string) => void; sessions: SessionState[] }) {
+  const active = sessions.filter((session) => session.status === 'active' || session.status === 'connecting')
+  return <footer className="session-dock"><div className="dock-label"><TerminalSquare /><span>活动会话</span><span className="badge">{active.length}</span></div>{active.map((session) => <button key={session.id} onClick={() => onOpen(session.id)}><span className="status-dot" /><strong>{session.title}</strong><small>{session.account}</small></button>)}</footer>
+}
+
+function Modal({ children, description, onClose, title }: { children: ReactNode; description?: string; onClose: () => void; title: string }) {
+  const titleID = `dialog-${title.replace(/\s/g, '-')}`
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby={titleID}><button className="modal-close icon-button" aria-label="关闭" onClick={onClose}><X /></button><header><h2 id={titleID}>{title}</h2>{description ? <p>{description}</p> : null}</header>{children}</section></div>
+}
+
+function AliasDialog({ asset, detail, onCancel, onEnsure, onSave }: { asset: Asset; detail?: AssetDetail; onCancel: () => void; onEnsure: () => Promise<AssetDetail>; onSave: (name: string, account: string) => void }) {
+  const [name, setName] = useState('')
+  const [account, setAccount] = useState('')
+  useEffect(() => { if (!detail) void onEnsure() }, [detail, onEnsure])
+  return <Modal title="创建 Alias" description="Alias 保存在当前 Profile，CLI 与 GUI 可共同使用。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSave(name.trim(), account) }}><div className="dialog-fields"><label>Alias 名称<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 production-web" /></label><label>Asset<input disabled value={`${asset.name} · ${asset.id}`} /></label><label>默认账号<select value={account} onChange={(event) => setAccount(event.target.value)}><option value="">连接时询问</option>{detail?.accounts.map((item) => <option key={item.id || item.username} value={item.id || item.username}>{accountLabel(item)}</option>)}</select></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim()} type="submit">保存 Alias</button></div></form></Modal>
+}
+
+function AccountDialog({ accounts, asset, onCancel, onChoose }: { accounts: Account[]; asset: Asset; onCancel: () => void; onChoose: (account: Account) => void }) {
+  return <Modal title="选择连接账号" description={`请选择本次连接 ${asset.name} 使用的 Account。`} onClose={onCancel}><div className="prompt-account-list">{accounts.map((account) => <button key={account.id || account.username} onClick={() => onChoose(account)}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name || 'JumpServer 授权账号'}</small></span></button>)}</div><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button></div></Modal>
+}
+
+function QuickConnectDialog({ assets, onCancel, onConnectAlias, onConnectAsset, query, setQuery }: { assets: Asset[]; onCancel: () => void; onConnectAlias: (asset: Asset, alias: Alias) => void; onConnectAsset: (asset: Asset) => void; query: string; setQuery: (value: string) => void }) {
+  return <Modal title="快速连接" description="搜索当前 Profile 中的 Asset 或 Alias。" onClose={onCancel}><label className="quick-search"><Search /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、地址、Asset ID 或 Alias" /></label><div className="quick-results">{assets.flatMap((asset) => asset.aliases.map((alias) => <button key={`alias-${alias.name}`} onClick={() => onConnectAlias(asset, alias)}><span className="quick-icon"><Tags /></span><span><strong>{alias.name}</strong><small>{asset.name} · {asset.address}</small></span><em>{alias.account || '连接时询问'}</em></button>))}{assets.map((asset) => <button key={asset.id} onClick={() => onConnectAsset(asset)}><span className="quick-icon"><Server /></span><span><strong>{asset.name}</strong><small>{asset.address} · {asset.type}</small></span><em>Asset</em></button>)}{assets.length === 0 ? <div className="quick-empty"><Search />没有匹配结果</div> : null}</div></Modal>
+}
+
+function ProfileDialog({ onCancel, onSave }: { onCancel: () => void; onSave: (name: string, url: string) => void }) {
+  const [name, setName] = useState('')
+  const [url, setURL] = useState('')
+  return <Modal title="添加 Profile" description="为一个 JumpServer 站点创建本地连接上下文。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (name.trim() && url.trim()) onSave(name.trim(), url.trim()) }}><div className="dialog-fields"><label>名称<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 office" /></label><label>JumpServer URL<input type="url" value={url} onChange={(event) => setURL(event.target.value)} placeholder="https://jump.example.com" /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim() || !url.trim()} type="submit">添加并登录</button></div></form></Modal>
+}
+
+function LoginDialog({ attempt, onCancel, onComplete }: { attempt: LoginAttempt; onCancel: () => void; onComplete: (callback: string) => void }) {
+  const [callback, setCallback] = useState('')
+  return <Modal title="完成浏览器登录" description={`浏览器已打开。完成 ${attempt.profile} 的授权后，把 jms:// 回调链接粘贴到这里。`} onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (callback.trim()) onComplete(callback.trim()) }}><div className="dialog-fields"><label>回调链接<textarea autoFocus value={callback} onChange={(event) => setCallback(event.target.value)} placeholder="jms://auth/callback?code=…&state=…" /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!callback.trim()} type="submit">完成登录</button></div></form></Modal>
+}
+
+function HostKeyDialog({ onDecision, prompt }: { onDecision: (accepted: boolean) => void; prompt: HostKeyPrompt }) {
+  return <Modal title="确认新的 SSH Gateway" description="这是首次连接此 Gateway。请通过可信渠道核对指纹。" onClose={() => onDecision(false)}><div className="warning-icon"><ShieldAlert /></div><div className="fingerprint-card"><span>{prompt.host}</span><code>{prompt.fingerprint}</code></div><div className="dialog-actions"><button className="button secondary" onClick={() => onDecision(false)}>拒绝</button><button className="button primary" onClick={() => onDecision(true)}><ShieldCheck />信任并连接</button></div></Modal>
+}

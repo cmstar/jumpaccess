@@ -264,6 +264,21 @@ func (m *Manager) Close(id string) error {
 	return nil
 }
 
+func (m *Manager) CloseAll() error {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+
+	var result error
+	for _, id := range ids {
+		result = errors.Join(result, m.Close(id))
+	}
+	return result
+}
+
 func (m *Manager) List() []StateEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
