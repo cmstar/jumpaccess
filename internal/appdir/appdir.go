@@ -11,7 +11,7 @@ import (
 
 const directoryName = "JumpAccess"
 
-// Root returns the single directory used for non-sensitive JumpAccess data.
+// Root returns the single directory used for per-user JumpAccess data.
 func Root() (string, error) {
 	if runtime.GOOS == "windows" {
 		return RootFor(runtime.GOOS, os.Getenv("LOCALAPPDATA"), "")

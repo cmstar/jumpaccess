@@ -48,7 +48,12 @@ func run() int {
 	}
 	httpClient := &http.Client{Timeout: configuration.Behavior.ConnectTimeout.Duration}
 	nativeCredentials := credential.NewNativeBackend()
-	tokenRepository := credential.Repository{Backend: nativeCredentials}
+	fileCredentials := credential.NewFileBackend(filepath.Join(rootDir, "credentials"))
+	var legacyCredentials credential.Backend
+	if credential.NativeBackendAvailable() {
+		legacyCredentials = nativeCredentials
+	}
+	tokenRepository := credential.Repository{Backend: fileCredentials, LegacyBackend: legacyCredentials}
 	refresh := func(ctx context.Context, old credential.Token) (oauth.TokenResponse, error) {
 		metadata, err := oauth.Discover(ctx, httpClient, old.Site)
 		if err != nil {

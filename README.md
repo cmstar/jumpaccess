@@ -12,13 +12,13 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 - 以 SSH 客户端方式直接连接远程 Asset。
 - 作为通用 SSH `ProxyCommand` 被兼容的终端或 SSH 客户端调用，不与某个具体终端产品耦合。
 - 通过 TOML 管理多个 JumpServer Profile 以及 Asset 别名等非敏感配置。
-- 支持 Windows 和 macOS，并将认证秘密交给操作系统安全凭据存储。
+- 支持 Windows 和 macOS，并以仅当前用户可访问的 Profile 独立文件保存 OAuth Token。
 
 首个兼容性参考基线是 JumpServer Client `v4.1.6` 所使用的协议和接口。它是分析参考，不表示本项目依赖该桌面 Client 才能运行。
 
 ## 开发环境与当前状态
 
-项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、原生凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议、直接 SSH 客户端，以及基于本地 SSH server façade 的通用 ProxyCommand。
+项目已经建立 Go 工程、`jumpctl` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、文件凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议、直接 SSH 客户端，以及基于本地 SSH server façade 的通用 ProxyCommand。
 
 当前已经确定的 Go module 路径为：
 
@@ -78,7 +78,9 @@ Host production-web
 
 不要把账号密码、Access Token、Refresh Token、Cookie、私钥或其他真实凭据写入仓库。真实 JumpServer 账号只用于开发者本机的手工 smoke test；常规自动化测试应使用模拟服务和脱敏 fixture。
 
-Windows 使用 Credential Manager 保存 OAuth 凭据。macOS 使用 Keychain；包含 Keychain 后端的 macOS 正式构建需要启用 CGO 并链接系统 Security framework。
+OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
+
+旧版本写入 Windows Credential Manager 或 macOS Keychain 的 OAuth 凭据仍可兼容读取；该 Profile 下次成功登录或刷新并写入文件后，旧副本会被删除。原生凭据存储继续用于 ProxyCommand façade 的稳定 Ed25519 host key；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
 
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 

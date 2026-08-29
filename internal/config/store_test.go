@@ -45,3 +45,21 @@ func TestStoreLoadMissingReturnsDefaultConfig(t *testing.T) {
 		t.Fatalf("Load missing config = %#v, want defaults", got)
 	}
 }
+
+func TestStoreRoundTripsFilesystemIndependentProfileName(t *testing.T) {
+	store := Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	want := Default()
+	want.CurrentProfile = "team/研发:CON"
+	want.Profiles[want.CurrentProfile] = Profile{URL: "https://jump.example.test"}
+
+	if err := store.Save(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Profiles[want.CurrentProfile]; !ok || got.CurrentProfile != want.CurrentProfile {
+		t.Fatalf("round-trip config = %#v, want profile %q", got, want.CurrentProfile)
+	}
+}

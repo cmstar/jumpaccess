@@ -138,10 +138,10 @@ func TestDecodeRejectsNonPositiveBehaviorDuration(t *testing.T) {
 	}
 }
 
-func TestDecodeRejectsProfileNameThatCannotBeUsedAsCredentialKey(t *testing.T) {
+func TestDecodeAcceptsProfileNameIndependentlyOfFilesystemRules(t *testing.T) {
 	data := []byte(`
 version = 1
-current_profile = ""
+current_profile = "team/研发:CON"
 
 [behavior]
 refresh_check_interval = "30s"
@@ -149,10 +149,26 @@ refresh_before_expiry = "1m"
 connect_timeout = "30s"
 oauth_timeout = "5m"
 
-[profiles."bad/name"]
+[profiles."team/研发:CON"]
 url = "https://jump.example.test"
 `)
-	if _, err := Decode(data); err == nil {
-		t.Fatal("Decode unexpectedly accepted unsafe profile name")
+	got, err := Decode(data)
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if _, ok := got.Profiles["team/研发:CON"]; !ok {
+		t.Fatalf("Profiles = %#v, want original profile name", got.Profiles)
+	}
+}
+
+func TestDecodeRejectsAmbiguousProfileName(t *testing.T) {
+	for _, name := range []string{" ", " work", "work ", ".", "..", "line\nbreak"} {
+		t.Run(name, func(t *testing.T) {
+			value := Default()
+			value.Profiles[name] = Profile{URL: "https://jump.example.test"}
+			if err := value.Validate(); err == nil {
+				t.Fatalf("Validate unexpectedly accepted profile name %q", name)
+			}
+		})
 	}
 }

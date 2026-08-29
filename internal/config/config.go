@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 )
@@ -96,7 +98,7 @@ func (c *Config) Validate() error {
 	}
 
 	for name, profile := range c.Profiles {
-		if strings.TrimSpace(name) == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		if !validProfileName(name) {
 			return fmt.Errorf("profile name %q is invalid", name)
 		}
 		parsed, err := url.Parse(profile.URL)
@@ -126,4 +128,16 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func validProfileName(name string) bool {
+	if !utf8.ValidString(name) || strings.TrimSpace(name) != name || name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, character := range name {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }

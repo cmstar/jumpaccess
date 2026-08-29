@@ -44,6 +44,10 @@ func NewNativeBackend() Backend {
 	return nativeBackend{}
 }
 
+func NativeBackendAvailable() bool {
+	return true
+}
+
 func (nativeBackend) Get(key string) ([]byte, error) {
 	target, err := windows.UTF16PtrFromString(nativeTarget(key))
 	if err != nil {

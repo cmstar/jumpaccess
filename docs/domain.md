@@ -28,7 +28,7 @@ Alias 的最终 TOML 字段和资源标识方式应随目标解析实现一起�
 
 1. 用户选择 Profile 并执行认证命令。
 2. JumpAccess 打开浏览器，完成 OAuth Authorization Code + PKCE 授权。
-3. Token 写入操作系统安全凭据存储，TOML 中不保存秘密。
+3. Token 写入当前用户私有的 Profile 独立凭据文件，TOML 中不保存秘密。
 4. 程序启动或发起 API 请求时，根据 Token 有效期决定是否刷新。
 5. 长时间运行时可以定期检查并刷新 Token，但刷新结果不得改变现有 SSH Session 的连接状态。
 
@@ -52,6 +52,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式
 ## 业务规则
 
 - Alias 位于 TOML 配置中，允许用户批量直接编辑；项目需要提供打开配置文件的快捷命令。
+- Profile 名是用户可见的精确标识，不为适配文件系统进行替换或规范化；拒绝空名称、首尾空白、控制字符以及 `.`、`..`，其余名称通过稳定摘要映射到凭据文件。
 - Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。
 - Proxy 模式保持非交互：不打开浏览器、不在 stdout 输出提示、不在目标歧义时要求用户选择。

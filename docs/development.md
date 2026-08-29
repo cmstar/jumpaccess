@@ -25,7 +25,7 @@ internal/application/auth/     # 登录状态、刷新与生命周期编排
 internal/application/resources/# Organization、Asset 与 Account 查询
 internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
-internal/credential/# Windows Credential Manager 与 macOS Keychain 适配
+internal/credential/# 私有文件凭据与原生凭据兼容适配
 internal/filelock/  # 多进程 Token 刷新锁
 internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
 internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
@@ -47,11 +47,13 @@ docs/               # 长期项目知识
 - 非敏感配置使用 TOML。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
-- Token 使用 Windows Credential Manager 或 macOS Keychain，不能写入 TOML、测试 fixture、日志或命令输出。macOS Keychain 的正式后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建只用于编译检查，不具备凭据读写能力。
+- OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
+- Profile 名不按文件名规则清洗或规范化；配置拒绝空名称、首尾空白、控制字符以及 `.`、`..`，凭据后端使用 `SHA-256("oauth/" + profile)` 生成固定长度文件名。这样允许 Unicode 和文件系统保留字符，并避免字符替换规则造成确定性碰撞。
+- Windows Credential Manager 与 macOS Keychain 只用于 ProxyCommand host key 和旧 OAuth 凭据兼容读取。旧 Token 在下一次成功登录或刷新写入文件后删除；`auth logout` 同时删除文件与旧原生条目。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
+配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 
 ## CLI 与进程 I/O
 
@@ -86,7 +88,7 @@ docs/               # 长期项目知识
 
 ## 跨平台约定
 
-- 将平台凭据存储和路径解析隔离在平台适配层，并为可离线验证的部分提供接口或替身。
+- 将平台文件权限、原生凭据存储和路径解析隔离在平台适配层，并为可离线验证的部分提供接口或替身。
 - 不安装或依赖 Windows Service。
 - 共享核心不能假定 Windows 路径语义；平台路径由对应适配实现计算。
 - 形成真实构建入口后，至少验证 Windows 与 macOS 目标构建；具体架构和发布矩阵随发布流程确定。

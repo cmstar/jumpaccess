@@ -14,7 +14,7 @@ jumpctl alias set web --asset <asset-id> --account <account-id> --organization <
 jumpctl ssh web
 ```
 
-浏览器登录由 `auth login` 单独完成。真实账号、MFA 和密码不应作为命令参数传递；授权在系统浏览器中进行，OAuth Token 保存到 Windows Credential Manager 或 macOS Keychain。当前开发版本默认要求粘贴手工回调；正式发布版计划默认注册并接收 `jms` 私有协议，同时永久保留 `--manual` 作为显式回退方式。
+浏览器登录由 `auth login` 单独完成。真实账号、MFA 和密码不应作为命令参数传递；授权在系统浏览器中进行，OAuth Token 按 Profile 保存到应用根目录内受严格权限保护的 `credentials` 子目录。当前开发版本默认要求粘贴手工回调；正式发布版计划默认注册并接收 `jms` 私有协议，同时永久保留 `--manual` 作为显式回退方式。
 
 ## 通用命令
 
@@ -38,10 +38,12 @@ jumpctl ssh web
 | `jumpctl alias set <name> --asset <asset> [--account <account>] [--organization <org>] [--profile <name>]` | 创建或替换 Profile 范围内的 Alias |
 | `jumpctl alias list [--profile <name>]` | 列出 Alias |
 
-Alias 适合批量直接编辑。非敏感配置的根目录为：
+Alias 适合批量直接编辑。每用户应用根目录为：
 
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
+
+Profile 名保持用户输入的精确值，不按文件名规则改写。名称不能是空值、不能带首尾空白或控制字符，也不能是 `.`、`..`；Unicode、路径分隔符和平台保留名由凭据文件名摘要隔离，不会直接进入路径。
 
 示例 TOML：
 
@@ -70,10 +72,12 @@ account = "account-id"
 | --- | --- |
 | `jumpctl auth login [--profile <name>] [--manual]` | 打开浏览器并完成 Authorization Code + PKCE 登录；`--manual` 强制从终端读取粘贴的回调 URL，当前开发版本未实现私有协议接收时也默认使用该方式 |
 | `jumpctl auth status [--profile <name>]` | 只显示登录状态、过期时间和是否有 Refresh Token，不显示秘密 |
-| `jumpctl auth refresh [--profile <name>]` | 立即刷新；Refresh Token 轮换后原子写回原生凭据存储 |
+| `jumpctl auth refresh [--profile <name>]` | 立即刷新；Refresh Token 轮换后原子写回该 Profile 的凭据文件 |
 | `jumpctl auth logout [--profile <name>]` | 撤销并删除 Profile 的 OAuth 凭据 |
 
 程序发起 API 请求前会按需刷新。直接 SSH 和 ProxyCommand 运行期间还会定期检查；刷新成功只影响后续 API 请求，刷新失败会写入 stderr，但不会关闭已经建立的 SSH Session。
+
+凭据文件是包含 Access Token 和 Refresh Token 的明文 JSON，必须像 SSH 私钥一样保护。Windows 仅允许当前用户与 `SYSTEM` 访问，macOS 要求当前用户所有的 `0700` 目录与 `0600` 文件；权限、所有者或路径类型不符合要求时，程序拒绝读取。旧版本的原生 OAuth 凭据可兼容读取，并在该 Profile 下次成功登录或刷新后迁移到文件。
 
 手工回调时，JumpServer 授权完成后会显示外部跳转确认页。不要点击“确认”，复制以下任一种内容并直接粘贴到正在等待的终端：
 
