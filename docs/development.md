@@ -23,10 +23,12 @@ cmd/jumpctl/        # CLI 入口适配器
 cmd/jumpaccess/     # Wails 桌面入口、前端与平台构建资源
 internal/appdir/    # 单一应用数据根目录
 internal/application/settings/ # Profile 与 Alias 修改用例
+internal/bootstrap/ # CLI 与 GUI 共用的依赖装配
 internal/application/auth/     # 登录状态、刷新与生命周期编排
 internal/application/resources/# Organization、Asset 与 Account 查询
 internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
+internal/guiconfig/ # GUI 独有偏好与 gui.toml 存储
 internal/credential/# 私有文件凭据与原生凭据兼容适配
 internal/filelock/  # 多进程 Token 刷新锁
 internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
@@ -55,7 +57,9 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号和关闭活动会话确认；CLI 不读取该文件。共享配置的应用层修改通过 `locks/config.lock` 串行化，防止 CLI 与 GUI 并发 read-modify-write 丢失更新。
+
+默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 
 ## CLI 与进程 I/O
 

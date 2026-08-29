@@ -3,19 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 
 	jumpaccess "github.com/cmstar/jumpaccess"
 	"github.com/cmstar/jumpaccess/internal/appdir"
-	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
-	resourcesapp "github.com/cmstar/jumpaccess/internal/application/resources"
+	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/cli"
-	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
-	"github.com/cmstar/jumpaccess/internal/filelock"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
 	"github.com/cmstar/jumpaccess/internal/oauth"
 	"github.com/cmstar/jumpaccess/internal/sshclient"
@@ -39,80 +35,33 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	configPath := filepath.Join(rootDir, "config.toml")
-	configStore := projectconfig.Store{Path: configPath}
-	configuration, err := configStore.Load()
+	core, err := bootstrap.New(bootstrap.Options{RootDir: rootDir})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	httpClient := &http.Client{Timeout: configuration.Behavior.ConnectTimeout.Duration}
+	configuration := core.Configuration
 	nativeCredentials := credential.NewNativeBackend()
-	tokenRepository := credential.Repository{
-		Backend: credential.NewFileBackend(filepath.Join(rootDir, "credentials")),
-	}
-	refresh := func(ctx context.Context, old credential.Token) (oauth.TokenResponse, error) {
-		metadata, err := oauth.Discover(ctx, httpClient, old.Site)
-		if err != nil {
-			return oauth.TokenResponse{}, err
-		}
-		return (oauth.Client{HTTPClient: httpClient, Metadata: metadata}).Refresh(ctx, old.RefreshToken)
-	}
-	manager := authapp.Manager{
-		Tokens:        tokenRepository,
-		Locker:        filelock.Locker{Dir: filepath.Join(rootDir, "locks")},
-		Refresh:       refresh,
-		RefreshBefore: configuration.Behavior.RefreshBeforeExpiry.Duration,
-	}
-	authService := authapp.Service{
-		Config:  configStore,
-		Tokens:  tokenRepository,
-		Manager: manager,
-		ManualLoginFlow: (oauth.ManualFlow{
-			HTTPClient:  httpClient,
-			RedirectURI: oauth.NativeRedirectURI,
-			OpenBrowser: systemopen.Open,
-			Input:       os.Stdin,
-			Output:      os.Stderr,
-		}).Login,
-		Revoke: func(ctx context.Context, token credential.Token) error {
-			metadata, err := oauth.Discover(ctx, httpClient, token.Site)
-			if err != nil {
-				return err
-			}
-			value := token.RefreshToken
-			if value == "" {
-				value = token.AccessToken
-			}
-			return (oauth.Client{HTTPClient: httpClient, Metadata: metadata}).Revoke(ctx, value)
-		},
-		Timeout: configuration.Behavior.OAuthTimeout.Duration,
-	}
-	connectionService := connectapp.Service{
-		Config: configStore,
-		Tokens: manager,
-		NewAPI: func(site, accessToken, organization string) (connectapp.API, error) {
-			return jumpserver.NewClient(site, accessToken, organization, httpClient)
-		},
-	}
-	resourceService := resourcesapp.Service{
-		Config: configStore,
-		Tokens: manager,
-		NewAPI: func(site, accessToken, organization string) (resourcesapp.API, error) {
-			return jumpserver.NewClient(site, accessToken, organization, httpClient)
-		},
-	}
+	manager := core.AuthManager
+	authService := core.Auth
+	authService.ManualLoginFlow = (oauth.ManualFlow{
+		HTTPClient:  core.HTTPClient,
+		RedirectURI: oauth.NativeRedirectURI,
+		OpenBrowser: systemopen.Open,
+		Input:       os.Stdin,
+		Output:      os.Stderr,
+	}).Login
 	command := cli.NewRoot(cli.Dependencies{
 		Version:    version,
 		Licenses:   jumpaccess.Licenses(),
-		ConfigPath: configPath,
-		Store:      configStore,
+		ConfigPath: core.ConfigPath,
+		Store:      core.Store,
 		OpenFile:   systemopen.Open,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 		Auth:       authService,
-		Connect:    connectionService,
-		Resources:  resourceService,
+		Connect:    core.Connect,
+		Resources:  core.Resources,
 		SelectAccount: func(accounts []jumpserver.Account) (jumpserver.Account, error) {
 			return terminalprompt.SelectAccount(os.Stdin, os.Stderr, accounts)
 		},

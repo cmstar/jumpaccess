@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cmstar/jumpaccess/internal/appdir"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -14,8 +15,17 @@ import (
 var frontendAssets embed.FS
 
 func main() {
-	app := newDesktopApp()
-	err := wails.Run(&options.App{
+	rootDir, err := appdir.Root()
+	if err != nil {
+		fail(err)
+		return
+	}
+	app, err := newDesktopApp(rootDir)
+	if err != nil {
+		fail(err)
+		return
+	}
+	err = wails.Run(&options.App{
 		Title:     "JumpAccess",
 		Width:     1280,
 		Height:    800,
@@ -31,7 +41,11 @@ func main() {
 		},
 	})
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "启动 JumpAccess 失败: %v\n", err)
-		os.Exit(1)
+		fail(err)
 	}
+}
+
+func fail(err error) {
+	_, _ = fmt.Fprintf(os.Stderr, "启动 JumpAccess 失败: %v\n", err)
+	os.Exit(1)
 }

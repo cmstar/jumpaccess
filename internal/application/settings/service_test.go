@@ -85,3 +85,95 @@ func TestSetAliasUsesCurrentProfile(t *testing.T) {
 		t.Fatalf("alias = %#v, want persisted mapping", alias)
 	}
 }
+
+func TestSetProfileOrganizationUsesCurrentProfile(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	service := Service{Store: store}
+	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SetProfileOrganization("", "org-1"); err != nil {
+		t.Fatalf("SetProfileOrganization returned error: %v", err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Profiles["work"].Organization != "org-1" {
+		t.Fatalf("Organization = %q, want org-1", got.Profiles["work"].Organization)
+	}
+}
+
+func TestDeleteAliasUsesCurrentProfile(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	service := Service{Store: store}
+	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetAlias("", "production", projectconfig.Alias{Asset: "asset-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.DeleteAlias("", "production"); err != nil {
+		t.Fatalf("DeleteAlias returned error: %v", err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := got.Profiles["work"].Aliases["production"]; exists {
+		t.Fatal("Alias production still exists after DeleteAlias")
+	}
+}
+
+func TestDeleteAliasRejectsUnknownAlias(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	service := Service{Store: store}
+	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.DeleteAlias("", "missing"); err == nil {
+		t.Fatal("DeleteAlias error = nil, want missing alias error")
+	}
+}
+
+func TestSetAliasAccountPreservesAssetAndOrganization(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	service := Service{Store: store}
+	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetAlias("", "production", projectconfig.Alias{
+		Asset:        "asset-1",
+		Organization: "org-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SetAliasAccount("", "production", "ops"); err != nil {
+		t.Fatalf("SetAliasAccount returned error: %v", err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := got.Profiles["work"].Aliases["production"]
+	if alias.Asset != "asset-1" || alias.Organization != "org-1" || alias.Account != "ops" {
+		t.Fatalf("alias = %#v, want original target with account ops", alias)
+	}
+	if err := service.SetAliasAccount("", "production", ""); err != nil {
+		t.Fatalf("clear SetAliasAccount returned error: %v", err)
+	}
+	got, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Profiles["work"].Aliases["production"].Account != "" {
+		t.Fatal("empty account did not restore ask-on-connect behavior")
+	}
+}

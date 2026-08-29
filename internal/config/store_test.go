@@ -1,9 +1,64 @@
 package config
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestStoreUpdateSerializesReadModifyWrite(t *testing.T) {
+	store := Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	if err := store.Save(Default()); err != nil {
+		t.Fatal(err)
+	}
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- store.Update(context.Background(), func(value *Config) error {
+			close(firstStarted)
+			<-releaseFirst
+			value.Profiles["one"] = Profile{URL: "https://one.example.test"}
+			return nil
+		})
+	}()
+	<-firstStarted
+
+	secondStarted := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- store.Update(context.Background(), func(value *Config) error {
+			close(secondStarted)
+			value.Profiles["two"] = Profile{URL: "https://two.example.test"}
+			return nil
+		})
+	}()
+	select {
+	case <-secondStarted:
+		t.Fatal("second update started before first update released the config lock")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Profiles["one"]; !ok {
+		t.Fatal("first update was lost")
+	}
+	if _, ok := got.Profiles["two"]; !ok {
+		t.Fatal("second update was lost")
+	}
+}
 
 func TestStoreSaveAndLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "config.toml")

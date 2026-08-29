@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,10 +9,31 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/cmstar/jumpaccess/internal/filelock"
 )
 
 type Store struct {
 	Path string
+}
+
+func (s Store) Update(ctx context.Context, change func(*Config) error) (err error) {
+	unlock, err := (filelock.Locker{Dir: filepath.Join(filepath.Dir(s.Path), "locks")}).Lock(ctx, "config")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if unlockErr := unlock(); err == nil && unlockErr != nil {
+			err = unlockErr
+		}
+	}()
+	value, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if err = change(&value); err != nil {
+		return err
+	}
+	return s.Save(value)
 }
 
 func (s Store) Load() (Config, error) {
