@@ -45,16 +45,15 @@ func newProfileCommand(deps Dependencies) *cobra.Command {
 				names = append(names, name)
 			}
 			sort.Strings(names)
+			rows := make([][]string, 0, len(names))
 			for _, name := range names {
-				marker := " "
+				marker := ""
 				if name == value.CurrentProfile {
 					marker = "*"
 				}
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\t%s\n", marker, name, value.Profiles[name].URL); err != nil {
-					return err
-				}
+				rows = append(rows, []string{marker, name, value.Profiles[name].URL})
 			}
-			return nil
+			return writeTable(cmd.OutOrStdout(), []string{"CURRENT", "PROFILE", "URL"}, rows)
 		},
 	})
 	command.AddCommand(&cobra.Command{

@@ -201,7 +201,9 @@ func TestProfileListSortsAndMarksCurrentProfile(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	const want = "  backup\thttps://backup.example.test\n* work\thttps://work.example.test\n"
+	const want = "CURRENT  PROFILE  URL\n" +
+		"         backup   https://backup.example.test\n" +
+		"*        work     https://work.example.test\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
@@ -284,7 +286,9 @@ func TestAliasListUsesCurrentProfileAndSortsNames(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	const want = "db\tasset-db\tdba\torg-db\nweb\tasset-web\troot\t\n"
+	const want = "ALIAS  ASSET      ACCOUNT  ORGANIZATION\n" +
+		"db     asset-db   dba      org-db\n" +
+		"web    asset-web  root\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
@@ -413,9 +417,9 @@ func TestResourceCommandsPrintOrganizationsAssetsAndAccounts(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"organization", "list"}, "org-1\tOne\norg-2\tTwo\n"},
-		{[]string{"asset", "list", "--search", "web"}, "asset-1\tweb\t10.0.0.1\tlinux\n"},
-		{[]string{"account", "list", "web"}, "account-1\troot\tRoot\n"},
+		{[]string{"organization", "list"}, "ID     NAME\norg-1  One\norg-2  Two\n"},
+		{[]string{"asset", "list", "--search", "web"}, "ID       NAME  ADDRESS   TYPE\nasset-1  web   10.0.0.1  linux\n"},
+		{[]string{"account", "list", "web"}, "ID         USERNAME  NAME\naccount-1  root      Root\n"},
 	} {
 		var stdout bytes.Buffer
 		root := NewRoot(Dependencies{Resources: service, Stdout: &stdout})
@@ -426,5 +430,18 @@ func TestResourceCommandsPrintOrganizationsAssetsAndAccounts(t *testing.T) {
 		if stdout.String() != test.want {
 			t.Fatalf("Execute(%v) stdout = %q, want %q", test.args, stdout.String(), test.want)
 		}
+	}
+}
+
+func TestResourceListPrintsHeaderWhenThereAreNoResults(t *testing.T) {
+	var stdout bytes.Buffer
+	root := NewRoot(Dependencies{Resources: fakeResourceService{}, Stdout: &stdout})
+	root.SetArgs([]string{"asset", "list"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got, want := stdout.String(), "ID  NAME  ADDRESS  TYPE\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }

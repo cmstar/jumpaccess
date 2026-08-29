@@ -59,13 +59,12 @@ func newAliasCommand(deps Dependencies) *cobra.Command {
 				names = append(names, name)
 			}
 			sort.Strings(names)
+			rows := make([][]string, 0, len(names))
 			for _, name := range names {
 				alias := profile.Aliases[name]
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", name, alias.Asset, alias.Account, alias.Organization); err != nil {
-					return err
-				}
+				rows = append(rows, []string{name, alias.Asset, alias.Account, alias.Organization})
 			}
-			return nil
+			return writeTable(cmd.OutOrStdout(), []string{"ALIAS", "ASSET", "ACCOUNT", "ORGANIZATION"}, rows)
 		},
 	})
 	return command

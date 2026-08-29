@@ -33,12 +33,11 @@ func newOrganizationCommand(deps Dependencies) *cobra.Command {
 				return err
 			}
 			sort.Slice(organizations, func(i, j int) bool { return organizations[i].ID < organizations[j].ID })
+			rows := make([][]string, 0, len(organizations))
 			for _, organization := range organizations {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", organization.ID, organization.Name); err != nil {
-					return err
-				}
+				rows = append(rows, []string{organization.ID, organization.Name})
 			}
-			return nil
+			return writeTable(cmd.OutOrStdout(), []string{"ID", "NAME"}, rows)
 		},
 	}
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
@@ -65,12 +64,11 @@ func newAssetCommand(deps Dependencies) *cobra.Command {
 				return err
 			}
 			sort.Slice(page.Results, func(i, j int) bool { return page.Results[i].Name < page.Results[j].Name })
+			rows := make([][]string, 0, len(page.Results))
 			for _, asset := range page.Results {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", asset.ID, asset.Name, asset.Address, asset.Type.Value); err != nil {
-					return err
-				}
+				rows = append(rows, []string{asset.ID, asset.Name, asset.Address, asset.Type.Value})
 			}
-			return nil
+			return writeTable(cmd.OutOrStdout(), []string{"ID", "NAME", "ADDRESS", "TYPE"}, rows)
 		},
 	}
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
@@ -99,12 +97,11 @@ func newAccountCommand(deps Dependencies) *cobra.Command {
 			}
 			accounts := append([]jumpserver.Account(nil), asset.Accounts...)
 			sort.Slice(accounts, func(i, j int) bool { return accountIdentity(accounts[i]) < accountIdentity(accounts[j]) })
+			rows := make([][]string, 0, len(accounts))
 			for _, account := range accounts {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", account.ID, account.Username, account.Name); err != nil {
-					return err
-				}
+				rows = append(rows, []string{account.ID, account.Username, account.Name})
 			}
-			return nil
+			return writeTable(cmd.OutOrStdout(), []string{"ID", "USERNAME", "NAME"}, rows)
 		},
 	}
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")

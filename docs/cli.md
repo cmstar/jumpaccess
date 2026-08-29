@@ -92,6 +92,18 @@ account = "account-id"
 
 Asset 引用可以是 ID、名称或地址，但必须精确匹配且唯一。自动化和 ProxyCommand 建议在 Alias 中保存稳定 ID。
 
+所有 `list` 命令都输出带大写列头的文本表格，并根据本次结果中的最长内容自动对齐；没有结果时仍输出列头。当前各命令的列为：
+
+| 命令 | 列头 |
+| --- | --- |
+| `profile list` | `CURRENT`、`PROFILE`、`URL` |
+| `alias list` | `ALIAS`、`ASSET`、`ACCOUNT`、`ORGANIZATION` |
+| `organization list` | `ID`、`NAME` |
+| `asset list` | `ID`、`NAME`、`ADDRESS`、`TYPE` |
+| `account list` | `ID`、`USERNAME`、`NAME` |
+
+这些表格面向终端阅读；列之间由可变数量的空格分隔，不应把固定空格位置当作稳定的机器解析格式。
+
 ## 直接 SSH
 
 ```text
