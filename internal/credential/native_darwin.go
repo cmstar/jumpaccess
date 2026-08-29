@@ -21,10 +21,6 @@ func NewNativeBackend() Backend {
 	return nativeBackend{}
 }
 
-func NativeBackendAvailable() bool {
-	return true
-}
-
 func (nativeBackend) Get(key string) ([]byte, error) {
 	target := []byte(nativeTarget(key))
 	var length C.UInt32

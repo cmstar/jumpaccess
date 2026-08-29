@@ -80,7 +80,7 @@ Host production-web
 
 OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
 
-旧版本写入 Windows Credential Manager 或 macOS Keychain 的 OAuth 凭据仍可兼容读取；该 Profile 下次成功登录或刷新并写入文件后，旧副本会被删除。原生凭据存储继续用于 ProxyCommand façade 的稳定 Ed25519 host key；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
+Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand façade 的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
 
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 

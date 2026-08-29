@@ -3,6 +3,7 @@ package credential
 import (
 	"bytes"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -82,51 +83,13 @@ func TestRepositoryRejectsInvalidProfileKey(t *testing.T) {
 }
 
 func TestNativeTargetKeepsAllCredentialsUnderJumpAccessService(t *testing.T) {
-	if got, want := nativeTarget("oauth/work"), "JumpAccess:oauth/work"; got != want {
+	if got, want := nativeTarget("ssh/proxy-host-key"), "JumpAccess:ssh/proxy-host-key"; got != want {
 		t.Fatalf("nativeTarget = %q, want %q", got, want)
 	}
 }
 
-func TestRepositoryReadsLegacyBackendAndMigratesOnNextSave(t *testing.T) {
-	primary := &memoryBackend{values: make(map[string][]byte)}
-	legacy := &memoryBackend{values: make(map[string][]byte)}
-	legacyRepository := Repository{Backend: legacy}
-	if err := legacyRepository.Save("work", Token{AccessToken: "legacy-access"}); err != nil {
-		t.Fatal(err)
-	}
-	repository := Repository{Backend: primary, LegacyBackend: legacy}
-
-	loaded, err := repository.Load("work")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.AccessToken != "legacy-access" {
-		t.Fatalf("legacy AccessToken = %q, want legacy-access", loaded.AccessToken)
-	}
-	if _, ok := primary.values["oauth/work"]; ok {
-		t.Fatal("read-only load unexpectedly migrated the credential")
-	}
-
-	if err := repository.Save("work", Token{AccessToken: "file-access"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := primary.values["oauth/work"]; !ok {
-		t.Fatal("new credential was not saved to the primary backend")
-	}
-	if _, ok := legacy.values["oauth/work"]; ok {
-		t.Fatal("legacy credential was not removed after successful primary save")
-	}
-}
-
-func TestRepositoryDeleteRemovesPrimaryAndLegacyCredentials(t *testing.T) {
-	primary := &memoryBackend{values: map[string][]byte{"oauth/work": []byte("primary")}}
-	legacy := &memoryBackend{values: map[string][]byte{"oauth/work": []byte("legacy")}}
-	repository := Repository{Backend: primary, LegacyBackend: legacy}
-
-	if err := repository.Delete("work"); err != nil {
-		t.Fatal(err)
-	}
-	if len(primary.values) != 0 || len(legacy.values) != 0 {
-		t.Fatalf("credentials remain: primary=%v legacy=%v", primary.values, legacy.values)
+func TestRepositoryHasNoLegacyBackend(t *testing.T) {
+	if _, exists := reflect.TypeOf(Repository{}).FieldByName("LegacyBackend"); exists {
+		t.Fatal("Repository still exposes the obsolete OAuth legacy backend")
 	}
 }

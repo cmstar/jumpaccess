@@ -18,7 +18,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 - 核心实现采用 Go，并保持单一 module。
 - CLI 是首个确定的入口；Wails 只是未来 GUI 的候选方案，当前不作为依赖。
-- OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；Windows Credential Manager 与 macOS Keychain 只继续承载 ProxyCommand host key 和旧 OAuth 凭据兼容读取。
+- OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；Windows Credential Manager 与 macOS Keychain 只承载 ProxyCommand host key。
 - SSH、OAuth 和 JumpServer API 的具体 Go 依赖将在实现和测试时选定，本文不提前指定。
 
 ## 目标系统组成与模块职责
@@ -31,7 +31,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 应用层 | `internal/application/settings` 承载配置修改，`internal/application/auth` 承载登录状态与 Token 生命周期；查询和连接编排尚未实现 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
-| 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储和旧 OAuth 凭据兼容后端 |
+| 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
 | SSH | `internal/sshclient` 建立直接 SSH 会话；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
 
@@ -87,14 +87,14 @@ TOML 配置和 `known_hosts` 位于该根目录下。OAuth Access Token 与 Refr
 
 `credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 
-升级兼容期间，文件后端未找到某 Profile 时会读取旧版 Windows Credential Manager 或 macOS Keychain 条目。只读查询不迁移；该 Profile 下次成功登录或刷新时先写入文件，成功后删除旧条目。`auth logout` 同时清理两处。ProxyCommand façade 的稳定 Ed25519 host key 仍保存在原生凭据存储中，与 OAuth Token 文件分离。
+OAuth Token 不读取或写入原生凭据存储。ProxyCommand façade 的稳定 Ed25519 host key 单独保存在原生凭据存储中，与 OAuth Token 文件分离。
 
 ## 外部集成
 
 - JumpServer：提供 OAuth、资源查询和连接准备接口；首个参考基线为 Client `v4.1.6` 对应行为。
 - 系统浏览器：承载用户授权和可能存在的 MFA 流程。
 - 文件系统与平台 ACL：保存并保护 OAuth Token。
-- Windows Credential Manager / macOS Keychain：保存 ProxyCommand host key，并兼容读取旧版 OAuth Token。
+- Windows Credential Manager / macOS Keychain：仅保存 ProxyCommand host key。
 - 支持 SSH `ProxyCommand` 的客户端：通过标准输入输出调用通用代理模式。
 
 ## 需要实现验证的边界
@@ -104,4 +104,4 @@ TOML 配置和 `known_hosts` 位于该根目录下。OAuth Access Token 与 Refr
 - OAuth MFA、Token 交换、私有协议注册/IPC 和 Refresh Token 轮换的真实服务器兼容性。
 - Organization、Asset、Account、Connection Token 和连接 URL 的真实服务器兼容性与版本差异。
 - ProxyCommand 与真实终端客户端的兼容性，以及窗口变化、信号和退出状态的真实环境表现。
-- Windows 与 macOS 凭据文件权限、旧原生凭据迁移及构建产物的实际行为。
+- Windows 与 macOS 凭据文件权限及构建产物的实际行为。

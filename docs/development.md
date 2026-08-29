@@ -49,7 +49,7 @@ docs/               # 长期项目知识
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
 - OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
 - Profile 名不按文件名规则清洗或规范化；配置拒绝空名称、首尾空白、控制字符以及 `.`、`..`，凭据后端使用 `SHA-256("oauth/" + profile)` 生成固定长度文件名。这样允许 Unicode 和文件系统保留字符，并避免字符替换规则造成确定性碰撞。
-- Windows Credential Manager 与 macOS Keychain 只用于 ProxyCommand host key 和旧 OAuth 凭据兼容读取。旧 Token 在下一次成功登录或刷新写入文件后删除；`auth logout` 同时删除文件与旧原生条目。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
+- Windows Credential Manager 与 macOS Keychain 只用于 ProxyCommand host key，不参与 OAuth Token 读写。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 

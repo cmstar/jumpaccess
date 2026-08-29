@@ -16,8 +16,7 @@ type Backend interface {
 }
 
 type Repository struct {
-	Backend       Backend
-	LegacyBackend Backend
+	Backend Backend
 }
 
 func (r Repository) Load(profile string) (Token, error) {
@@ -26,9 +25,6 @@ func (r Repository) Load(profile string) (Token, error) {
 		return Token{}, err
 	}
 	data, err := r.Backend.Get(key)
-	if errors.Is(err, ErrNotFound) && r.LegacyBackend != nil {
-		data, err = r.LegacyBackend.Get(key)
-	}
 	if err != nil {
 		return Token{}, err
 	}
@@ -56,15 +52,7 @@ func (r Repository) Save(profile string, token Token) error {
 		return fmt.Errorf("encode credential: %w", err)
 	}
 	defer clear(data)
-	if err := r.Backend.Set(key, data); err != nil {
-		return err
-	}
-	if r.LegacyBackend != nil {
-		if err := r.LegacyBackend.Delete(key); err != nil && !errors.Is(err, ErrNotFound) {
-			return fmt.Errorf("delete legacy credential: %w", err)
-		}
-	}
-	return nil
+	return r.Backend.Set(key, data)
 }
 
 func nativeTarget(key string) string {
@@ -76,28 +64,7 @@ func (r Repository) Delete(profile string) error {
 	if err != nil {
 		return err
 	}
-	removed := false
-	var deleteErrors []error
-	for _, backend := range []Backend{r.Backend, r.LegacyBackend} {
-		if backend == nil {
-			continue
-		}
-		err := backend.Delete(key)
-		switch {
-		case err == nil:
-			removed = true
-		case errors.Is(err, ErrNotFound):
-		default:
-			deleteErrors = append(deleteErrors, err)
-		}
-	}
-	if len(deleteErrors) > 0 {
-		return errors.Join(deleteErrors...)
-	}
-	if !removed {
-		return ErrNotFound
-	}
-	return nil
+	return r.Backend.Delete(key)
 }
 
 func profileKey(profile string) (string, error) {

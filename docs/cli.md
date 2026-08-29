@@ -77,7 +77,7 @@ account = "account-id"
 
 程序发起 API 请求前会按需刷新。直接 SSH 和 ProxyCommand 运行期间还会定期检查；刷新成功只影响后续 API 请求，刷新失败会写入 stderr，但不会关闭已经建立的 SSH Session。
 
-凭据文件是包含 Access Token 和 Refresh Token 的明文 JSON，必须像 SSH 私钥一样保护。Windows 仅允许当前用户与 `SYSTEM` 访问，macOS 要求当前用户所有的 `0700` 目录与 `0600` 文件；权限、所有者或路径类型不符合要求时，程序拒绝读取。旧版本的原生 OAuth 凭据可兼容读取，并在该 Profile 下次成功登录或刷新后迁移到文件。
+凭据文件是包含 Access Token 和 Refresh Token 的明文 JSON，必须像 SSH 私钥一样保护。Windows 仅允许当前用户与 `SYSTEM` 访问，macOS 要求当前用户所有的 `0700` 目录与 `0600` 文件；权限、所有者或路径类型不符合要求时，程序拒绝读取。OAuth Token 只使用这些文件，不读取 Windows Credential Manager 或 macOS Keychain。
 
 手工回调时，JumpServer 授权完成后会显示外部跳转确认页。不要点击“确认”，复制以下任一种内容并直接粘贴到正在等待的终端：
 
