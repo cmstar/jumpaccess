@@ -6,17 +6,24 @@ import (
 
 	jumpaccess "github.com/cmstar/jumpaccess"
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
+	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
+	"github.com/cmstar/jumpaccess/internal/sshclient"
+	"github.com/cmstar/jumpaccess/internal/sshhostkey"
 	"github.com/cmstar/jumpaccess/internal/systemopen"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/crypto/ssh"
 )
 
-// desktopApp 是 Wails 表现层入口。共享应用服务会在后续步骤注入此处。
+// desktopApp 是 Wails 表现层入口，负责把共享应用服务适配为绑定方法和事件。
 type desktopApp struct {
 	ctx         context.Context
 	core        bootstrap.Runtime
 	preferences guiconfig.Store
 	api         desktopapp.Service
+	sessions    *sshsessionapp.Manager
+	hostKeys    *desktopapp.HostKeyCoordinator
 }
 
 func newDesktopApp(rootDir string) (*desktopApp, error) {
@@ -35,7 +42,7 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 		OpenBrowser: systemopen.Open,
 		Timeout:     core.Configuration.Behavior.OAuthTimeout.Duration,
 	}
-	return &desktopApp{
+	app := &desktopApp{
 		core:        core,
 		preferences: preferences,
 		api: desktopapp.Service{
@@ -48,7 +55,35 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 			Settings:    core.Settings,
 			Preferences: preferences,
 		},
-	}, nil
+	}
+	hostKeys := &desktopapp.HostKeyCoordinator{
+		Emit: func(prompt desktopapp.HostKeyPrompt) {
+			runtime.EventsEmit(app.context(), "ssh:host-key", prompt)
+		},
+	}
+	app.hostKeys = hostKeys
+	app.sessions = &sshsessionapp.Manager{
+		Prepare: core.Connect,
+		HostKeyCallback: func(ctx context.Context) (ssh.HostKeyCallback, error) {
+			return (sshhostkey.Store{
+				Path: filepath.Join(rootDir, "known_hosts"),
+				Confirm: func(host, fingerprint string) (bool, error) {
+					return hostKeys.Confirm(ctx, host, fingerprint)
+				},
+			}).Callback(true)
+		},
+		Open: func(ctx context.Context, options sshclient.OpenOptions) (sshsessionapp.TerminalSession, error) {
+			return sshclient.Open(ctx, options)
+		},
+		Timeout: core.Configuration.Behavior.ConnectTimeout.Duration,
+		EmitState: func(event sshsessionapp.StateEvent) {
+			runtime.EventsEmit(app.context(), "ssh:state", event)
+		},
+		EmitOutput: func(event sshsessionapp.OutputEvent) {
+			runtime.EventsEmit(app.context(), "ssh:output", event)
+		},
+	}
+	return app, nil
 }
 
 func (a *desktopApp) startup(ctx context.Context) {

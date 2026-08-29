@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已建立工程基础和类型化桌面应用 API，前端与 SSH 会话桥接仍在接入。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已建立类型化桌面应用 API、手工 OAuth 回调、多 SSH 会话管理与 Wails 事件桥接，前端业务界面仍在接入。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
@@ -29,14 +29,14 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | --- | --- |
 | 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
 | 应用层 | `internal/application/settings` 承载 Profile、Organization 与 Alias 修改，`internal/application/auth` 承载登录状态与 Token 生命周期，`internal/application/resources` 和 `internal/application/connect` 分别负责资源查询与连接编排 |
-| 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好和许可证整理为 Wails 可绑定的类型化 API；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
+| 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，只承载主题、终端字体等桌面偏好，不进入 CLI 配置 schema |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
-| SSH | `internal/sshclient` 建立直接 SSH 会话；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
+| SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
 
 ## 关键数据流
 
@@ -61,7 +61,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
 
-直接模式在终端支持 Account 选择，并在首次遇到未知 gateway 主机密钥时显示 SHA-256 指纹要求确认。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
+直接模式在 CLI 终端支持 Account 选择；GUI 在创建连接前要求前端提供唯一 Account，允许多个 SSH 会话并行存在，通过 Wails 事件批量传递终端输出。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
 ### 通用 ProxyCommand
 

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
+	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/cmstar/jumpaccess/internal/systemopen"
 )
@@ -82,6 +83,30 @@ func (a *desktopApp) LicenseText() string {
 
 func (a *desktopApp) OpenConfig() error {
 	return systemopen.Open(a.core.ConfigPath)
+}
+
+func (a *desktopApp) StartSSHSession(request sshsessionapp.StartRequest) (sshsessionapp.StateEvent, error) {
+	return a.sessions.Start(a.context(), request)
+}
+
+func (a *desktopApp) ListSSHSessions() []sshsessionapp.StateEvent {
+	return a.sessions.List()
+}
+
+func (a *desktopApp) WriteSSHSession(id, data string) error {
+	return a.sessions.Write(id, data)
+}
+
+func (a *desktopApp) ResizeSSHSession(id string, columns, rows int) error {
+	return a.sessions.Resize(id, columns, rows)
+}
+
+func (a *desktopApp) CloseSSHSession(id string) error {
+	return a.sessions.Close(id)
+}
+
+func (a *desktopApp) ResolveSSHHostKey(id string, accepted bool) error {
+	return a.hostKeys.Resolve(id, accepted)
 }
 
 func (a *desktopApp) context() context.Context {

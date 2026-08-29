@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已建立可构建的基础工程，业务能力仍在接入。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已建立类型化资源 API、手工 OAuth 回调、多 SSH 会话管理与事件桥接，前端业务界面仍在接入。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -27,6 +27,7 @@ internal/bootstrap/ # CLI 与 GUI 共用的依赖装配
 internal/application/auth/     # 登录状态、刷新与生命周期编排
 internal/application/resources/# Organization、Asset 与 Account 查询
 internal/application/desktop/  # Wails 使用的类型化桌面应用 API
+internal/application/sshsession/ # GUI 多 SSH 会话与批量输出管理
 internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
 internal/guiconfig/ # GUI 独有偏好与 gui.toml 存储
