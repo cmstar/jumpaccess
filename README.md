@@ -105,4 +105,13 @@ ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的�
 
 ## 发布
 
-当前尚未建立发布和安装流程。`jumpctl` 和桌面 GUI 都内嵌项目 MIT 许可证及生产依赖的第三方许可材料；CLI 可通过 `jumpctl licenses` 查看，GUI 可在设置底部查看。形成正式 Windows、macOS 发布归档时，仍应同时放入可直接阅读的 `LICENSE` 和 `THIRD-PARTY-NOTICES.txt`，并补充受支持的平台、安装方式、版本策略和校验方法。
+推送符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的 Git tag 会触发 [Release 工作流](.github/workflows/release.yml)。工作流先运行 Go、React 和发布脚本检查，再在 GitHub 托管的 Windows、macOS runner 上原生构建；只有全部目标成功，才会生成 Release Notes、SHA-256 校验文件并发布 GitHub Release。预发布标签会自动标记为 prerelease。
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+正式产物包括 Windows amd64 的 CLI/GUI ZIP、macOS amd64 与 arm64 的 CLI tar.gz，以及 macOS Universal GUI ZIP。Windows ZIP 内的程序保持稳定名称 `jumpctl.exe` 和 `jumpaccess.exe`；归档同时包含可直接阅读的 `LICENSE` 与 `THIRD-PARTY-NOTICES.txt`。`jumpctl` 和桌面 GUI 也继续内嵌这些许可材料，CLI 可通过 `jumpctl licenses` 查看，GUI 可在设置底部查看。
+
+版本标签是发布版本的唯一来源。工作流通过 Go linker 注入 CLI/GUI 显示版本，并只在临时 runner 工作副本中更新 Wails 产品元数据，不需要为每次发布提交版本文件改动。当前 Windows 与 macOS 桌面产物尚未使用商业代码签名证书，操作系统可能显示安全提示。

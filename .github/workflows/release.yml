@@ -1,0 +1,368 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 验证发布标签与测试
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      metadata_version: ${{ steps.version.outputs.metadata_version }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: 检出标签代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 验证并解析版本
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "发布标签必须符合 vX.Y.Z 或 vX.Y.Z-prerelease：$env:GITHUB_REF_NAME"
+          }
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $metadataVersion = $version.Split('-')[0]
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "metadata_version=$metadataVersion" >> $env:GITHUB_OUTPUT
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cmd/jumpaccess/frontend/package-lock.json
+
+      - name: 运行 Go 测试
+        run: go test ./...
+
+      - name: 运行 Go 静态检查
+        run: go vet ./...
+
+      - name: 安装前端依赖
+        working-directory: cmd/jumpaccess/frontend
+        run: npm ci
+
+      - name: 运行前端测试
+        working-directory: cmd/jumpaccess/frontend
+        run: npm test
+
+      - name: 验证前端生产构建
+        working-directory: cmd/jumpaccess/frontend
+        run: npm run build
+
+      - name: 测试发布脚本
+        run: node --test scripts/*.test.mjs
+
+  build-windows:
+    name: 构建 Windows CLI 与 GUI
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      METADATA_VERSION: ${{ needs.verify.outputs.metadata_version }}
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: 检出标签代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cmd/jumpaccess/frontend/package-lock.json
+
+      - name: 安装匹配项目版本的 Wails CLI
+        shell: pwsh
+        run: |
+          $wailsVersion = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$wailsVersion"
+
+      - name: 临时注入 Wails 产品版本
+        run: node scripts/set-wails-version.mjs $env:METADATA_VERSION
+
+      - name: 构建并压缩 Windows 发布物
+        shell: pwsh
+        run: |
+          $ldflags = "-s -w -X main.version=$env:VERSION"
+          $assets = Join-Path $env:GITHUB_WORKSPACE 'release-assets'
+          $staging = Join-Path $env:RUNNER_TEMP 'jumpaccess-release'
+          $cliStage = Join-Path $staging 'jumpctl'
+          $guiStage = Join-Path $staging 'jumpaccess'
+          New-Item -ItemType Directory -Force -Path $assets, $cliStage, $guiStage | Out-Null
+
+          go build -trimpath -ldflags $ldflags -o (Join-Path $cliStage 'jumpctl.exe') ./cmd/jumpctl
+
+          $wails = Join-Path (go env GOPATH) 'bin/wails.exe'
+          Push-Location cmd/jumpaccess
+          try {
+            & $wails build -clean -trimpath -m -nosyncgomod -webview2 embed -ldflags $ldflags
+          } finally {
+            Pop-Location
+          }
+          Copy-Item -LiteralPath cmd/jumpaccess/build/bin/jumpaccess.exe -Destination (Join-Path $guiStage 'jumpaccess.exe')
+
+          foreach ($directory in @($cliStage, $guiStage)) {
+            Copy-Item -LiteralPath LICENSE, THIRD-PARTY-NOTICES.txt -Destination $directory
+          }
+
+          $cliArchive = Join-Path $assets "jumpctl-v$env:VERSION-windows-amd64.zip"
+          $guiArchive = Join-Path $assets "jumpaccess-v$env:VERSION-windows-amd64.zip"
+          Compress-Archive -Path (Join-Path $cliStage '*') -DestinationPath $cliArchive -CompressionLevel Optimal
+          Compress-Archive -Path (Join-Path $guiStage '*') -DestinationPath $guiArchive -CompressionLevel Optimal
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $cliEntries = [IO.Compression.ZipFile]::OpenRead($cliArchive)
+          try {
+            if ('jumpctl.exe' -notin $cliEntries.Entries.FullName) { throw 'CLI ZIP 缺少 jumpctl.exe' }
+          } finally {
+            $cliEntries.Dispose()
+          }
+          $guiEntries = [IO.Compression.ZipFile]::OpenRead($guiArchive)
+          try {
+            if ('jumpaccess.exe' -notin $guiEntries.Entries.FullName) { throw 'GUI ZIP 缺少 jumpaccess.exe' }
+          } finally {
+            $guiEntries.Dispose()
+          }
+
+      - name: 保存 Windows 发布物
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-windows-amd64
+          path: release-assets/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  build-darwin-cli:
+    name: 构建 macOS CLI (${{ matrix.arch }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: 检出标签代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 构建并压缩 macOS CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$GITHUB_WORKSPACE/release-assets"
+          staging="$RUNNER_TEMP/jumpctl"
+          mkdir -p "$assets" "$staging"
+          CGO_ENABLED=1 GOARCH=${{ matrix.arch }} go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=$VERSION" \
+            -o "$staging/jumpctl" \
+            ./cmd/jumpctl
+          chmod 0755 "$staging/jumpctl"
+          cp LICENSE THIRD-PARTY-NOTICES.txt "$staging/"
+          archive="$assets/jumpctl-v$VERSION-darwin-${{ matrix.arch }}.tar.gz"
+          COPYFILE_DISABLE=1 tar -czf "$archive" -C "$staging" jumpctl LICENSE THIRD-PARTY-NOTICES.txt
+          tar -tzf "$archive" | grep -Fx jumpctl
+
+      - name: 保存 macOS CLI 发布物
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-darwin-cli-${{ matrix.arch }}
+          path: release-assets/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  build-darwin-gui:
+    name: 构建 macOS Universal GUI
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      METADATA_VERSION: ${{ needs.verify.outputs.metadata_version }}
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: 检出标签代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cmd/jumpaccess/frontend/package-lock.json
+
+      - name: 安装匹配项目版本的 Wails CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          wails_version="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$wails_version"
+
+      - name: 临时注入 Wails 产品版本
+        run: node scripts/set-wails-version.mjs "$METADATA_VERSION"
+
+      - name: 构建并压缩 macOS Universal GUI
+        shell: bash
+        run: |
+          set -euo pipefail
+          wails="$(go env GOPATH)/bin/wails"
+          (
+            cd cmd/jumpaccess
+            CGO_ENABLED=1 "$wails" build \
+              -clean \
+              -platform darwin/universal \
+              -trimpath \
+              -m \
+              -nosyncgomod \
+              -ldflags "-s -w -X main.version=$VERSION"
+          )
+
+          app="$GITHUB_WORKSPACE/cmd/jumpaccess/build/bin/JumpAccess.app"
+          binary="$app/Contents/MacOS/jumpaccess"
+          test -d "$app"
+          test -x "$binary"
+          architectures="$(lipo -archs "$binary")"
+          [[ " $architectures " == *" arm64 "* ]]
+          [[ " $architectures " == *" x86_64 "* ]]
+
+          assets="$GITHUB_WORKSPACE/release-assets"
+          staging="$RUNNER_TEMP/jumpaccess-gui"
+          mkdir -p "$assets" "$staging"
+          ditto "$app" "$staging/JumpAccess.app"
+          cp LICENSE THIRD-PARTY-NOTICES.txt "$staging/"
+          archive="$assets/jumpaccess-v$VERSION-darwin-universal.zip"
+          (
+            cd "$staging"
+            /usr/bin/zip -qry --symlinks "$archive" JumpAccess.app LICENSE THIRD-PARTY-NOTICES.txt
+          )
+          unzip -l "$archive" | grep -F 'JumpAccess.app/Contents/MacOS/jumpaccess'
+
+      - name: 保存 macOS GUI 发布物
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-darwin-gui-universal
+          path: release-assets/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: 创建 GitHub Release
+    needs:
+      - verify
+      - build-windows
+      - build-darwin-cli
+      - build-darwin-gui
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: 检出完整标签历史
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 下载所有发布物
+        uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: 验证发布物并生成 SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=(
+            "jumpctl-$GITHUB_REF_NAME-windows-amd64.zip"
+            "jumpaccess-$GITHUB_REF_NAME-windows-amd64.zip"
+            "jumpctl-$GITHUB_REF_NAME-darwin-amd64.tar.gz"
+            "jumpctl-$GITHUB_REF_NAME-darwin-arm64.tar.gz"
+            "jumpaccess-$GITHUB_REF_NAME-darwin-universal.zip"
+          )
+          for asset in "${expected[@]}"; do
+            test -s "dist/$asset" || { echo "缺少发布物：$asset" >&2; exit 1; }
+          done
+          (
+            cd dist
+            sha256sum "${expected[@]}" | LC_ALL=C sort -k2 > checksums.txt
+          )
+
+      - name: 生成 Release Notes
+        run: >-
+          node scripts/release-notes.mjs
+          --tag "$GITHUB_REF_NAME"
+          --repository "$GITHUB_REPOSITORY"
+          --output release-notes.md
+
+      - name: 发布 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(dist/*.zip dist/*.tar.gz dist/checksums.txt)
+          options=(
+            release create "$GITHUB_REF_NAME"
+            "${assets[@]}"
+            --verify-tag
+            --title "JumpAccess $GITHUB_REF_NAME"
+            --notes-file release-notes.md
+          )
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+          gh "${options[@]}"

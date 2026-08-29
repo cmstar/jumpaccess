@@ -14,3 +14,8 @@ coverage.out
 /cmd/jumpaccess/frontend/node_modules/
 /cmd/jumpaccess/frontend/wailsjs/
 /cmd/jumpaccess/frontend/package.json.md5
+
+# 全局忽略规则可能会忽略点目录，发布工作流必须进入仓库。
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml

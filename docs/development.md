@@ -111,6 +111,22 @@ docs/               # 长期项目知识
 - 正式 ZIP、tar 或安装包仍应把两份文本作为独立文件一并分发，方便不执行程序的接收者阅读。嵌入是单文件分发的保障，不替代正式归档中的显式材料。
 - 新增或升级生产依赖时，必须重新检查目标平台的实际 package graph，更新第三方声明，并验证 `jumpctl licenses`。只用于测试、文档生成且不进入发布二进制的模块不需要混入发布声明。
 
+## 自动发布
+
+`.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步拒绝不符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的标签。标签指向的提交必须已经包含该工作流。发布顺序为：
+
+1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试。
+2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
+3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
+4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
+5. 汇总五个归档、生成 `checksums.txt`，根据上一个版本标签到当前标签之间的 Conventional Commits 生成分类 Release Notes，最后创建 GitHub Release。任一前置 Job 失败都不会发布 Release。
+
+源码中的 CLI/GUI `version` 保持为 `dev`，`wails.json` 的 `info.productVersion` 只作为开发占位值。发布工作流从标签移除前导 `v`，通过 `-ldflags "-X main.version=<version>"` 注入程序版本，并调用 `scripts/set-wails-version.mjs` 在 runner 临时工作副本中写入仅含 `X.Y.Z` 的平台元数据版本。该临时改动不会提交或推回仓库。
+
+Release Notes 由 `scripts/release-notes.mjs` 生成，识别 `feat`、`fix`、`perf`、`refactor`、`docs`、`build`、`ci`、`test`、`chore` 以及 `!`/`BREAKING CHANGE`。提交说明应继续使用清晰的 Conventional Commit 格式；首个版本链接到完整提交历史，后续版本链接到 GitHub 标签比较页。
+
+GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装 GitHub CLI。工作流只给最终 `publish` Job 配置 `contents: write`，并使用 GitHub 自动生成的短期 `GITHUB_TOKEN`。通常不需要保存额外 Secret；如果仓库或 Organization 策略禁止 Actions 写入内容，需要在 GitHub 的 `Settings → Actions → General → Workflow permissions` 中允许工作流写入。代码签名与 macOS notarization 尚未配置，后续启用时应通过 GitHub Actions Secrets 提供证书和凭据，不能提交到仓库。
+
 ## 当前验证入口
 
 ```powershell
@@ -118,9 +134,11 @@ go test ./...
 go vet ./...
 go build -trimpath ./cmd/jumpctl
 cd cmd/jumpaccess
+npm ci
 npm test
 npm run build
 wails build
+node --test ../../scripts/*.test.mjs
 ```
 
 Windows 发布或人工验收构建不得使用 `wails build -nopackage`：Wails 2.14 会因此跳过平台资源生成，裸 EXE 不包含应用图标和版本资源。更新 `appicon.svg` 后应重新渲染 `appicon.png`，移除旧的 `build/windows/icon.ico` 并执行一次 `wails build`，由 Wails 重新生成 256、128、64、48、32 和 16 像素的 Windows 图标。
