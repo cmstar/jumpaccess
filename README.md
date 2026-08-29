@@ -39,8 +39,10 @@ go build -trimpath ./cmd/jumpctl
 cd cmd/jumpaccess
 npm test
 wails dev
-wails build -nopackage
+wails build
 ```
+
+发布或人工验收桌面程序时应使用 `wails build`。Windows 下的 `-nopackage` 会跳过平台资源生成，产出的裸 EXE 不包含应用图标和版本资源。
 
 当前已经实现的配置入口包括：
 

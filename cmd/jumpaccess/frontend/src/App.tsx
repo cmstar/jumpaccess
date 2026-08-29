@@ -12,7 +12,6 @@ import {
   LogIn,
   LogOut,
   MoreHorizontal,
-  Network,
   Palette,
   Pencil,
   Plus,
@@ -32,6 +31,7 @@ import {
 } from 'lucide-react'
 
 import './App.css'
+import appIconURL from '../../build/appicon.svg'
 import {
   type Account,
   type Alias,
@@ -66,6 +66,10 @@ interface AppProps {
 const pageSize = 25
 const terminalBufferLimit = 1024 * 1024
 const TerminalPane = lazy(() => import('./components/TerminalPane').then((module) => ({ default: module.TerminalPane })))
+
+function AppLogo({ labelled = false, className = '' }: { labelled?: boolean; className?: string }) {
+  return <img alt={labelled ? 'JumpAccess 应用图标' : ''} className={`app-logo ${className}`.trim()} src={appIconURL} />
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -523,13 +527,13 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }
 
   if (!bootstrap) {
-    return <main className="loading-shell"><div className="brand-mark"><Network /></div><h1>JumpAccess</h1><p>{error || '正在连接桌面服务…'}</p></main>
+    return <main className="loading-shell"><div className="brand-mark"><AppLogo /></div><h1>JumpAccess</h1><p>{error || '正在连接桌面服务…'}</p></main>
   }
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand" title="JumpAccess"><div className="brand-mark"><Network /></div><div><strong>JumpAccess</strong><span>Desktop</span></div></div>
+        <div className="brand" title="JumpAccess"><div className="brand-mark"><AppLogo /></div><div><strong>JumpAccess</strong><span>Desktop</span></div></div>
         <nav className="primary-nav" aria-label="主导航">
           <span className="nav-label">工作区</span>
           <NavButton active={view === 'assets'} icon={<Boxes />} label="资产" onClick={() => setView('assets')} />
@@ -643,7 +647,7 @@ function SessionsView({ active, backend, onActive, onClose, onNew, output, prefe
 
 function SettingsView({ onLicense, onOpenConfig, onSave, preferences, version }: { onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
-  return <section className="full-pane settings-page"><PageHeading eyebrow="桌面偏好" title="设置"><button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button></PageHeading><div className="settings-grid"><section className="settings-card"><div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div><div className="segmented-control" aria-label="界面主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}</div></section><section className="settings-card"><div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div><label>字体<select value={preferences.terminalFontFamily} onChange={(event) => update({ terminalFontFamily: event.target.value })}><option>JetBrains Mono</option><option>Cascadia Mono</option><option>Menlo</option><option>monospace</option></select></label><label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label></section><section className="settings-card wide"><div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div><div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div></section><section className="settings-card wide about-settings-card"><div className="settings-card-title about-settings-inline"><Network /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div></section></div></section>
+  return <section className="full-pane settings-page"><PageHeading eyebrow="桌面偏好" title="设置"><button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button></PageHeading><div className="settings-grid"><section className="settings-card"><div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div><div className="segmented-control" aria-label="界面主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}</div></section><section className="settings-card"><div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div><label>字体<select value={preferences.terminalFontFamily} onChange={(event) => update({ terminalFontFamily: event.target.value })}><option>JetBrains Mono</option><option>Cascadia Mono</option><option>Menlo</option><option>monospace</option></select></label><label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label></section><section className="settings-card wide"><div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div><div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div></section><section className="settings-card wide about-settings-card"><div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div></section></div></section>
 }
 
 function SessionDock({ onOpen, sessions }: { onOpen: (id: string) => void; sessions: SessionState[] }) {

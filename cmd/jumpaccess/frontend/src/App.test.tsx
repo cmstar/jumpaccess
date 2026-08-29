@@ -211,6 +211,12 @@ test('设置主题会持久化 GUI 独有偏好，许可证位于关于栏', asy
 
   await screen.findByRole('heading', { name: '资产' })
   await user.click(screen.getByRole('button', { name: '设置' }))
+  const aboutSection = screen.getByRole('heading', { name: '关于 JumpAccess' }).closest('section')
+  expect(aboutSection).not.toBeNull()
+  expect(within(aboutSection!).getByRole('img', { name: 'JumpAccess 应用图标' })).toHaveAttribute(
+    'src',
+    expect.stringContaining('appicon.svg'),
+  )
   await user.click(screen.getByRole('button', { name: '深色' }))
   await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' })))
   expect(document.documentElement).toHaveClass('dark')

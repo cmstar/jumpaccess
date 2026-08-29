@@ -11,6 +11,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 - 工程采用单个 Go module，支持多个入口适配器共享核心逻辑。
 - 可执行入口包括 `jumpctl` 与 `jumpaccess`；GUI 不得迫使 OAuth、配置、JumpServer API、目标解析或 SSH 逻辑复制一份。
 - GUI 使用 Wails 2.14，前端使用 React、TypeScript 和 Vite。Wails 项目根位于 `cmd/jumpaccess`，与根 Go module 共用依赖。
+- 桌面应用图标的唯一设计源为 `cmd/jumpaccess/build/appicon.svg`；`appicon.png` 是由该 SVG 渲染的 1024×1024 构建输入，Windows 多尺寸图标为 `cmd/jumpaccess/build/windows/icon.ico`。三者使用同一“终端 chevron 穿过跳板网关”标记，不以生成式栅格图作为发布源。
 - Windows 和 macOS 都是目标平台。
 - JumpServer Client `v4.1.6` 是首个协议行为参考，不应成为运行时依赖。
 
@@ -119,7 +120,9 @@ go build -trimpath ./cmd/jumpctl
 cd cmd/jumpaccess
 npm test
 npm run build
-wails build -nopackage
+wails build
 ```
+
+Windows 发布或人工验收构建不得使用 `wails build -nopackage`：Wails 2.14 会因此跳过平台资源生成，裸 EXE 不包含应用图标和版本资源。更新 `appicon.svg` 后应重新渲染 `appicon.png`，移除旧的 `build/windows/icon.ico` 并执行一次 `wails build`，由 Wails 重新生成 256、128、64、48、32 和 16 像素的 Windows 图标。
 
 每次代码修改结束前，运行与本次修改最相关的测试；在交付完整阶段前运行全量测试、静态检查和目标平台构建检查。只有真实执行成功的命令才能写成当前可用入口。
