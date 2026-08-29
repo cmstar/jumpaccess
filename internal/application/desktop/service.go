@@ -44,11 +44,33 @@ type PreferenceStore interface {
 type Service struct {
 	Version     string
 	Licenses    string
+	Login       *LoginCoordinator
 	Config      ConfigLoader
 	Auth        AuthService
 	Resources   ResourceService
 	Settings    SettingsService
 	Preferences PreferenceStore
+}
+
+func (s Service) StartLogin(ctx context.Context, profile string) (LoginAttempt, error) {
+	if s.Login == nil {
+		return LoginAttempt{}, fmt.Errorf("OAuth login is unavailable")
+	}
+	return s.Login.Start(ctx, profile)
+}
+
+func (s Service) CompleteLogin(ctx context.Context, attemptID, callbackURL string) (AuthStatus, error) {
+	if s.Login == nil {
+		return AuthStatus{}, fmt.Errorf("OAuth login is unavailable")
+	}
+	return s.Login.Complete(ctx, attemptID, callbackURL)
+}
+
+func (s Service) CancelLogin(attemptID string) error {
+	if s.Login == nil {
+		return fmt.Errorf("OAuth login is unavailable")
+	}
+	return s.Login.Cancel(attemptID)
 }
 
 func (s Service) Bootstrap() (BootstrapState, error) {

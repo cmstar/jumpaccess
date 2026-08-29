@@ -27,6 +27,56 @@ type ManualFlow struct {
 	Now         func() time.Time
 }
 
+type ManualAuthorization struct {
+	URL         string
+	httpClient  *http.Client
+	metadata    Metadata
+	redirectURI string
+	site        string
+	state       string
+	verifier    string
+}
+
+func BeginManualAuthorization(ctx context.Context, httpClient *http.Client, site, redirectURI string) (ManualAuthorization, error) {
+	if redirectURI == "" {
+		redirectURI = NativeRedirectURI
+	}
+	metadata, err := Discover(ctx, httpClient, site)
+	if err != nil {
+		return ManualAuthorization{}, err
+	}
+	authorization, err := NewAuthorization(metadata, redirectURI, rand.Reader)
+	if err != nil {
+		return ManualAuthorization{}, err
+	}
+	return ManualAuthorization{
+		URL:         authorization.URL,
+		httpClient:  httpClient,
+		metadata:    metadata,
+		redirectURI: redirectURI,
+		site:        strings.TrimRight(site, "/"),
+		state:       authorization.State,
+		verifier:    authorization.Verifier,
+	}, nil
+}
+
+func (a ManualAuthorization) Complete(ctx context.Context, rawCallback string, now time.Time) (credential.Token, error) {
+	code, err := ParseCallbackURL(rawCallback, a.redirectURI, a.state)
+	if err != nil {
+		return credential.Token{}, err
+	}
+	response, err := (Client{HTTPClient: a.httpClient, Metadata: a.metadata}).Exchange(
+		ctx, code, a.verifier, a.redirectURI,
+	)
+	if err != nil {
+		return credential.Token{}, err
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return response.Record(a.metadata.ClientID, a.site, now)
+}
+
 func (f ManualFlow) Login(ctx context.Context, site string) (credential.Token, error) {
 	if f.OpenBrowser == nil {
 		return credential.Token{}, fmt.Errorf("browser opener is unavailable")
@@ -34,16 +84,7 @@ func (f ManualFlow) Login(ctx context.Context, site string) (credential.Token, e
 	if f.Input == nil {
 		return credential.Token{}, fmt.Errorf("manual OAuth callback input is unavailable")
 	}
-	redirectURI := f.RedirectURI
-	if redirectURI == "" {
-		redirectURI = NativeRedirectURI
-	}
-
-	metadata, err := Discover(ctx, f.HTTPClient, site)
-	if err != nil {
-		return credential.Token{}, err
-	}
-	authorization, err := NewAuthorization(metadata, redirectURI, rand.Reader)
+	authorization, err := BeginManualAuthorization(ctx, f.HTTPClient, site, f.RedirectURI)
 	if err != nil {
 		return credential.Token{}, err
 	}
@@ -69,18 +110,7 @@ OAuth callback URL: `, authorization.URL); err != nil {
 	if err != nil {
 		return credential.Token{}, err
 	}
-	code, err := ParseCallbackURL(rawCallback, redirectURI, authorization.State)
-	if err != nil {
-		return credential.Token{}, err
-	}
-
-	response, err := (Client{HTTPClient: f.HTTPClient, Metadata: metadata}).Exchange(
-		ctx, code, authorization.Verifier, redirectURI,
-	)
-	if err != nil {
-		return credential.Token{}, err
-	}
-	return response.Record(metadata.ClientID, strings.TrimRight(site, "/"), f.now())
+	return authorization.Complete(ctx, rawCallback, f.now())
 }
 
 func readCallbackLine(ctx context.Context, input io.Reader) (string, error) {

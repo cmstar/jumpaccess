@@ -60,6 +60,18 @@ func (a *desktopApp) RefreshAuth(profile string) (desktopapp.AuthStatus, error) 
 	return a.api.RefreshAuth(a.context(), profile)
 }
 
+func (a *desktopApp) StartLogin(profile string) (desktopapp.LoginAttempt, error) {
+	return a.api.StartLogin(a.context(), profile)
+}
+
+func (a *desktopApp) CompleteLogin(attemptID, callbackURL string) (desktopapp.AuthStatus, error) {
+	return a.api.CompleteLogin(a.context(), attemptID, callbackURL)
+}
+
+func (a *desktopApp) CancelLogin(attemptID string) error {
+	return a.api.CancelLogin(attemptID)
+}
+
 func (a *desktopApp) Logout(profile string) error {
 	return a.api.Logout(a.context(), profile)
 }

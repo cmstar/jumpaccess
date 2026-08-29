@@ -31,7 +31,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 应用层 | `internal/application/settings` 承载 Profile、Organization 与 Alias 修改，`internal/application/auth` 承载登录状态与 Token 生命周期，`internal/application/resources` 和 `internal/application/connect` 分别负责资源查询与连接编排 |
 | 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好和许可证整理为 Wails 可绑定的类型化 API；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
-| OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；发布版私有协议注册与进程间回调转交尚未实现 |
+| OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，只承载主题、终端字体等桌面偏好，不进入 CLI 配置 schema |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
@@ -50,7 +50,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 当前实现依据 `v4.1.6` 使用 OAuth Discovery、`write read` scopes、S256 PKCE 和服务器已登记的 `jms://auth/callback`。真实环境已确认服务器拒绝未登记的 `http://127.0.0.1:14876/auth/callback`，并能为 `jms://auth/callback` 生成外部跳转确认页；MFA、Token 交换与完整登录仍需继续验证。
 
-当前开发版默认采用手工回调，`--manual` 也能显式选择该模式。正式发布后，默认模式计划注册 `jms` 私有协议：操作系统启动 callback 子进程，子进程通过受限于当前用户的本地 IPC 把原始 URL 交给等待中的登录进程，再由后者完成 state/PKCE 校验和换 Token。不安装 Windows Service，也不把 PKCE verifier 持久化。手工模式作为长期能力永久保留，支持官方客户端仍占用 `jms` 协议、设备策略禁止协议注册或用户主动不注册的环境。
+当前开发版默认采用手工回调，`jumpctl auth login --manual` 和 GUI 的回调粘贴框使用同一套严格校验。GUI 只在进程内、限时保存 state 和 PKCE verifier，成功、取消或超时后清除，不写入配置或磁盘。正式发布后，默认模式计划注册 `jms` 私有协议：操作系统启动 callback 子进程，子进程通过受限于当前用户的本地 IPC 把原始 URL 交给等待中的登录进程，再由后者完成 state/PKCE 校验和换 Token。不安装 Windows Service，也不把 PKCE verifier 持久化。手工模式作为长期能力永久保留，支持官方客户端仍占用 `jms` 协议、设备策略禁止协议注册或用户主动不注册的环境。
 
 同一操作系统用户下不能按 URL 路径把 `jms` scheme 同时路由给两个程序。发布版注册协议时必须检测现有处理程序、明确告知冲突且不得静默覆盖；选择手工模式时不修改协议注册。
 

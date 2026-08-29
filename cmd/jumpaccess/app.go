@@ -8,6 +8,7 @@ import (
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
+	"github.com/cmstar/jumpaccess/internal/systemopen"
 )
 
 // desktopApp 是 Wails 表现层入口。共享应用服务会在后续步骤注入此处。
@@ -27,12 +28,20 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 	if _, err := preferences.Load(); err != nil {
 		return nil, err
 	}
+	login := &desktopapp.LoginCoordinator{
+		Config:      core.Store,
+		Tokens:      core.Tokens,
+		HTTPClient:  core.HTTPClient,
+		OpenBrowser: systemopen.Open,
+		Timeout:     core.Configuration.Behavior.OAuthTimeout.Duration,
+	}
 	return &desktopApp{
 		core:        core,
 		preferences: preferences,
 		api: desktopapp.Service{
 			Version:     version,
 			Licenses:    jumpaccess.Licenses(),
+			Login:       login,
 			Config:      core.Store,
 			Auth:        core.Auth,
 			Resources:   core.Resources,

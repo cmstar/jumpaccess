@@ -34,6 +34,8 @@ Alias 固定归属于 Profile，必须定位一个 Asset，Account 可为空。O
 
 Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式本身不打开浏览器。
 
+当前 GUI 登录会打开系统浏览器，并要求用户把 JumpServer 确认页中的 `jms://` 链接或完整确认页 URL 粘贴回应用。登录尝试的 state 与 PKCE verifier 只保存在当前 GUI 进程内；私有协议注册与跨进程回调尚未实现。
+
 ### 目标解析
 
 1. 根据显式参数或当前设置确定 Profile 和 Organization。
