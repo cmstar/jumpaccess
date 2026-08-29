@@ -26,6 +26,7 @@ internal/application/settings/ # Profile 与 Alias 修改用例
 internal/bootstrap/ # CLI 与 GUI 共用的依赖装配
 internal/application/auth/     # 登录状态、刷新与生命周期编排
 internal/application/resources/# Organization、Asset 与 Account 查询
+internal/application/desktop/  # Wails 使用的类型化桌面应用 API
 internal/cli/       # CLI 参数和输出适配
 internal/config/    # TOML 模型、校验和存储
 internal/guiconfig/ # GUI 独有偏好与 gui.toml 存储

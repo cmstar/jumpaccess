@@ -14,6 +14,8 @@ import (
 //go:embed all:frontend/dist
 var frontendAssets embed.FS
 
+var version = "dev"
+
 func main() {
 	rootDir, err := appdir.Root()
 	if err != nil {

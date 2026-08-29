@@ -2,7 +2,7 @@
 
 ## 业务场景
 
-JumpAccess 面向需要通过 JumpServer 访问远程 Asset 的用户。用户先独立完成 OAuth 登录，之后可以直接使用 `jumpctl` 建立 SSH 会话，也可以让支持 SSH `ProxyCommand` 的客户端调用 `jumpctl` 作为连接通道。
+JumpAccess 面向需要通过 JumpServer 访问远程 Asset 的用户。用户先独立完成 OAuth 登录，之后可以使用桌面 GUI 或 `jumpctl` 建立直接 SSH 会话，也可以让支持 SSH `ProxyCommand` 的客户端调用 `jumpctl` 作为连接通道。GUI 不提供代理能力。
 
 JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServer 仍然是用户授权、Organization、Asset、Account 及会话访问策略的权威来源。
 
@@ -20,7 +20,7 @@ JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServe
 | 连接凭据 | Connection Token | JumpServer 为建立具体远程会话提供的短期连接信息；它与 OAuth Token 的用途不同 |
 | SSH 会话 | SSH Session | 已经建立的数据通道。建立后不应依赖 OAuth Token 持续有效，也不因后台刷新失败而被主动关闭 |
 
-Alias 的最终 TOML 字段和资源标识方式应随目标解析实现一起固化，但不得改变“Alias 归属 Profile、适合批量编辑”的已确认规则。
+Alias 固定归属于 Profile，必须定位一个 Asset，Account 可为空。Organization 不是独立归属：GUI 创建 Alias 时根据当前 Profile 的 Organization 查询并验证 Asset，再把该 Organization 与 Asset ID 一并保存；用户不能为同一 Alias 另选一个无关 Organization。绑定 Account 时只能从该 Asset 当前获准的 Account 中选择，清空 Account 表示连接时再询问。
 
 ## 关键流程
 
@@ -52,6 +52,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式
 ## 业务规则
 
 - Alias 位于 TOML 配置中，允许用户批量直接编辑；项目需要提供打开配置文件的快捷命令。
+- GUI 的资产搜索同时匹配远端 Asset 与本地 Alias；合并结果按 Asset ID 去重。远端 Asset API 使用 offset/limit 分页，GUI 保留对应分页语义。
 - Profile 名是用户可见的精确标识，不为适配文件系统进行替换或规范化；拒绝空名称、首尾空白、控制字符以及 `.`、`..`，其余名称通过稳定摘要映射到凭据文件。
 - Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。

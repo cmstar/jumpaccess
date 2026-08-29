@@ -4,6 +4,8 @@ import (
 	"context"
 	"path/filepath"
 
+	jumpaccess "github.com/cmstar/jumpaccess"
+	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 )
@@ -13,6 +15,7 @@ type desktopApp struct {
 	ctx         context.Context
 	core        bootstrap.Runtime
 	preferences guiconfig.Store
+	api         desktopapp.Service
 }
 
 func newDesktopApp(rootDir string) (*desktopApp, error) {
@@ -24,7 +27,19 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 	if _, err := preferences.Load(); err != nil {
 		return nil, err
 	}
-	return &desktopApp{core: core, preferences: preferences}, nil
+	return &desktopApp{
+		core:        core,
+		preferences: preferences,
+		api: desktopapp.Service{
+			Version:     version,
+			Licenses:    jumpaccess.Licenses(),
+			Config:      core.Store,
+			Auth:        core.Auth,
+			Resources:   core.Resources,
+			Settings:    core.Settings,
+			Preferences: preferences,
+		},
+	}, nil
 }
 
 func (a *desktopApp) startup(ctx context.Context) {
