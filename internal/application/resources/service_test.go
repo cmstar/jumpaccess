@@ -23,13 +23,17 @@ type fakeAPI struct {
 	organizations []jumpserver.Organization
 	page          jumpserver.AssetPage
 	detail        jumpserver.AssetDetail
+	assetQuery    *jumpserver.AssetQuery
 }
 
 func (f fakeAPI) ListOrganizations(context.Context) ([]jumpserver.Organization, error) {
 	return f.organizations, nil
 }
 
-func (f fakeAPI) ListAssets(context.Context, jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
+func (f fakeAPI) ListAssets(_ context.Context, query jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
+	if f.assetQuery != nil {
+		*f.assetQuery = query
+	}
 	return f.page, nil
 }
 
@@ -41,9 +45,11 @@ func TestServiceListsResourcesUsingSelectedProfileAndOrganization(t *testing.T) 
 	configuration := projectconfig.Default()
 	configuration.CurrentProfile = "work"
 	configuration.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test", Organization: "org-default"}
+	var assetQuery jumpserver.AssetQuery
 	api := fakeAPI{
 		organizations: []jumpserver.Organization{{ID: "org-1", Name: "One"}},
 		page:          jumpserver.AssetPage{Results: []jumpserver.Asset{{ID: "asset-1", Name: "web"}}},
+		assetQuery:    &assetQuery,
 	}
 	service := Service{
 		Config: staticConfig{value: configuration}, Tokens: staticTokens{},
@@ -55,9 +61,12 @@ func TestServiceListsResourcesUsingSelectedProfileAndOrganization(t *testing.T) 
 		},
 	}
 
-	assets, err := service.ListAssets(context.Background(), "", "org-explicit", "web")
+	assets, err := service.ListAssets(context.Background(), "", "org-explicit", "web", 200, 25)
 	if err != nil || len(assets.Results) != 1 {
 		t.Fatalf("ListAssets = %#v, %v", assets, err)
+	}
+	if assetQuery.Search != "web" || assetQuery.Offset != 200 || assetQuery.Limit != 25 {
+		t.Fatalf("asset query = %#v, want search web, offset 200, limit 25", assetQuery)
 	}
 	organizations, err := service.ListOrganizations(context.Background(), "")
 	if err != nil || len(organizations) != 1 {

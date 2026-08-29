@@ -41,7 +41,7 @@ func (s Service) ListOrganizations(ctx context.Context, requestedProfile string)
 	return api.ListOrganizations(ctx)
 }
 
-func (s Service) ListAssets(ctx context.Context, requestedProfile, organization, search string) (jumpserver.AssetPage, error) {
+func (s Service) ListAssets(ctx context.Context, requestedProfile, organization, search string, offset, limit int) (jumpserver.AssetPage, error) {
 	profile, configured, err := s.resolveProfile(requestedProfile)
 	if err != nil {
 		return jumpserver.AssetPage{}, err
@@ -53,7 +53,7 @@ func (s Service) ListAssets(ctx context.Context, requestedProfile, organization,
 	if err != nil {
 		return jumpserver.AssetPage{}, err
 	}
-	return api.ListAssets(ctx, jumpserver.AssetQuery{Search: search, Limit: 100})
+	return api.ListAssets(ctx, jumpserver.AssetQuery{Search: search, Offset: offset, Limit: limit})
 }
 
 func (s Service) FindAsset(ctx context.Context, requestedProfile, organization, reference string) (jumpserver.AssetDetail, error) {

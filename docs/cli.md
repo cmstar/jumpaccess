@@ -91,10 +91,12 @@ account = "account-id"
 | 命令 | 作用 |
 | --- | --- |
 | `jumpctl organization list [--profile <name>]` | 合并并列出当前用户有权使用的 Organization；`org` 是同义命令 |
-| `jumpctl asset list [--profile <name>] [--organization <org>] [--search <text>]` | 列出最多 100 个匹配 Asset |
+| `jumpctl asset list [--profile <name>] [--organization <org>] [--search <text>] [--offset <count>] [--limit <count>]` | 分页列出匹配的 Asset；`--offset` 默认为 `0`，`--limit` 默认为 `100` |
 | `jumpctl account list <asset> [--profile <name>] [--organization <org>]` | 精确解析 Asset，并列出其允许的 Account |
 
 Asset 引用可以是 ID、名称或地址，但必须精确匹配且唯一。自动化和 ProxyCommand 建议在 Alias 中保存稳定 ID。
+
+`asset list` 使用偏移量分页。例如，`jumpctl asset list --offset 100 --limit 100` 会跳过前 100 个匹配结果并获取接下来的最多 100 个。`--offset` 必须大于或等于 `0`，`--limit` 必须大于 `0`；不指定分页参数时保留原有的前 100 条行为。
 
 所有 `list` 命令都输出带大写列头的文本表格，并根据本次结果中的最长内容自动对齐；没有结果时仍输出列头。当前各命令的列为：
 

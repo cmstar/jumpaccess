@@ -44,7 +44,7 @@ type ConnectionPreparer interface {
 
 type ResourceService interface {
 	ListOrganizations(context.Context, string) ([]jumpserver.Organization, error)
-	ListAssets(context.Context, string, string, string) (jumpserver.AssetPage, error)
+	ListAssets(context.Context, string, string, string, int, int) (jumpserver.AssetPage, error)
 	FindAsset(context.Context, string, string, string) (jumpserver.AssetDetail, error)
 }
 

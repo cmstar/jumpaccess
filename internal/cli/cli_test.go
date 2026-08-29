@@ -31,13 +31,17 @@ type fakeResourceService struct {
 	organizations []jumpserver.Organization
 	assets        jumpserver.AssetPage
 	asset         jumpserver.AssetDetail
+	listAssets    func(profile, organization, search string, offset, limit int)
 }
 
 func (f fakeResourceService) ListOrganizations(context.Context, string) ([]jumpserver.Organization, error) {
 	return f.organizations, nil
 }
 
-func (f fakeResourceService) ListAssets(context.Context, string, string, string) (jumpserver.AssetPage, error) {
+func (f fakeResourceService) ListAssets(_ context.Context, profile, organization, search string, offset, limit int) (jumpserver.AssetPage, error) {
+	if f.listAssets != nil {
+		f.listAssets(profile, organization, search, offset, limit)
+	}
 	return f.assets, nil
 }
 
@@ -443,5 +447,54 @@ func TestResourceListPrintsHeaderWhenThereAreNoResults(t *testing.T) {
 	}
 	if got, want := stdout.String(), "ID  NAME  ADDRESS  TYPE\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestAssetListPassesPaginationOptions(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantOffset int
+		wantLimit  int
+	}{
+		{name: "defaults", args: []string{"asset", "list"}, wantOffset: 0, wantLimit: 100},
+		{name: "explicit", args: []string{"asset", "list", "--offset", "200", "--limit", "25"}, wantOffset: 200, wantLimit: 25},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			called := false
+			service := fakeResourceService{listAssets: func(_, _, _ string, offset, limit int) {
+				called = true
+				if offset != test.wantOffset || limit != test.wantLimit {
+					t.Fatalf("pagination = offset %d, limit %d; want offset %d, limit %d", offset, limit, test.wantOffset, test.wantLimit)
+				}
+			}}
+			root := NewRoot(Dependencies{Resources: service})
+			root.SetArgs(test.args)
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("ListAssets was not called")
+			}
+		})
+	}
+}
+
+func TestAssetListRejectsInvalidPaginationOptions(t *testing.T) {
+	tests := []struct {
+		args    []string
+		wantErr string
+	}{
+		{args: []string{"asset", "list", "--offset", "-1"}, wantErr: "--offset must be greater than or equal to 0"},
+		{args: []string{"asset", "list", "--limit", "0"}, wantErr: "--limit must be greater than 0"},
+	}
+	for _, test := range tests {
+		root := NewRoot(Dependencies{Resources: fakeResourceService{}})
+		root.SetArgs(test.args)
+		err := root.Execute()
+		if err == nil || err.Error() != test.wantErr {
+			t.Fatalf("Execute(%v) error = %v, want %q", test.args, err, test.wantErr)
+		}
 	}
 }

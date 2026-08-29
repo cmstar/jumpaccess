@@ -49,17 +49,25 @@ func newAssetCommand(deps Dependencies) *cobra.Command {
 	var profile string
 	var organization string
 	var search string
+	var offset int
+	var limit int
 	command := &cobra.Command{Use: "asset", Short: "Inspect permitted JumpServer assets"}
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List permitted assets",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if offset < 0 {
+				return fmt.Errorf("--offset must be greater than or equal to 0")
+			}
+			if limit <= 0 {
+				return fmt.Errorf("--limit must be greater than 0")
+			}
 			service, err := requireResources(deps)
 			if err != nil {
 				return err
 			}
-			page, err := service.ListAssets(cmd.Context(), profile, organization, search)
+			page, err := service.ListAssets(cmd.Context(), profile, organization, search, offset, limit)
 			if err != nil {
 				return err
 			}
@@ -74,6 +82,8 @@ func newAssetCommand(deps Dependencies) *cobra.Command {
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
 	list.Flags().StringVar(&organization, "organization", "", "JumpServer organization ID")
 	list.Flags().StringVar(&search, "search", "", "search by asset name, address, or ID")
+	list.Flags().IntVar(&offset, "offset", 0, "number of matching assets to skip")
+	list.Flags().IntVar(&limit, "limit", 100, "maximum number of matching assets to return")
 	command.AddCommand(list)
 	return command
 }
