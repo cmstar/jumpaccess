@@ -83,6 +83,49 @@ function authDescription(expiresAt: string): string {
   return `${Math.max(1, Math.round(remaining / 60_000))} 分钟后到期`
 }
 
+function useDismissiblePopover(open: boolean, onDismiss: () => void) {
+  const root = useRef<HTMLDivElement>(null)
+  const dismiss = useRef(onDismiss)
+  dismiss.current = onDismiss
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) dismiss.current()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismiss.current()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+  return root
+}
+
+function ContextSelect({ ariaLabel, icon, label, onChange, options, value }: {
+  ariaLabel: string
+  icon?: ReactNode
+  label: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+  value: string
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useDismissiblePopover(open, () => setOpen(false))
+  const selected = options.find((option) => option.value === value)
+  const selectedLabel = selected?.label || value || '未选择'
+  return <div className="context-select" ref={root}>{icon ? <span className="context-icon">{icon}</span> : null}<div className="context-select-control"><button aria-expanded={open} aria-haspopup="listbox" aria-label={`${ariaLabel}：${selectedLabel}`} className="context-trigger" onClick={() => setOpen((current) => !current)} type="button"><span><small>{label}</small><strong>{selectedLabel}</strong></span><ChevronDown /></button>{open ? <div aria-label={ariaLabel} className="context-options" role="listbox">{options.map((option) => <button aria-selected={option.value === value} className={option.value === value ? 'selected' : ''} key={option.value} onClick={() => { setOpen(false); if (option.value !== value) onChange(option.value) }} role="option" type="button"><span>{option.label}</span>{option.value === value ? <span className="selected-mark">✓</span> : null}</button>)}</div> : null}</div></div>
+}
+
+function AliasFilterMenu({ onChange, value }: { onChange: (value: AliasFilter) => void; value: AliasFilter }) {
+  const [open, setOpen] = useState(false)
+  const root = useDismissiblePopover(open, () => setOpen(false))
+  return <div className="filter-menu" ref={root}><button aria-expanded={open} aria-haspopup="true" aria-label="筛选" className="button secondary" onClick={() => setOpen((current) => !current)} type="button"><SlidersHorizontal />筛选{value !== 'all' ? <em>1</em> : null}<ChevronDown /></button>{open ? <div className="popover filter-popover" role="group" aria-label="当前页 Alias 筛选"><strong>当前页 Alias 状态</strong>{([['all', '全部'], ['with-alias', '已有 Alias'], ['without-alias', '未创建 Alias']] as const).map(([filter, label]) => <label key={filter}><input type="radio" name="alias-filter" checked={value === filter} onChange={() => { onChange(filter); setOpen(false) }} />{label}</label>)}</div> : null}</div>
+}
+
 export default function App({ backend = wailsBackend }: AppProps) {
   const searchRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<View>('assets')
@@ -324,12 +367,41 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
+  function adjustProfileAliasCount(delta: number) {
+    setBootstrap((current) => current ? {
+      ...current,
+      profiles: current.profiles.map((item) => item.name === profile ? { ...item, aliasCount: Math.max(0, item.aliasCount + delta) } : item),
+    } : current)
+  }
+
+  async function createAliasForAsset(asset: Asset, name: string, account: string) {
+    await run(async () => {
+      const created = await backend.createAlias({ profile, asset: asset.id, name, account })
+      setAssets((current) => ({
+        ...current,
+        aliasCount: current.aliasCount + 1,
+        results: current.results.map((item) => item.id === asset.id ? { ...item, aliases: [...item.aliases, created].sort((left, right) => left.name.localeCompare(right.name)) } : item),
+      }))
+      setDetails((current) => {
+        const detail = current[asset.id]
+        return detail ? { ...current, [asset.id]: { ...detail, aliases: [...detail.aliases, created].sort((left, right) => left.name.localeCompare(right.name)) } } : current
+      })
+      adjustProfileAliasCount(1)
+      setAliasAsset(null)
+    })
+  }
+
   async function deleteAlias(alias: Alias) {
     if (!window.confirm(`确定删除 Alias “${alias.name}”吗？`)) return
     await run(async () => {
       await backend.deleteAlias(profile, alias.name)
-      setRefreshKey((value) => value + 1)
-      setDetails({})
+      setAssets((current) => ({
+        ...current,
+        aliasCount: Math.max(0, current.aliasCount - 1),
+        results: current.results.map((asset) => ({ ...asset, aliases: asset.aliases.filter((item) => item.name !== alias.name) })),
+      }))
+      setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, { ...detail, aliases: detail.aliases.filter((item) => item.name !== alias.name) }])))
+      adjustProfileAliasCount(-1)
     })
   }
 
@@ -381,9 +453,9 @@ export default function App({ backend = wailsBackend }: AppProps) {
       <section className="workspace">
         <header className="topbar">
           <div className="context-switchers">
-            <label className="context-select"><span className="context-icon"><Server /></span><span><small>Profile</small><select aria-label="当前 Profile" value={profile} onChange={(event) => void run(async () => { await backend.useProfile(event.target.value); await reloadBootstrap(event.target.value); setOffset(0); setDetails({}) })}>{bootstrap.profiles.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></span><ChevronDown /></label>
+            <ContextSelect ariaLabel="当前 Profile" icon={<Server />} label="Profile" onChange={(value) => void run(async () => { await backend.useProfile(value); await reloadBootstrap(value); setOffset(0); setDetails({}) })} options={bootstrap.profiles.map((item) => ({ value: item.name, label: item.name }))} value={profile} />
             <div className="context-divider" />
-            <label className="context-select organization-select"><span><small>Organization</small><select aria-label="当前 Organization" value={organization} onChange={(event) => void run(async () => { const value = event.target.value; await backend.setOrganization(profile, value); setOrganization(value); setOffset(0); setDetails({}); await reloadBootstrap(profile) })}>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></span><ChevronDown /></label>
+            <ContextSelect ariaLabel="当前 Organization" label="Organization" onChange={(value) => void run(async () => { await backend.setOrganization(profile, value); setOrganization(value); setOffset(0); setDetails({}); await reloadBootstrap(profile) })} options={organizations.map((item) => ({ value: item.id, label: item.name }))} value={organization} />
           </div>
           <div className="topbar-actions"><button className="quick-connect" type="button" onClick={() => setQuickOpen(true)}><Command /><span>快速连接</span><kbd>Ctrl K</kbd></button><button className="auth-status" type="button" onClick={() => setView('profiles')}><span className={currentProfile?.auth.loggedIn ? 'status-dot' : 'status-dot offline'} /><span><strong>{currentProfile?.auth.loggedIn ? '已认证' : '需要登录'}</strong><small>{currentProfile?.auth.loggedIn ? authDescription(currentProfile.auth.expiresAt) : '打开 Profile 管理'}</small></span></button></div>
         </header>
@@ -395,7 +467,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
             <section className="asset-pane">
               <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={refreshing || !organization} onClick={() => setRefreshKey((value) => value + 1)} type="button"><RefreshCcw className={refreshing ? 'spin' : ''} />{refreshing ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { setView('profiles'); setProfileDialog(true) }} /> : <>
-                <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><details className="filter-menu"><summary className="button secondary"><SlidersHorizontal />筛选{aliasFilter !== 'all' ? <em>1</em> : null}<ChevronDown /></summary><div className="popover" role="group" aria-label="当前页 Alias 筛选"><strong>当前页 Alias 状态</strong>{([['all', '全部'], ['with-alias', '已有 Alias'], ['without-alias', '未创建 Alias']] as const).map(([value, label]) => <label key={value}><input type="radio" name="alias-filter" checked={aliasFilter === value} onChange={() => setAliasFilter(value)} />{label}</label>)}</div></details></div>
+                <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
                 <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={(alias) => void deleteAlias(alias)} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
             </section>
@@ -412,7 +484,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         {view !== 'sessions' ? <SessionDock sessions={sessions} onOpen={(id) => { setActiveSessionID(id); setView('sessions') }} /> : null}
       </section>
 
-      {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void run(async () => { await backend.createAlias({ profile, asset: aliasAsset.id, name, account }); setAliasAsset(null); setRefreshKey((value) => value + 1); setDetails({}) })} /> : null}
+      {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
       {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.target, account.id || account.username))} /> : null}
       {quickOpen ? <QuickConnectDialog assets={quickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={(name, url) => void run(async () => { await backend.addProfile(name, url); await backend.useProfile(name); await reloadBootstrap(name); setProfileDialog(false); setLoginAttempt(await backend.startLogin(name)) })} /> : null}
@@ -451,7 +523,17 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAl
     const knownAccounts = detail?.accounts ?? []
     const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
     return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select><button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
-  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td onClick={(event) => event.stopPropagation()}><details className="row-actions"><summary className="icon-button" aria-label={`${asset.name} 更多操作`}><MoreHorizontal /></summary><div className="popover right"><button aria-label={`从操作菜单连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button onClick={onCreateAlias}><Plus />创建 Alias</button> : null}<button onClick={() => void navigator.clipboard?.writeText(asset.address)}><Copy />复制地址</button><button onClick={() => void navigator.clipboard?.writeText(asset.id)}><Copy />复制 Asset ID</button></div></details></td></tr>
+  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td onClick={(event) => event.stopPropagation()}><AssetRowActions asset={asset} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
+}
+
+function AssetRowActions({ asset, onConnect, onCreateAlias }: { asset: Asset; onConnect: () => void; onCreateAlias: () => void }) {
+  const [open, setOpen] = useState(false)
+  const root = useDismissiblePopover(open, () => setOpen(false))
+  const act = (action: () => void) => {
+    setOpen(false)
+    action()
+  }
+  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu"><button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button> : null}<button onClick={() => act(() => void navigator.clipboard?.writeText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
 }
 
 function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {

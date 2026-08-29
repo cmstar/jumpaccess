@@ -210,3 +210,54 @@ test('路由 SSH 状态、输出和主机密钥确认事件', async () => {
   await user.click(screen.getByRole('button', { name: '拒绝' }))
   await waitFor(() => expect(backend.resolveSSHHostKey).toHaveBeenCalledWith('host-key-1', false))
 })
+
+test('顶部上下文选择器和资产菜单点击外部后关闭', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  const heading = await screen.findByRole('heading', { name: '资产' })
+
+  expect(screen.queryByRole('combobox', { name: '当前 Organization' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '当前 Organization：研发中心' }))
+  expect(screen.getByRole('listbox', { name: '当前 Organization' })).toBeInTheDocument()
+  await user.click(heading)
+  expect(screen.queryByRole('listbox', { name: '当前 Organization' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: '筛选' }))
+  expect(screen.getByRole('group', { name: '当前页 Alias 筛选' })).toBeInTheDocument()
+  await user.click(heading)
+  expect(screen.queryByRole('group', { name: '当前页 Alias 筛选' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByLabelText('prod-web-01 更多操作'))
+  expect(screen.getByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).toBeInTheDocument()
+  await user.click(heading)
+  expect(screen.queryByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).not.toBeInTheDocument()
+})
+
+test('创建 Alias 后局部更新并保留已有账号显示缓存', async () => {
+  const secondAsset = { id: 'asset-2', name: 'new-server', address: '10.0.0.2', type: 'Linux', category: 'Host', aliases: [] }
+  const pageWithEmptyAsset: AssetPage = { ...assetPage, count: 2, results: [...assetPage.results, secondAsset] }
+  const secondDetail: AssetDetail = { ...secondAsset, accounts: assetDetail.accounts, protocols: assetDetail.protocols }
+  const createdAlias = { name: 'new-alias', asset: 'asset-2', account: 'account-2', organization: 'org-1' }
+  const backend = makeBackend({
+    listAssets: vi.fn().mockResolvedValue(pageWithEmptyAsset),
+    getAsset: vi.fn(({ asset }) => Promise.resolve(asset === 'asset-2' ? secondDetail : assetDetail)),
+    createAlias: vi.fn().mockResolvedValue(createdAlias),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  const firstAccount = await screen.findByLabelText('production-web 默认账号')
+  await waitFor(() => expect(firstAccount).toHaveDisplayValue('deploy'))
+  const callsBeforeCreate = vi.mocked(backend.listAssets).mock.calls.length
+  await user.click(within(screen.getByTestId('asset-row-asset-2')).getByLabelText('创建 Alias'))
+  const dialog = await screen.findByRole('dialog', { name: '创建 Alias' })
+  await user.type(within(dialog).getByLabelText('Alias 名称'), 'new-alias')
+  await waitFor(() => expect(within(dialog).getByLabelText('默认账号')).toHaveDisplayValue('连接时询问'))
+  await user.selectOptions(within(dialog).getByLabelText('默认账号'), 'account-2')
+  await user.click(within(dialog).getByRole('button', { name: '保存 Alias' }))
+
+  expect(await screen.findByText('new-alias')).toBeInTheDocument()
+  expect(screen.getByLabelText('production-web 默认账号')).toHaveDisplayValue('deploy')
+  expect(backend.listAssets).toHaveBeenCalledTimes(callsBeforeCreate)
+})

@@ -13,6 +13,8 @@ import (
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
 )
 
+const allOrganizationsID = "00000000-0000-0000-0000-000000000000"
+
 type ConfigLoader interface {
 	Load() (projectconfig.Config, error)
 }
@@ -372,7 +374,7 @@ func aliasMatchesAsset(alias projectconfig.Alias, asset jumpserver.Asset) bool {
 }
 
 func sameOrganization(aliasOrganization, selectedOrganization string) bool {
-	return aliasOrganization == "" || aliasOrganization == selectedOrganization
+	return aliasOrganization == "" || aliasOrganization == selectedOrganization || aliasOrganization == allOrganizationsID || selectedOrganization == allOrganizationsID
 }
 
 func organizationForAlias(alias projectconfig.Alias, fallback string) string {

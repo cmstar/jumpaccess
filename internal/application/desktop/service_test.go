@@ -122,6 +122,65 @@ func TestListAssetsSearchesAliasesAndMergesWithoutDuplicates(t *testing.T) {
 	}
 }
 
+func TestListAssetsIncludesConcreteOrganizationAliasesInAllOrganizations(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	configuration := projectconfig.Default()
+	configuration.CurrentProfile = "work"
+	configuration.Profiles["work"] = projectconfig.Profile{
+		URL:          "https://jump.example.test",
+		Organization: "00000000-0000-0000-0000-000000000000",
+		Aliases: map[string]projectconfig.Alias{
+			"production-web": {Asset: "asset-1", Organization: "org-2"},
+		},
+	}
+	if err := store.Save(configuration); err != nil {
+		t.Fatal(err)
+	}
+	resources := &fakeResources{
+		page: jumpserver.AssetPage{Count: 1, Results: []jumpserver.Asset{{ID: "asset-1", Name: "web", Address: "10.0.0.1"}}},
+	}
+	service := Service{Config: store, Resources: resources}
+
+	got, err := service.ListAssets(context.Background(), AssetListRequest{Limit: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AliasCount != 1 {
+		t.Fatalf("AliasCount = %d, want all organizations total 1", got.AliasCount)
+	}
+	if len(got.Results) != 1 || len(got.Results[0].Aliases) != 1 || got.Results[0].Aliases[0].Name != "production-web" {
+		t.Fatalf("asset page = %#v, want alias from concrete organization", got)
+	}
+}
+
+func TestListAssetsIncludesAllOrganizationsAliasInConcreteOrganization(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	configuration := projectconfig.Default()
+	configuration.CurrentProfile = "work"
+	configuration.Profiles["work"] = projectconfig.Profile{
+		URL:          "https://jump.example.test",
+		Organization: "org-2",
+		Aliases: map[string]projectconfig.Alias{
+			"production-web": {Asset: "asset-1", Organization: "00000000-0000-0000-0000-000000000000"},
+		},
+	}
+	if err := store.Save(configuration); err != nil {
+		t.Fatal(err)
+	}
+	resources := &fakeResources{
+		page: jumpserver.AssetPage{Count: 1, Results: []jumpserver.Asset{{ID: "asset-1", Name: "web", Address: "10.0.0.1"}}},
+	}
+	service := Service{Config: store, Resources: resources}
+
+	got, err := service.ListAssets(context.Background(), AssetListRequest{Limit: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AliasCount != 1 || len(got.Results) != 1 || len(got.Results[0].Aliases) != 1 {
+		t.Fatalf("asset page = %#v, want all-organizations alias in concrete organization", got)
+	}
+}
+
 func TestCreateAliasDerivesOrganizationAndValidatesExistingAccount(t *testing.T) {
 	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
 	configuration := projectconfig.Default()
