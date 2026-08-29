@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
 	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
@@ -33,6 +34,19 @@ func (a *desktopApp) AddProfile(name, siteURL string) error {
 	return a.api.AddProfile(name, siteURL)
 }
 
+func (a *desktopApp) DeleteProfile(name string) error {
+	var closeErr error
+	for _, session := range a.sessions.List() {
+		if session.Profile == name {
+			closeErr = errors.Join(closeErr, a.sessions.Close(session.ID))
+		}
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return a.api.DeleteProfile(name)
+}
+
 func (a *desktopApp) UseProfile(name string) error {
 	return a.api.UseProfile(name)
 }
@@ -55,6 +69,10 @@ func (a *desktopApp) SetAliasAccount(request desktopapp.AliasAccountRequest) err
 
 func (a *desktopApp) SavePreferences(value guiconfig.Config) error {
 	return a.api.SavePreferences(value)
+}
+
+func (a *desktopApp) GetAuthStatus(profile string) (desktopapp.AuthStatus, error) {
+	return a.api.GetAuthStatus(profile)
 }
 
 func (a *desktopApp) RefreshAuth(profile string) (desktopapp.AuthStatus, error) {

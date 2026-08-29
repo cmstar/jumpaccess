@@ -111,6 +111,6 @@ func New(options Options) (Runtime, error) {
 		Auth:          authService,
 		Connect:       connectService,
 		Resources:     resourceService,
-		Settings:      settingsapp.Service{Store: store},
+		Settings:      settingsapp.Service{Store: store, Credentials: tokens},
 	}, nil
 }

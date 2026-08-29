@@ -31,6 +31,7 @@ type ResourceService interface {
 
 type SettingsService interface {
 	AddProfile(string, string) error
+	DeleteProfile(string) error
 	UseProfile(string) error
 	SetProfileOrganization(string, string) error
 	SetAlias(string, string, projectconfig.Alias) error
@@ -265,6 +266,10 @@ func (s Service) AddProfile(name, siteURL string) error {
 	return s.Settings.AddProfile(name, siteURL)
 }
 
+func (s Service) DeleteProfile(name string) error {
+	return s.Settings.DeleteProfile(name)
+}
+
 func (s Service) UseProfile(name string) error {
 	return s.Settings.UseProfile(name)
 }
@@ -286,6 +291,17 @@ func (s Service) SavePreferences(value guiconfig.Config) error {
 
 func (s Service) LicenseText() string {
 	return s.Licenses
+}
+
+func (s Service) GetAuthStatus(profile string) (AuthStatus, error) {
+	if s.Auth == nil {
+		return AuthStatus{}, fmt.Errorf("OAuth status is unavailable")
+	}
+	status, err := s.Auth.Status(profile)
+	if err != nil {
+		return AuthStatus{}, err
+	}
+	return authStatus(status), nil
 }
 
 func (s Service) RefreshAuth(ctx context.Context, profile string) (AuthStatus, error) {

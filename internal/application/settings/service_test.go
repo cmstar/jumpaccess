@@ -7,6 +7,15 @@ import (
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 )
 
+type recordingCredentialRemover struct {
+	profiles []string
+}
+
+func (r *recordingCredentialRemover) Delete(profile string) error {
+	r.profiles = append(r.profiles, profile)
+	return nil
+}
+
 func TestAddProfilePersistsAndMakesFirstProfileCurrent(t *testing.T) {
 	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
 	service := Service{Store: store}
@@ -58,6 +67,62 @@ func TestUseProfilePersistsCurrentProfile(t *testing.T) {
 	}
 	if got.CurrentProfile != "two" {
 		t.Fatalf("CurrentProfile = %q, want two", got.CurrentProfile)
+	}
+}
+
+func TestDeleteProfileRemovesCredentialAndSelectsNextProfile(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	credentials := &recordingCredentialRemover{}
+	service := Service{Store: store, Credentials: credentials}
+	if err := service.AddProfile("work", "https://work.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.AddProfile("backup", "https://backup.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetAlias("work", "production", projectconfig.Alias{Asset: "asset-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.DeleteProfile("work"); err != nil {
+		t.Fatalf("DeleteProfile returned error: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := got.Profiles["work"]; exists {
+		t.Fatal("profile work still exists after DeleteProfile")
+	}
+	if got.CurrentProfile != "backup" {
+		t.Fatalf("CurrentProfile = %q, want backup", got.CurrentProfile)
+	}
+	if len(credentials.profiles) != 1 || credentials.profiles[0] != "work" {
+		t.Fatalf("deleted credentials = %#v, want work", credentials.profiles)
+	}
+
+	if err := service.DeleteProfile("backup"); err != nil {
+		t.Fatalf("delete last profile: %v", err)
+	}
+	got, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CurrentProfile != "" || len(got.Profiles) != 0 {
+		t.Fatalf("config after deleting last profile = %#v", got)
+	}
+}
+
+func TestDeleteProfileRejectsUnknownProfileWithoutDeletingCredential(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	credentials := &recordingCredentialRemover{}
+	service := Service{Store: store, Credentials: credentials}
+
+	if err := service.DeleteProfile("missing"); err == nil {
+		t.Fatal("DeleteProfile error = nil, want missing profile error")
+	}
+	if len(credentials.profiles) != 0 {
+		t.Fatalf("deleted credentials = %#v, want none", credentials.profiles)
 	}
 }
 

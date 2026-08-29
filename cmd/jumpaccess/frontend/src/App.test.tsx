@@ -87,12 +87,14 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     getAsset: vi.fn().mockResolvedValue(assetDetail),
     quickSearch: vi.fn().mockResolvedValue(assetPage.results),
     addProfile: vi.fn().mockResolvedValue(undefined),
+    deleteProfile: vi.fn().mockResolvedValue(undefined),
     useProfile: vi.fn().mockResolvedValue(undefined),
     setOrganization: vi.fn().mockResolvedValue(undefined),
     createAlias: vi.fn().mockResolvedValue(assetPage.results[0].aliases[0]),
     deleteAlias: vi.fn().mockResolvedValue(undefined),
     setAliasAccount: vi.fn().mockResolvedValue(undefined),
     savePreferences: vi.fn().mockResolvedValue(undefined),
+    getAuthStatus: vi.fn().mockResolvedValue(bootstrapState.profiles[0].auth),
     refreshAuth: vi.fn().mockResolvedValue(bootstrapState.profiles[0].auth),
     startLogin: vi.fn().mockResolvedValue({ id: 'login-1', profile: 'production', expiresAt: '2026-08-29T12:00:00Z' }),
     completeLogin: vi.fn().mockResolvedValue(bootstrapState.profiles[0].auth),
@@ -132,6 +134,14 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
   expect(screen.getByText(/最近同步/)).toBeInTheDocument()
 })
 
+test('资产详情不显示 Gateway 主机密钥提示', async () => {
+  render(<App backend={makeBackend()} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await screen.findByRole('heading', { name: 'prod-web-01' })
+  expect(screen.queryByText('严格校验 Gateway 主机密钥')).not.toBeInTheDocument()
+})
+
 test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
@@ -143,7 +153,9 @@ test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接',
   expect(within(row).queryByRole('button', { name: '创建 Alias' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '为资产创建 Alias' })).not.toBeInTheDocument()
 
-  await user.selectOptions(within(row).getByLabelText('production-web 默认账号'), 'account-2')
+  const accountSelect = within(row).getByLabelText('production-web 默认账号')
+  await waitFor(() => expect(accountSelect).toHaveDisplayValue('deploy'))
+  await user.selectOptions(accountSelect, 'account-2')
   await waitFor(() => expect(backend.setAliasAccount).toHaveBeenCalledWith({
     profile: 'production', name: 'production-web', account: 'account-2',
   }))
@@ -218,7 +230,7 @@ test('顶部上下文选择器和资产菜单点击外部后关闭', async () =>
   const heading = await screen.findByRole('heading', { name: '资产' })
 
   expect(screen.queryByRole('combobox', { name: '当前 Organization' })).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '当前 Organization：研发中心' }))
+  await user.click(await screen.findByRole('button', { name: '当前 Organization：研发中心' }))
   expect(screen.getByRole('listbox', { name: '当前 Organization' })).toBeInTheDocument()
   await user.click(heading)
   expect(screen.queryByRole('listbox', { name: '当前 Organization' })).not.toBeInTheDocument()
@@ -260,4 +272,136 @@ test('创建 Alias 后局部更新并保留已有账号显示缓存', async () =
   expect(await screen.findByText('new-alias')).toBeInTheDocument()
   expect(screen.getByLabelText('production-web 默认账号')).toHaveDisplayValue('deploy')
   expect(backend.listAssets).toHaveBeenCalledTimes(callsBeforeCreate)
+})
+
+test('资产请求自动续期后同步顶部认证状态', async () => {
+  const expiredState: BootstrapState = {
+    ...bootstrapState,
+    profiles: bootstrapState.profiles.map((item) => ({
+      ...item,
+      auth: { ...item.auth, expired: true, expiresAt: new Date(Date.now() - 60_000).toISOString() },
+    })),
+  }
+  const refreshedAuth = {
+    loggedIn: true,
+    expired: false,
+    refreshAvailable: true,
+    expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+  }
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue(expiredState),
+    getAuthStatus: vi.fn().mockResolvedValue(refreshedAuth),
+  })
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await waitFor(() => expect(backend.getAuthStatus).toHaveBeenCalledWith('production'))
+  expect(screen.getByRole('button', { name: /已认证/ })).toHaveTextContent(/分钟后到期/)
+})
+
+test('使用应用内确认框断开活动 SSH 会话', async () => {
+  const activeSession: SessionState = {
+    id: 'live-1', status: 'active', title: 'production-web', profile: 'production',
+    organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '',
+  }
+  const backend = makeBackend({ listSSHSessions: vi.fn().mockResolvedValue([activeSession]) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  expect(screen.getByRole('button', { name: '资产' })).toHaveAttribute('title', '资产')
+  await user.click(screen.getByRole('button', { name: '会话' }))
+  await user.click(screen.getByRole('button', { name: '断开 production-web 会话' }))
+  expect(await screen.findByRole('dialog', { name: '断开 SSH 会话' })).toBeInTheDocument()
+  expect(backend.closeSSHSession).not.toHaveBeenCalled()
+
+  await user.click(screen.getByRole('button', { name: '取消' }))
+  expect(screen.queryByRole('dialog', { name: '断开 SSH 会话' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '断开 production-web 会话' }))
+  await user.click(screen.getByRole('button', { name: '断开连接' }))
+  await waitFor(() => expect(backend.closeSSHSession).toHaveBeenCalledWith('live-1'))
+})
+
+test('浏览器登录弹窗说明支持原生回调和完整确认页 URL', async () => {
+  const loggedOutState: BootstrapState = {
+    ...bootstrapState,
+    profiles: bootstrapState.profiles.map((item) => ({
+      ...item,
+      auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' },
+    })),
+  }
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue(loggedOutState),
+    getAuthStatus: vi.fn().mockResolvedValue(loggedOutState.profiles[0].auth),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  await user.click(screen.getByRole('button', { name: '登录' }))
+
+  const dialog = await screen.findByRole('dialog', { name: '完成浏览器登录' })
+  expect(dialog).toHaveTextContent('jms:// 回调链接')
+  expect(dialog).toHaveTextContent('浏览器地址栏中的完整确认页 URL')
+  expect(within(dialog).getByLabelText('回调链接或确认页 URL')).toHaveAttribute(
+    'placeholder',
+    expect.stringContaining('https://'),
+  )
+})
+
+test('Profile 卡片展示 Server URL，并在警告确认后删除全部本地内容', async () => {
+  const temporarySession: SessionState = {
+    id: 'temporary-session', status: 'active', title: 'temporary-shell', profile: 'temporary',
+    organization: 'org-test', asset: 'asset-test', account: 'root', error: '',
+  }
+  let emitSessionState: ((event: SessionState) => void) | undefined
+  const testProfile = {
+    name: 'temporary',
+    url: 'https://temporary.example.test',
+    organization: 'org-test',
+    aliasCount: 3,
+    auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '' },
+  }
+  const initialState: BootstrapState = {
+    ...bootstrapState,
+    profiles: [...bootstrapState.profiles, testProfile],
+  }
+  const deletedState: BootstrapState = {
+    ...bootstrapState,
+    profiles: bootstrapState.profiles,
+  }
+  const backend = makeBackend({
+    bootstrap: vi.fn()
+      .mockResolvedValueOnce(initialState)
+      .mockResolvedValue(deletedState),
+    listSSHSessions: vi.fn().mockResolvedValue([temporarySession]),
+    onSessionState: vi.fn((handler) => {
+      emitSessionState = handler
+      return () => undefined
+    }),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  const card = screen.getByRole('heading', { name: 'temporary' }).closest('article')!
+  expect(within(card).getByText('Server URL')).toBeInTheDocument()
+  expect(within(card).getByText('https://temporary.example.test')).toBeInTheDocument()
+  expect(within(card).queryByText('Alias')).not.toBeInTheDocument()
+
+  await user.click(within(card).getByRole('button', { name: '删除 temporary Profile' }))
+  const dialog = await screen.findByRole('dialog', { name: '删除 Profile' })
+  expect(dialog).toHaveTextContent('Organization、全部 Alias 和本地 OAuth 凭据')
+  expect(dialog).toHaveTextContent('活动 SSH 会话')
+  expect(backend.deleteProfile).not.toHaveBeenCalled()
+
+  await user.click(within(dialog).getByRole('button', { name: '删除 temporary Profile' }))
+  await waitFor(() => expect(backend.deleteProfile).toHaveBeenCalledWith('temporary'))
+  expect(screen.queryByRole('heading', { name: 'temporary' })).not.toBeInTheDocument()
+
+  act(() => emitSessionState?.({ ...temporarySession, status: 'closed' }))
+  await user.click(screen.getByRole('button', { name: '会话' }))
+  expect(screen.queryByRole('button', { name: /temporary-shell/ })).not.toBeInTheDocument()
 })

@@ -2,13 +2,21 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
+	"github.com/cmstar/jumpaccess/internal/credential"
 )
 
+type CredentialRemover interface {
+	Delete(string) error
+}
+
 type Service struct {
-	Store projectconfig.Store
+	Store       projectconfig.Store
+	Credentials CredentialRemover
 }
 
 func (s Service) AddProfile(name, siteURL string) error {
@@ -30,6 +38,32 @@ func (s Service) AddProfile(name, siteURL string) error {
 func (s Service) UseProfile(name string) error {
 	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
 		value.CurrentProfile = name
+		return nil
+	})
+}
+
+func (s Service) DeleteProfile(name string) error {
+	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
+		if _, exists := value.Profiles[name]; !exists {
+			return fmt.Errorf("profile %q does not exist", name)
+		}
+		if s.Credentials != nil {
+			if err := s.Credentials.Delete(name); err != nil && !errors.Is(err, credential.ErrNotFound) {
+				return fmt.Errorf("delete OAuth credential for profile %q: %w", name, err)
+			}
+		}
+		delete(value.Profiles, name)
+		if value.CurrentProfile == name {
+			names := make([]string, 0, len(value.Profiles))
+			for profileName := range value.Profiles {
+				names = append(names, profileName)
+			}
+			sort.Strings(names)
+			value.CurrentProfile = ""
+			if len(names) > 0 {
+				value.CurrentProfile = names[0]
+			}
+		}
 		return nil
 	})
 }

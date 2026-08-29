@@ -112,12 +112,14 @@ export interface Backend {
   getAsset(request: { profile: string; organization: string; asset: string }): Promise<AssetDetail>
   quickSearch(request: { profile: string; organization: string; query: string; limit: number }): Promise<Asset[]>
   addProfile(name: string, siteURL: string): Promise<void>
+  deleteProfile(name: string): Promise<void>
   useProfile(name: string): Promise<void>
   setOrganization(profile: string, organization: string): Promise<void>
   createAlias(request: { profile: string; asset: string; name: string; account: string }): Promise<Alias>
   deleteAlias(profile: string, name: string): Promise<void>
   setAliasAccount(request: { profile: string; name: string; account: string }): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
+  getAuthStatus(profile: string): Promise<AuthStatus>
   refreshAuth(profile: string): Promise<AuthStatus>
   startLogin(profile: string): Promise<LoginAttempt>
   completeLogin(attemptID: string, callbackURL: string): Promise<AuthStatus>
@@ -149,12 +151,14 @@ type DesktopBinding = {
   GetAsset(request: Parameters<Backend['getAsset']>[0]): Promise<AssetDetail>
   QuickSearch(request: Parameters<Backend['quickSearch']>[0]): Promise<Asset[]>
   AddProfile(name: string, siteURL: string): Promise<void>
+  DeleteProfile(name: string): Promise<void>
   UseProfile(name: string): Promise<void>
   SetOrganization(profile: string, organization: string): Promise<void>
   CreateAlias(request: Parameters<Backend['createAlias']>[0]): Promise<Alias>
   DeleteAlias(profile: string, name: string): Promise<void>
   SetAliasAccount(request: Parameters<Backend['setAliasAccount']>[0]): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
+  GetAuthStatus(profile: string): Promise<AuthStatus>
   RefreshAuth(profile: string): Promise<AuthStatus>
   StartLogin(profile: string): Promise<LoginAttempt>
   CompleteLogin(attemptID: string, callbackURL: string): Promise<AuthStatus>
@@ -222,12 +226,14 @@ export const wailsBackend: Backend = {
   getAsset: (request) => binding().GetAsset(request),
   quickSearch: (request) => binding().QuickSearch(request),
   addProfile: (name, siteURL) => binding().AddProfile(name, siteURL),
+  deleteProfile: (name) => binding().DeleteProfile(name),
   useProfile: (name) => binding().UseProfile(name),
   setOrganization: (profile, organization) => binding().SetOrganization(profile, organization),
   createAlias: (request) => binding().CreateAlias(request),
   deleteAlias: (profile, name) => binding().DeleteAlias(profile, name),
   setAliasAccount: (request) => binding().SetAliasAccount(request),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
+  getAuthStatus: (profile) => binding().GetAuthStatus(profile),
   refreshAuth: (profile) => binding().RefreshAuth(profile),
   startLogin: (profile) => binding().StartLogin(profile),
   completeLogin: (attemptID, callbackURL) => binding().CompleteLogin(attemptID, callbackURL),

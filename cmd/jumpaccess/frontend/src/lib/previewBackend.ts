@@ -72,6 +72,14 @@ export const previewBackend: Backend = {
     return page.results
   },
   addProfile: async (name, siteURL) => { state.profiles.push({ name, url: siteURL, organization: '', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } }) },
+  deleteProfile: async (name) => {
+    state.profiles = state.profiles.filter((item) => item.name !== name)
+    sessions = sessions.filter((session) => session.profile !== name)
+    if (state.currentProfile === name) {
+      state.currentProfile = [...state.profiles].sort((left, right) => left.name.localeCompare(right.name))[0]?.name ?? ''
+      state.currentOrganization = state.profiles.find((item) => item.name === state.currentProfile)?.organization ?? ''
+    }
+  },
   useProfile: async (name) => { state.currentProfile = name },
   setOrganization: async (profile, organization) => { const item = state.profiles.find((value) => value.name === profile); if (item) item.organization = organization; state.currentOrganization = organization },
   async createAlias(request) {
@@ -85,6 +93,7 @@ export const previewBackend: Backend = {
   async deleteAlias(_profile, name) { for (const asset of assets) asset.aliases = asset.aliases.filter((alias) => alias.name !== name) },
   async setAliasAccount(request) { for (const asset of assets) asset.aliases = asset.aliases.map((alias) => alias.name === request.name ? { ...alias, account: request.account } : alias) },
   async savePreferences(preferences: Preferences) { state = { ...state, preferences: clone(preferences) } },
+  async getAuthStatus(profile) { return clone(state.profiles.find((item) => item.name === profile)!.auth) },
   async refreshAuth(profile) { return clone(state.profiles.find((item) => item.name === profile)!.auth) },
   async startLogin(profile) { return { id: `login-${Date.now()}`, profile, expiresAt: new Date(Date.now() + 300_000).toISOString() } },
   async completeLogin(_attemptID, _callbackURL) { const auth = { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: new Date(Date.now() + 3600_000).toISOString() }; return auth },

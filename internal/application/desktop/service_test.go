@@ -81,6 +81,21 @@ func TestBootstrapReturnsSortedProfilesAuthAndDesktopPreferences(t *testing.T) {
 	}
 }
 
+func TestGetAuthStatusReturnsLatestCredentialState(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour)
+	service := Service{Auth: fakeAuth{statuses: map[string]authapp.Status{
+		"production": {Profile: "production", LoggedIn: true, RefreshAvailable: true, ExpiresAt: expiresAt},
+	}}}
+
+	got, err := service.GetAuthStatus("production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.LoggedIn || !got.RefreshAvailable || got.ExpiresAt != expiresAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("GetAuthStatus = %#v", got)
+	}
+}
+
 func TestListAssetsSearchesAliasesAndMergesWithoutDuplicates(t *testing.T) {
 	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
 	configuration := projectconfig.Default()

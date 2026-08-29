@@ -25,6 +25,7 @@ import {
   Tags,
   TerminalSquare,
   Trash2,
+  Unplug,
   Wifi,
   X,
 } from 'lucide-react'
@@ -36,12 +37,14 @@ import {
   type Asset,
   type AssetDetail,
   type AssetPage,
+  type AuthStatus,
   type Backend,
   type BootstrapState,
   type HostKeyPrompt,
   type LoginAttempt,
   type Organization,
   type Preferences,
+  type ProfileSummary,
   type SessionState,
   type ThemeMode,
   wailsBackend,
@@ -76,11 +79,15 @@ function formatSyncTime(value: Date | null): string {
   return value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function authDescription(expiresAt: string): string {
-  if (!expiresAt) return 'Token 有效'
-  const remaining = new Date(expiresAt).getTime() - Date.now()
-  if (remaining <= 0) return '认证已过期'
-  return `${Math.max(1, Math.round(remaining / 60_000))} 分钟后到期`
+function authPresentation(auth?: AuthStatus): { description: string; offline: boolean; title: string } {
+  if (!auth?.loggedIn) return { title: '需要登录', description: '打开 Profile 管理', offline: true }
+  const remaining = auth.expiresAt ? new Date(auth.expiresAt).getTime() - Date.now() : Number.POSITIVE_INFINITY
+  if (auth.expired || remaining <= 0) {
+    return auth.refreshAvailable
+      ? { title: '已认证', description: '可自动续期', offline: false }
+      : { title: '认证已过期', description: '请重新登录', offline: true }
+  }
+  return { title: '已认证', description: auth.expiresAt ? `${Math.max(1, Math.round(remaining / 60_000))} 分钟后到期` : 'Token 有效', offline: false }
 }
 
 function useDismissiblePopover(open: boolean, onDismiss: () => void) {
@@ -157,9 +164,12 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [licenseOpen, setLicenseOpen] = useState(false)
   const [licenseText, setLicenseText] = useState('')
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
+  const [pendingDisconnect, setPendingDisconnect] = useState<SessionState | null>(null)
+  const [pendingProfileDeletion, setPendingProfileDeletion] = useState<ProfileSummary | null>(null)
 
   const preferences = bootstrap?.preferences
   const currentProfile = bootstrap?.profiles.find((item) => item.name === profile)
+  const currentAuth = authPresentation(currentProfile?.auth)
   const selectedAsset = assets.results.find((asset) => asset.id === selectedAssetID) ?? assets.results[0]
   const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
   const activeSession = sessions.find((session) => session.id === activeSessionID) ?? sessions[0]
@@ -182,6 +192,15 @@ export default function App({ backend = wailsBackend }: AppProps) {
       })
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
     const offState = backend.onSessionState((event) => {
+      if (event.status === 'closed') {
+        setSessions((current) => {
+          const remaining = current.filter((session) => session.id !== event.id)
+          setActiveSessionID((active) => active === event.id ? (remaining[0]?.id ?? '') : active)
+          return remaining
+        })
+        setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== event.id)))
+        return
+      }
       setSessions((current) => {
         const exists = current.some((session) => session.id === event.id)
         return exists ? current.map((session) => session.id === event.id ? event : session) : [...current, event]
@@ -236,6 +255,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         setAssets(page)
         setLastSynced(new Date())
         setSelectedAssetID((current) => page.results.some((asset) => asset.id === current) ? current : (page.results[0]?.id ?? ''))
+        void syncProfileAuth(profile).catch((reason) => !cancelled && setError(errorMessage(reason)))
       })
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
       .finally(() => !cancelled && setRefreshing(false))
@@ -305,6 +325,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
     }
   }
 
+  async function syncProfileAuth(profileName: string) {
+    const auth = await backend.getAuthStatus(profileName)
+    setBootstrap((current) => current ? {
+      ...current,
+      profiles: current.profiles.map((item) => item.name === profileName ? { ...item, auth } : item),
+    } : current)
+  }
+
   async function ensureDetail(asset: Asset): Promise<AssetDetail> {
     const cached = details[asset.id]
     if (cached) return cached
@@ -343,6 +371,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
   async function startConnection(target: string, account: string) {
     const session = await backend.startSSHSession({ profile, organization, target, account, columns: 120, rows: 34 })
+    void syncProfileAuth(profile).catch((reason) => setError(errorMessage(reason)))
     setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session])
     setActiveSessionID(session.id)
     setPendingConnection(null)
@@ -405,10 +434,15 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
-  async function closeSession(session: SessionState) {
+  function requestDisconnect(session: SessionState) {
     if (preferences?.confirmCloseActiveSession && (session.status === 'active' || session.status === 'connecting')) {
-      if (!window.confirm(`关闭 SSH 会话 “${session.title}”吗？`)) return
+      setPendingDisconnect(session)
+      return
     }
+    void disconnectSession(session)
+  }
+
+  async function disconnectSession(session: SessionState) {
     await run(async () => {
       await backend.closeSSHSession(session.id)
       setSessions((current) => current.filter((item) => item.id !== session.id))
@@ -418,6 +452,22 @@ export default function App({ backend = wailsBackend }: AppProps) {
         return next
       })
       setActiveSessionID((current) => current === session.id ? '' : current)
+      setPendingDisconnect(null)
+    })
+  }
+
+  async function deleteProfile(item: ProfileSummary) {
+    await run(async () => {
+      await backend.deleteProfile(item.name)
+      const removedSessionIDs = new Set(sessions.filter((session) => session.profile === item.name).map((session) => session.id))
+      const remainingSessions = sessions.filter((session) => !removedSessionIDs.has(session.id))
+      setSessions(remainingSessions)
+      setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedSessionIDs.has(id))))
+      setActiveSessionID((current) => removedSessionIDs.has(current) ? (remainingSessions[0]?.id ?? '') : current)
+      setPendingProfileDeletion(null)
+      setDetails({})
+      setSelectedAssetID('')
+      await reloadBootstrap()
     })
   }
 
@@ -440,7 +490,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark"><Network /></div><div><strong>JumpAccess</strong><span>Desktop</span></div></div>
+        <div className="brand" title="JumpAccess"><div className="brand-mark"><Network /></div><div><strong>JumpAccess</strong><span>Desktop</span></div></div>
         <nav className="primary-nav" aria-label="主导航">
           <span className="nav-label">工作区</span>
           <NavButton active={view === 'assets'} icon={<Boxes />} label="资产" onClick={() => setView('assets')} />
@@ -457,7 +507,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
             <div className="context-divider" />
             <ContextSelect ariaLabel="当前 Organization" label="Organization" onChange={(value) => void run(async () => { await backend.setOrganization(profile, value); setOrganization(value); setOffset(0); setDetails({}); await reloadBootstrap(profile) })} options={organizations.map((item) => ({ value: item.id, label: item.name }))} value={organization} />
           </div>
-          <div className="topbar-actions"><button className="quick-connect" type="button" onClick={() => setQuickOpen(true)}><Command /><span>快速连接</span><kbd>Ctrl K</kbd></button><button className="auth-status" type="button" onClick={() => setView('profiles')}><span className={currentProfile?.auth.loggedIn ? 'status-dot' : 'status-dot offline'} /><span><strong>{currentProfile?.auth.loggedIn ? '已认证' : '需要登录'}</strong><small>{currentProfile?.auth.loggedIn ? authDescription(currentProfile.auth.expiresAt) : '打开 Profile 管理'}</small></span></button></div>
+          <div className="topbar-actions"><button className="quick-connect" type="button" onClick={() => setQuickOpen(true)}><Command /><span>快速连接</span><kbd>Ctrl K</kbd></button><button className="auth-status" type="button" onClick={() => setView('profiles')}><span className={currentAuth.offline ? 'status-dot offline' : 'status-dot'} /><span><strong>{currentAuth.title}</strong><small>{currentAuth.description}</small></span></button></div>
         </header>
 
         {error ? <div className="error-banner" role="alert"><ShieldAlert /><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div> : null}
@@ -475,9 +525,9 @@ export default function App({ backend = wailsBackend }: AppProps) {
           </div>
         ) : null}
 
-        {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={(session) => void closeSession(session)} onNew={() => setView('assets')} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
+        {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={requestDisconnect} onNew={() => setView('assets')} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
 
-        {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><p>{item.url}</p><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Alias</dt><dd>{item.aliasCount}</dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => void run(async () => { await backend.logout(item.name); await reloadBootstrap(item.name) })}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}</div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
+        {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}>{item.url}</dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => void run(async () => { await backend.logout(item.name); await reloadBootstrap(item.name) })}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
         {view === 'settings' ? <SettingsView onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
 
@@ -491,12 +541,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(loginAttempt.profile) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
       {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
+      {pendingDisconnect ? <DisconnectSessionDialog session={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void disconnectSession(pendingDisconnect)} /> : null}
+      {pendingProfileDeletion ? <DeleteProfileDialog profile={pendingProfileDeletion} onCancel={() => setPendingProfileDeletion(null)} onConfirm={() => void deleteProfile(pendingProfileDeletion)} /> : null}
     </main>
   )
 }
 
 function NavButton({ active, badge, icon, label, onClick }: { active: boolean; badge?: number; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button className={active ? 'nav-item active' : 'nav-item'} onClick={onClick} type="button">{icon}<span>{label}</span>{badge ? <em>{badge}</em> : null}</button>
+  return <button aria-label={label} className={active ? 'nav-item active' : 'nav-item'} onClick={onClick} title={label} type="button">{icon}<span>{label}</span>{badge ? <em>{badge}</em> : null}</button>
 }
 
 function PageHeading({ children, description, eyebrow, title }: { children?: ReactNode; description?: string; eyebrow: string; title: string }) {
@@ -537,11 +589,11 @@ function AssetRowActions({ asset, onConnect, onCreateAlias }: { asset: Asset; on
 }
 
 function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
-  return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono">{asset.id}<button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions"><button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div><div className="trust-note"><ShieldCheck /><p><strong>严格校验 Gateway 主机密钥</strong><span>未知密钥将在连接时显示 SHA-256 指纹。</span></p></div></aside>
+  return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono">{asset.id}<button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions"><button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div></aside>
 }
 
 function SessionsView({ active, backend, onActive, onClose, onNew, output, preferences, sessions }: { active?: SessionState; backend: Backend; onActive: (id: string) => void; onClose: (session: SessionState) => void; onNew: () => void; output: string; preferences: Preferences; sessions: SessionState[] }) {
-  return <section className="terminal-workspace"><div className="terminal-sidebar"><div className="terminal-sidebar-heading"><span>会话</span><span className="badge">{sessions.length}</span></div>{sessions.map((session) => <button className={session.id === active?.id ? 'terminal-session active' : 'terminal-session'} key={session.id} onClick={() => onActive(session.id)}><span className={`session-status ${session.status}`}><Wifi /></span><span><strong>{session.title}</strong><small>{session.account || session.status}</small></span></button>)}<button className="button secondary new-session-button" onClick={onNew}><Plus />新建连接</button></div>{active ? <div className="terminal-panel"><div className="terminal-toolbar"><div><span className={`status-dot ${active.status === 'active' ? '' : 'offline'}`} /><strong>{active.title}</strong><small>{active.account} · {active.status}</small></div><button className="icon-button" aria-label={`关闭 ${active.title} 会话`} onClick={() => onClose(active)}><X /></button></div><div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} output={output} preferences={preferences} session={active} /></Suspense></div><div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{active.status}</span></div></div> : <div className="terminal-empty"><TerminalSquare /><h2>没有 SSH 会话</h2><button className="button primary" onClick={onNew}>选择资产</button></div>}</section>
+  return <section className="terminal-workspace"><div className="terminal-sidebar"><div className="terminal-sidebar-heading"><span>会话</span><span className="badge">{sessions.length}</span></div>{sessions.map((session) => <button className={session.id === active?.id ? 'terminal-session active' : 'terminal-session'} key={session.id} onClick={() => onActive(session.id)}><span className={`session-status ${session.status}`}><Wifi /></span><span><strong>{session.title}</strong><small>{session.account || session.status}</small></span></button>)}<button className="button secondary new-session-button" onClick={onNew}><Plus />新建连接</button></div>{active ? <div className="terminal-panel"><div className="terminal-toolbar"><div><span className={`status-dot ${active.status === 'active' ? '' : 'offline'}`} /><strong>{active.title}</strong><small>{active.account} · {active.status}</small></div><button className="icon-button danger" aria-label={`断开 ${active.title} 会话`} title="断开连接" onClick={() => onClose(active)}><Unplug /></button></div><div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} output={output} preferences={preferences} session={active} /></Suspense></div><div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{active.status}</span></div></div> : <div className="terminal-empty"><TerminalSquare /><h2>没有 SSH 会话</h2><button className="button primary" onClick={onNew}>选择资产</button></div>}</section>
 }
 
 function SettingsView({ onLicense, onOpenConfig, onSave, preferences, version }: { onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
@@ -557,6 +609,14 @@ function SessionDock({ onOpen, sessions }: { onOpen: (id: string) => void; sessi
 function Modal({ children, description, onClose, title }: { children: ReactNode; description?: string; onClose: () => void; title: string }) {
   const titleID = `dialog-${title.replace(/\s/g, '-')}`
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby={titleID}><button className="modal-close icon-button" aria-label="关闭" onClick={onClose}><X /></button><header><h2 id={titleID}>{title}</h2>{description ? <p>{description}</p> : null}</header>{children}</section></div>
+}
+
+function DisconnectSessionDialog({ onCancel, onConfirm, session }: { onCancel: () => void; onConfirm: () => void; session: SessionState }) {
+  return <Modal title="断开 SSH 会话" description="连接会立即终止，但不会影响远端服务器。" onClose={onCancel}><div className="disconnect-session-summary"><span><Unplug /></span><div><strong>{session.title}</strong><small>{session.account || '未指定账号'}</small></div></div><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button className="button destructive-confirm" onClick={onConfirm}><Unplug />断开连接</button></div></Modal>
+}
+
+function DeleteProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () => void; onConfirm: () => void; profile: ProfileSummary }) {
+  return <Modal title="删除 Profile" description="此操作无法撤销。" onClose={onCancel}><div className="delete-profile-summary"><span><Trash2 /></span><div><strong>{profile.name}</strong><small>{profile.url}</small></div></div><p className="delete-profile-warning">将永久删除该 Profile 的 Server URL、Organization、全部 Alias 和本地 OAuth 凭据；如果存在活动 SSH 会话，也会一并断开。JumpServer 上的资产和账号不会被删除。</p><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button aria-label={`删除 ${profile.name} Profile`} className="button destructive-confirm" onClick={onConfirm}><Trash2 />确认删除</button></div></Modal>
 }
 
 function AliasDialog({ asset, detail, onCancel, onEnsure, onSave }: { asset: Asset; detail?: AssetDetail; onCancel: () => void; onEnsure: () => Promise<AssetDetail>; onSave: (name: string, account: string) => void }) {
@@ -582,7 +642,7 @@ function ProfileDialog({ onCancel, onSave }: { onCancel: () => void; onSave: (na
 
 function LoginDialog({ attempt, onCancel, onComplete }: { attempt: LoginAttempt; onCancel: () => void; onComplete: (callback: string) => void }) {
   const [callback, setCallback] = useState('')
-  return <Modal title="完成浏览器登录" description={`浏览器已打开。完成 ${attempt.profile} 的授权后，把 jms:// 回调链接粘贴到这里。`} onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (callback.trim()) onComplete(callback.trim()) }}><div className="dialog-fields"><label>回调链接<textarea autoFocus value={callback} onChange={(event) => setCallback(event.target.value)} placeholder="jms://auth/callback?code=…&state=…" /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!callback.trim()} type="submit">完成登录</button></div></form></Modal>
+  return <Modal title="完成浏览器登录" description={`浏览器已打开。完成 ${attempt.profile} 的授权后，粘贴 jms:// 回调链接，或浏览器地址栏中的完整确认页 URL（http:// 或 https://）。`} onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (callback.trim()) onComplete(callback.trim()) }}><div className="dialog-fields"><label>回调链接或确认页 URL<textarea autoFocus value={callback} onChange={(event) => setCallback(event.target.value)} placeholder={'jms://auth/callback?code=…&state=…\n或 https://jump.example.com/core/redirect/confirm/?next=…'} /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!callback.trim()} type="submit">完成登录</button></div></form></Modal>
 }
 
 function HostKeyDialog({ onDecision, prompt }: { onDecision: (accepted: boolean) => void; prompt: HostKeyPrompt }) {

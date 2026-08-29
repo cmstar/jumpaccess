@@ -35,7 +35,7 @@
 .app-shell {
   display: grid;
   min-height: 100vh;
-  grid-template-columns: 218px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   color: var(--text);
   background: var(--bg);
 }
@@ -67,7 +67,7 @@
   display: flex;
   min-height: 100vh;
   flex-direction: column;
-  padding: 22px 14px 18px;
+  padding: 18px 10px 14px;
   overflow: hidden;
   border-right: 1px solid var(--border);
   background: linear-gradient(160deg, #fbfdfc 0%, #f5f9f7 56%, #f0f5f3 100%);
@@ -75,10 +75,10 @@
 
 .sidebar::before {
   position: absolute;
-  top: -86px;
-  left: 80px;
-  width: 170px;
-  height: 170px;
+  top: -72px;
+  left: 20px;
+  width: 110px;
+  height: 110px;
   border-radius: 50%;
   background: rgb(35 192 143 / 9%);
   content: '';
@@ -96,8 +96,13 @@
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 11px;
-  padding: 0 8px 27px;
+  padding: 0 0 26px;
+}
+
+.brand > div:last-child {
+  display: none;
 }
 
 .brand-mark {
@@ -141,21 +146,18 @@
 }
 
 .nav-label {
-  padding: 0 10px 7px;
-  color: var(--subtle);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .nav-item {
+  position: relative;
   display: flex;
-  width: 100%;
-  height: 39px;
+  width: 48px;
+  height: 44px;
   align-items: center;
-  gap: 10px;
-  padding: 0 11px;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 0;
   border-radius: 9px;
   color: var(--muted);
   background: transparent;
@@ -175,20 +177,26 @@
 }
 
 .nav-item svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+}
+
+.nav-item span {
+  display: none;
 }
 
 .nav-item em {
   display: grid;
-  min-width: 18px;
-  height: 18px;
-  margin-left: auto;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 15px;
+  height: 15px;
   place-items: center;
   border-radius: 9px;
   color: var(--accent-strong);
   background: rgb(55 173 130 / 12%);
-  font-size: 9px;
+  font-size: 7px;
   font-style: normal;
 }
 
@@ -198,10 +206,7 @@
 }
 
 .sidebar-version {
-  padding: 16px 11px 0;
-  color: var(--subtle);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  display: none;
 }
 
 .workspace {
@@ -1282,40 +1287,6 @@ details > summary::-webkit-details-marker {
   flex: 1;
 }
 
-.trust-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 15px;
-  padding: 10px;
-  border-radius: 9px;
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-}
-
-.trust-note > svg {
-  width: 14px;
-  flex: 0 0 auto;
-}
-
-.trust-note p,
-.trust-note strong,
-.trust-note span {
-  display: block;
-  margin: 0;
-}
-
-.trust-note strong {
-  font-size: 8px;
-}
-
-.trust-note span {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 7px;
-  line-height: 1.5;
-}
-
 .profile-grid,
 .settings-grid {
   display: grid;
@@ -1354,17 +1325,16 @@ details > summary::-webkit-details-marker {
 }
 
 .profile-card h2 {
-  margin: 18px 0 4px;
+  margin: 18px 0 17px;
   font-size: 15px;
 }
 
-.profile-card > p {
-  margin: 0 0 17px;
+.profile-server-url {
+  max-width: 68%;
   overflow: hidden;
-  color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-card dl {
@@ -1741,7 +1711,7 @@ details > summary::-webkit-details-marker {
   z-index: 5;
   right: 0;
   bottom: 0;
-  left: 218px;
+  left: 72px;
   display: flex;
   min-height: 48px;
   align-items: center;
@@ -1797,10 +1767,10 @@ details > summary::-webkit-details-marker {
 
 .modal-backdrop {
   position: fixed;
-  z-index: 100;
+  z-index: 200;
   inset: 0;
   display: grid;
-  padding: 24px;
+  padding: max(24px, env(safe-area-inset-top)) 24px 24px;
   overflow: auto;
   place-items: center;
   background: rgb(9 20 16 / 44%);
@@ -1851,6 +1821,109 @@ details > summary::-webkit-details-marker {
   justify-content: flex-end;
   gap: 7px;
   margin-top: 19px;
+}
+
+.button.destructive-confirm {
+  color: #fff;
+  background: var(--danger);
+  box-shadow: 0 5px 13px rgb(184 78 86 / 18%);
+}
+
+.button.destructive-confirm:hover {
+  filter: brightness(.96);
+}
+
+.disconnect-session-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.disconnect-session-summary > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--danger);
+  background: rgb(184 78 86 / 9%);
+}
+
+.disconnect-session-summary svg {
+  width: 16px;
+}
+
+.disconnect-session-summary strong,
+.disconnect-session-summary small {
+  display: block;
+}
+
+.disconnect-session-summary strong {
+  font-size: 10px;
+}
+
+.disconnect-session-summary small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.delete-profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 13px;
+  border: 1px solid rgb(184 78 86 / 24%);
+  border-radius: 10px;
+  background: rgb(184 78 86 / 6%);
+}
+
+.delete-profile-summary > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--danger);
+  background: rgb(184 78 86 / 10%);
+}
+
+.delete-profile-summary svg {
+  width: 16px;
+}
+
+.delete-profile-summary strong,
+.delete-profile-summary small {
+  display: block;
+}
+
+.delete-profile-summary strong {
+  font-size: 10px;
+}
+
+.delete-profile-summary small {
+  max-width: 350px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delete-profile-warning {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.7;
 }
 
 .prompt-account-list,
@@ -1997,16 +2070,6 @@ details > summary::-webkit-details-marker {
 }
 
 @media (max-width: 1080px) {
-  .app-shell { grid-template-columns: 72px minmax(0, 1fr); }
-  .sidebar { padding-inline: 10px; }
-  .brand { justify-content: center; padding-inline: 0; }
-  .brand > div:last-child,
-  .nav-label,
-  .nav-item span,
-  .nav-item em,
-  .sidebar-version { display: none; }
-  .nav-item { justify-content: center; padding: 0; }
-  .session-dock { left: 72px; }
   .content { grid-template-columns: minmax(0, 1fr); }
   .detail-pane { display: none; }
   .asset-table-card th:first-child { width: 31%; }

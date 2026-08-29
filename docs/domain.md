@@ -59,6 +59,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式
 - GUI 在资产行内纵向展示该 Asset 的全部 Alias；只有完全没有 Alias 时才显示创建入口。资产数和当前 Organization 的 Alias 总数显示在对应表头，Alias 总数不受当前分页影响。
 - GUI 从 Asset 发起连接且存在多个 Account 时必须让用户选择；从 Alias 发起连接时优先使用已绑定 Account，未绑定时同样询问，不能隐式挑选第一个 Account。
 - Profile 名是用户可见的精确标识，不为适配文件系统进行替换或规范化；拒绝空名称、首尾空白、控制字符以及 `.`、`..`，其余名称通过稳定摘要映射到凭据文件。
+- GUI 删除 Profile 会一并清除其 Server URL、Organization、全部 Alias 和本地 OAuth 凭据，并断开该 Profile 的活动 SSH Session；不会删除 JumpServer 上的 Asset 或 Account。删除当前 Profile 后按名称选择下一个 Profile，没有剩余项时回到未配置状态。
 - Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。
 - Proxy 模式保持非交互：不打开浏览器、不在 stdout 输出提示、不在目标歧义时要求用户选择。
