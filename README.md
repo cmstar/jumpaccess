@@ -2,9 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](LICENSE)
 
-JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付物是 Go 编写的命令行程序 `jumpctl`；项目同时保留共享核心能力，便于未来在需求明确后增加桌面入口，例如采用 Wails 的 GUI。
+JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含 Go 编写的命令行程序 `jumpctl`，并开始建设基于 Wails 2、React 和 TypeScript 的桌面 GUI；两个入口复用同一套领域与连接核心。
 
-项目当前处于首个可用版本的开发阶段。配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已建立可构建的桌面工程，业务功能仍在接入。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 
@@ -26,7 +26,7 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。首个交付
 github.com/cmstar/jumpaccess
 ```
 
-环境要求：Go 1.24 或更高版本。
+环境要求：Go 1.25 或更高版本。
 
 ## 本地运行、测试与构建
 
@@ -35,6 +35,10 @@ go run ./cmd/jumpctl --help
 go test ./...
 go vet ./...
 go build -trimpath ./cmd/jumpctl
+
+cd cmd/jumpaccess
+wails dev
+wails build -nopackage
 ```
 
 当前已经实现的配置入口包括：

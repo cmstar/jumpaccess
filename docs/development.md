@@ -2,14 +2,15 @@
 
 ## 当前阶段
 
-Go 工程、配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已建立可构建的基础工程，业务能力仍在接入。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
-- 主要实现语言：Go 1.24 或更高版本，以根目录 `go.mod` 为准。
+- 主要实现语言：Go 1.25 或更高版本，以根目录 `go.mod` 为准。
 - Module 路径：`github.com/cmstar/jumpaccess`。
 - 工程采用单个 Go module，支持多个入口适配器共享核心逻辑。
-- 首个可执行入口为 `jumpctl`；未来 GUI 不得迫使 OAuth、配置、JumpServer API、目标解析或 SSH 逻辑复制一份。
+- 可执行入口包括 `jumpctl` 与 `jumpaccess`；GUI 不得迫使 OAuth、配置、JumpServer API、目标解析或 SSH 逻辑复制一份。
+- GUI 使用 Wails 2.14，前端使用 React、TypeScript 和 Vite。Wails 项目根位于 `cmd/jumpaccess`，与根 Go module 共用依赖。
 - Windows 和 macOS 都是目标平台。
 - JumpServer Client `v4.1.6` 是首个协议行为参考，不应成为运行时依赖。
 
@@ -19,6 +20,7 @@ Go 工程、配置能力、OAuth Token 生命周期、JumpServer 连接准备协
 
 ```text
 cmd/jumpctl/        # CLI 入口适配器
+cmd/jumpaccess/     # Wails 桌面入口、前端与平台构建资源
 internal/appdir/    # 单一应用数据根目录
 internal/application/settings/ # Profile 与 Alias 修改用例
 internal/application/auth/     # 登录状态、刷新与生命周期编排
@@ -40,7 +42,7 @@ internal/terminalprompt/ # Account 与主机密钥的直接模式提示
 docs/               # 长期项目知识
 ```
 
-未来 GUI 可以增加独立入口，但项目继续使用同一根 `go.mod`。入口层只处理表现与进程交互，核心用例不依赖 CLI 框架或 Wails；Wails 当前尚未确定采用。
+桌面入口继续使用根目录的同一个 `go.mod`。`cmd/jumpaccess/frontend` 保存 React 前端，`cmd/jumpaccess/build` 保存 Windows 与 macOS 构建资源；入口层只处理表现与进程交互，核心用例不依赖 CLI 框架或 Wails。
 
 ## 配置与凭据
 
@@ -107,6 +109,9 @@ docs/               # 长期项目知识
 go test ./...
 go vet ./...
 go build -trimpath ./cmd/jumpctl
+cd cmd/jumpaccess
+npm run build
+wails build -nopackage
 ```
 
 每次代码修改结束前，运行与本次修改最相关的测试；在交付完整阶段前运行全量测试、静态检查和目标平台构建检查。只有真实执行成功的命令才能写成当前可用入口。

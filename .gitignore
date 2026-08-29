@@ -1,6 +1,16 @@
 /bin/
 /dist/
 /.cache/
+/.gocache/
+/.gotmp/
+/.tmp-wails-scaffold/
 *.exe
 *.test
 coverage.out
+
+/cmd/jumpaccess/build/bin/
+/cmd/jumpaccess/frontend/dist/*
+!/cmd/jumpaccess/frontend/dist/gitkeep
+/cmd/jumpaccess/frontend/node_modules/
+/cmd/jumpaccess/frontend/wailsjs/
+/cmd/jumpaccess/frontend/package.json.md5

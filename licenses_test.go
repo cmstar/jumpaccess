@@ -9,7 +9,7 @@ func TestLicensesContainProjectAndDependencyTerms(t *testing.T) {
 	text := Licenses()
 	for _, want := range []string{
 		"MIT License",
-		"Copyright (c) 2026 cmstar",
+		"Copyright (c) 2026 Eric Ruan",
 		"THIRD-PARTY SOFTWARE NOTICES AND LICENSES",
 		"github.com/BurntSushi/toml v1.6.0",
 		"github.com/spf13/cobra v1.10.2",
