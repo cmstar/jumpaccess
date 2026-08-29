@@ -21,14 +21,20 @@ type Dependencies struct {
 	ConfigPath    string
 	Store         projectconfig.Store
 	OpenFile      func(string) error
+	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
+	Credentials   CredentialRemover
 	Auth          AuthService
 	Resources     ResourceService
 	Connect       ConnectionPreparer
 	RunSSH        func(context.Context, connectapp.Prepared) error
 	RunProxy      func(context.Context, connectapp.Prepared) error
 	SelectAccount func([]jumpserver.Account) (jumpserver.Account, error)
+}
+
+type CredentialRemover interface {
+	Delete(string) error
 }
 
 type AuthService interface {

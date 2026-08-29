@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,15 @@ type fakeResourceService struct {
 	assets        jumpserver.AssetPage
 	asset         jumpserver.AssetDetail
 	listAssets    func(profile, organization, search string, offset, limit int)
+}
+
+type recordingCredentialRemover struct {
+	profiles []string
+}
+
+func (r *recordingCredentialRemover) Delete(profile string) error {
+	r.profiles = append(r.profiles, profile)
+	return nil
 }
 
 func (f fakeResourceService) ListOrganizations(context.Context, string) ([]jumpserver.Organization, error) {
@@ -185,6 +195,122 @@ func TestProfileAddPersistsProfile(t *testing.T) {
 	}
 	if stdout.String() != "profile work added\n" {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestProfileUpdateChangesURLAndRemovesOldCredential(t *testing.T) {
+	var stdout bytes.Buffer
+	path := filepath.Join(t.TempDir(), "config.toml")
+	store := projectconfig.Store{Path: path}
+	value := projectconfig.Default()
+	value.CurrentProfile = "work"
+	value.Profiles["work"] = projectconfig.Profile{
+		URL:          "https://old.example.test",
+		Organization: "org-1",
+		Aliases: map[string]projectconfig.Alias{
+			"production": {Asset: "asset-1", Account: "account-1", Organization: "org-1"},
+		},
+	}
+	if err := store.Save(value); err != nil {
+		t.Fatal(err)
+	}
+	credentials := &recordingCredentialRemover{}
+	root := NewRoot(Dependencies{Store: store, Credentials: credentials, Stdout: &stdout})
+	root.SetArgs([]string{"profile", "update", "work", "--url", "https://new.example.test/"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := got.Profiles["work"]
+	if profile.URL != "https://new.example.test" || profile.Organization != "org-1" || len(profile.Aliases) != 1 {
+		t.Fatalf("updated profile = %#v", profile)
+	}
+	if len(credentials.profiles) != 1 || credentials.profiles[0] != "work" {
+		t.Fatalf("deleted credentials = %#v, want work", credentials.profiles)
+	}
+	if stdout.String() != "profile work updated\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestProfileDeleteRequiresYesAndRemovesProfile(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	path := filepath.Join(t.TempDir(), "config.toml")
+	store := projectconfig.Store{Path: path}
+	value := projectconfig.Default()
+	value.CurrentProfile = "work"
+	value.Profiles["work"] = projectconfig.Profile{
+		URL:     "https://work.example.test",
+		Aliases: map[string]projectconfig.Alias{"production": {Asset: "asset-1"}},
+	}
+	value.Profiles["backup"] = projectconfig.Profile{URL: "https://backup.example.test"}
+	if err := store.Save(value); err != nil {
+		t.Fatal(err)
+	}
+	credentials := &recordingCredentialRemover{}
+	root := NewRoot(Dependencies{
+		Store: store, Credentials: credentials, Stdin: strings.NewReader("yes\n"), Stdout: &stdout, Stderr: &stderr,
+	})
+	root.SetArgs([]string{"profile", "delete", "work"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := got.Profiles["work"]; exists || got.CurrentProfile != "backup" {
+		t.Fatalf("config after delete = %#v", got)
+	}
+	if len(credentials.profiles) != 1 || credentials.profiles[0] != "work" {
+		t.Fatalf("deleted credentials = %#v, want work", credentials.profiles)
+	}
+	if !strings.Contains(stderr.String(), "Type yes to confirm") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if stdout.String() != "profile work deleted\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestProfileDeleteCancelsForAnyInputOtherThanYes(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	path := filepath.Join(t.TempDir(), "config.toml")
+	store := projectconfig.Store{Path: path}
+	value := projectconfig.Default()
+	value.CurrentProfile = "work"
+	value.Profiles["work"] = projectconfig.Profile{URL: "https://work.example.test"}
+	if err := store.Save(value); err != nil {
+		t.Fatal(err)
+	}
+	credentials := &recordingCredentialRemover{}
+	root := NewRoot(Dependencies{
+		Store: store, Credentials: credentials, Stdin: strings.NewReader("YES\n"), Stdout: &stdout, Stderr: &stderr,
+	})
+	root.SetArgs([]string{"profile", "delete", "work"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := got.Profiles["work"]; !exists || got.CurrentProfile != "work" {
+		t.Fatalf("profile was deleted after cancellation: %#v", got)
+	}
+	if len(credentials.profiles) != 0 {
+		t.Fatalf("deleted credentials = %#v, want none", credentials.profiles)
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "profile deletion cancelled") {
+		t.Fatalf("stdout = %q, stderr = %q", stdout.String(), stderr.String())
 	}
 }
 

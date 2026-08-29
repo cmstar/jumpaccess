@@ -52,16 +52,18 @@ func run() int {
 		Output:      os.Stderr,
 	}).Login
 	command := cli.NewRoot(cli.Dependencies{
-		Version:    version,
-		Licenses:   jumpaccess.Licenses(),
-		ConfigPath: core.ConfigPath,
-		Store:      core.Store,
-		OpenFile:   systemopen.Open,
-		Stdout:     os.Stdout,
-		Stderr:     os.Stderr,
-		Auth:       authService,
-		Connect:    core.Connect,
-		Resources:  core.Resources,
+		Version:     version,
+		Licenses:    jumpaccess.Licenses(),
+		ConfigPath:  core.ConfigPath,
+		Store:       core.Store,
+		OpenFile:    systemopen.Open,
+		Stdin:       os.Stdin,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		Credentials: core.Tokens,
+		Auth:        authService,
+		Connect:     core.Connect,
+		Resources:   core.Resources,
 		SelectAccount: func(accounts []jumpserver.Account) (jumpserver.Account, error) {
 			return terminalprompt.SelectAccount(os.Stdin, os.Stderr, accounts)
 		},

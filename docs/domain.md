@@ -62,6 +62,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式
 - 创建第一个 Profile 时自动将其设为当前 Profile；已经存在当前项时，后续新建和登录其他 Profile 都不得切换当前项，用户必须显式执行“设为当前”或对应的 `profile use` 操作后才会启用。
 - 修改 Profile 的 Server URL 时保留 Profile 名称、Organization 和全部 Alias，但必须清除旧站点的 OAuth 凭据并要求用户重新登录，避免向新地址发送旧站点 Token；已经建立的 SSH Session 不受影响。
 - GUI 退出 Profile 登录前必须要求确认；退出会撤销并清除该 Profile 的 OAuth 凭据，但保留 Profile 配置、Organization、Alias 和已经建立的 SSH Session。
+- CLI 删除 Profile 时必须在 stderr 明确列出删除范围，并且只有从 stdin 收到精确的 `yes` 后才能执行；其他输入、空输入或 EOF 均取消删除。
 - GUI 删除 Profile 会一并清除其 Server URL、Organization、全部 Alias 和本地 OAuth 凭据，并断开该 Profile 的活动 SSH Session；不会删除 JumpServer 上的 Asset 或 Account。删除当前 Profile 后按名称选择下一个 Profile，没有剩余项时回到未配置状态。
 - Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。

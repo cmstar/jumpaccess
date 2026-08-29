@@ -51,6 +51,8 @@ jumpctl config path
 jumpctl config edit
 jumpctl config validate
 jumpctl profile add <name> --url <site>
+jumpctl profile update <name> --url <site>
+jumpctl profile delete <name>
 jumpctl profile list
 jumpctl profile use <name>
 jumpctl alias set <name> --asset <asset> [--account <account>] [--organization <org>]
