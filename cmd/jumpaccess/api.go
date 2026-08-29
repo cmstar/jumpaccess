@@ -34,6 +34,10 @@ func (a *desktopApp) AddProfile(name, siteURL string) error {
 	return a.api.AddProfile(name, siteURL)
 }
 
+func (a *desktopApp) UpdateProfileURL(name, siteURL string) error {
+	return a.api.UpdateProfileURL(name, siteURL)
+}
+
 func (a *desktopApp) DeleteProfile(name string) error {
 	var closeErr error
 	for _, session := range a.sessions.List() {

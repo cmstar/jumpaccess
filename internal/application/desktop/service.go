@@ -31,6 +31,7 @@ type ResourceService interface {
 
 type SettingsService interface {
 	AddProfile(string, string) error
+	UpdateProfileURL(string, string) error
 	DeleteProfile(string) error
 	UseProfile(string) error
 	SetProfileOrganization(string, string) error
@@ -264,6 +265,10 @@ func (s Service) QuickSearch(ctx context.Context, request QuickSearchRequest) ([
 
 func (s Service) AddProfile(name, siteURL string) error {
 	return s.Settings.AddProfile(name, siteURL)
+}
+
+func (s Service) UpdateProfileURL(name, siteURL string) error {
+	return s.Settings.UpdateProfileURL(name, siteURL)
 }
 
 func (s Service) DeleteProfile(name string) error {

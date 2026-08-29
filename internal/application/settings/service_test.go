@@ -48,6 +48,58 @@ func TestAddProfileRejectsDuplicateName(t *testing.T) {
 	}
 }
 
+func TestUpdateProfileURLPreservesLocalContextAndRemovesCredential(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	credentials := &recordingCredentialRemover{}
+	service := Service{Store: store, Credentials: credentials}
+	if err := service.AddProfile("work", "https://old.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetProfileOrganization("work", "org-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetAlias("work", "production", projectconfig.Alias{Asset: "asset-1", Account: "account-1", Organization: "org-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.UpdateProfileURL("work", "https://new.example.test/"); err != nil {
+		t.Fatalf("UpdateProfileURL returned error: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := got.Profiles["work"]
+	if profile.URL != "https://new.example.test" || profile.Organization != "org-1" {
+		t.Fatalf("updated profile = %#v", profile)
+	}
+	if profile.Aliases["production"] != (projectconfig.Alias{Asset: "asset-1", Account: "account-1", Organization: "org-1"}) {
+		t.Fatalf("updated profile aliases = %#v", profile.Aliases)
+	}
+	if got.CurrentProfile != "work" {
+		t.Fatalf("CurrentProfile = %q, want work", got.CurrentProfile)
+	}
+	if len(credentials.profiles) != 1 || credentials.profiles[0] != "work" {
+		t.Fatalf("deleted credentials = %#v, want work", credentials.profiles)
+	}
+}
+
+func TestUpdateProfileURLDoesNotRemoveCredentialForEquivalentURL(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	credentials := &recordingCredentialRemover{}
+	service := Service{Store: store, Credentials: credentials}
+	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.UpdateProfileURL("work", "https://jump.example.test/"); err != nil {
+		t.Fatalf("UpdateProfileURL returned error: %v", err)
+	}
+	if len(credentials.profiles) != 0 {
+		t.Fatalf("deleted credentials = %#v, want none", credentials.profiles)
+	}
+}
+
 func TestUseProfilePersistsCurrentProfile(t *testing.T) {
 	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
 	service := Service{Store: store}

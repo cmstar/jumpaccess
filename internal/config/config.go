@@ -101,11 +101,11 @@ func (c *Config) Validate() error {
 		if !validProfileName(name) {
 			return fmt.Errorf("profile name %q is invalid", name)
 		}
-		parsed, err := url.Parse(profile.URL)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		normalizedURL, err := NormalizeProfileURL(profile.URL)
+		if err != nil {
 			return fmt.Errorf("profile %q has invalid URL", name)
 		}
-		profile.URL = strings.TrimRight(profile.URL, "/")
+		profile.URL = normalizedURL
 		if profile.Aliases == nil {
 			profile.Aliases = make(map[string]Alias)
 		}
@@ -128,6 +128,14 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func NormalizeProfileURL(value string) (string, error) {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("invalid profile URL")
+	}
+	return strings.TrimRight(value, "/"), nil
 }
 
 func validProfileName(name string) bool {

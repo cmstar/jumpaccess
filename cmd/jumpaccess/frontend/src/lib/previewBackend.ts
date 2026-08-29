@@ -72,6 +72,12 @@ export const previewBackend: Backend = {
     return page.results
   },
   addProfile: async (name, siteURL) => { state.profiles.push({ name, url: siteURL, organization: '', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } }) },
+  updateProfileURL: async (name, siteURL) => {
+    const profile = state.profiles.find((item) => item.name === name)
+    if (!profile) throw new Error(`profile ${JSON.stringify(name)} does not exist`)
+    profile.url = siteURL.replace(/\/+$/, '')
+    profile.auth = { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' }
+  },
   deleteProfile: async (name) => {
     state.profiles = state.profiles.filter((item) => item.name !== name)
     sessions = sessions.filter((session) => session.profile !== name)

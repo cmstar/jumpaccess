@@ -87,6 +87,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     getAsset: vi.fn().mockResolvedValue(assetDetail),
     quickSearch: vi.fn().mockResolvedValue(assetPage.results),
     addProfile: vi.fn().mockResolvedValue(undefined),
+    updateProfileURL: vi.fn().mockResolvedValue(undefined),
     deleteProfile: vi.fn().mockResolvedValue(undefined),
     useProfile: vi.fn().mockResolvedValue(undefined),
     setOrganization: vi.fn().mockResolvedValue(undefined),
@@ -164,6 +165,29 @@ test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接',
   await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledWith(expect.objectContaining({
     profile: 'production', organization: 'org-1', target: 'production-web', account: 'account-2',
   })))
+})
+
+test('点击资产行的 Alias 区域会打开详情，但操作控件不会切换资产', async () => {
+  const secondAsset = { id: 'asset-2', name: 'new-server', address: '10.0.0.2', type: 'Linux', category: 'Host', aliases: [] }
+  const secondDetail: AssetDetail = { ...secondAsset, accounts: assetDetail.accounts, protocols: assetDetail.protocols }
+  const backend = makeBackend({
+    listAssets: vi.fn().mockResolvedValue({ ...assetPage, count: 2, results: [...assetPage.results, secondAsset] }),
+    getAsset: vi.fn(({ asset }) => Promise.resolve(asset === 'asset-2' ? secondDetail : assetDetail)),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  const firstRow = await screen.findByTestId('asset-row-asset-1')
+  const secondRow = await screen.findByTestId('asset-row-asset-2')
+  await user.click(within(secondRow).getAllByRole('cell')[2])
+  expect(await screen.findByRole('heading', { name: 'new-server' })).toBeInTheDocument()
+
+  await user.click(within(firstRow).getByText('production-web'))
+  expect(await screen.findByRole('heading', { name: 'prod-web-01' })).toBeInTheDocument()
+
+  await user.click(within(secondRow).getAllByRole('cell')[2])
+  await user.click(within(firstRow).getByRole('button', { name: 'prod-web-01 更多操作' }))
+  expect(screen.getByRole('heading', { name: 'new-server' })).toBeInTheDocument()
 })
 
 test('从资产连接且存在多个账号时要求明确选择', async () => {
@@ -350,6 +374,141 @@ test('浏览器登录弹窗说明支持原生回调和完整确认页 URL', asyn
   )
 })
 
+test('新建并登录 Profile 后保持原来的当前 Profile', async () => {
+  const addedProfile = {
+    name: 'staging',
+    url: 'https://staging.example.test',
+    organization: '',
+    aliasCount: 0,
+    auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '' },
+  }
+  const addedState: BootstrapState = {
+    ...bootstrapState,
+    currentProfile: 'production',
+    profiles: [...bootstrapState.profiles, addedProfile],
+  }
+  const backend = makeBackend({
+    bootstrap: vi.fn()
+      .mockResolvedValueOnce(bootstrapState)
+      .mockResolvedValue(addedState),
+    startLogin: vi.fn().mockResolvedValue({ id: 'login-staging', profile: 'staging', expiresAt: '2026-08-29T12:00:00Z' }),
+    completeLogin: vi.fn().mockResolvedValue(addedProfile.auth),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  await user.click(screen.getByRole('button', { name: '添加 Profile' }))
+  const addDialog = await screen.findByRole('dialog', { name: '添加 Profile' })
+  await user.type(within(addDialog).getByLabelText('名称'), 'staging')
+  await user.type(within(addDialog).getByLabelText('JumpServer URL'), 'https://staging.example.test')
+  await user.click(within(addDialog).getByRole('button', { name: '添加并登录' }))
+
+  await waitFor(() => expect(backend.addProfile).toHaveBeenCalledWith('staging', 'https://staging.example.test'))
+  expect(backend.useProfile).not.toHaveBeenCalled()
+  const loginDialog = await screen.findByRole('dialog', { name: '完成浏览器登录' })
+  await user.type(within(loginDialog).getByLabelText('回调链接或确认页 URL'), 'jms://auth/callback?code=test&state=test')
+  await user.click(within(loginDialog).getByRole('button', { name: '完成登录' }))
+
+  const productionCard = (await screen.findByRole('heading', { name: 'production' })).closest('article')!
+  const stagingCard = screen.getByRole('heading', { name: 'staging' }).closest('article')!
+  expect(within(productionCard).getByText('当前')).toBeInTheDocument()
+  expect(within(stagingCard).getByRole('button', { name: '设为当前' })).toBeInTheDocument()
+})
+
+test('重复的 Profile 名称错误显示在创建弹窗内', async () => {
+  const backend = makeBackend({
+    addProfile: vi.fn().mockRejectedValue(new Error('Profile production 已存在')),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  await user.click(screen.getByRole('button', { name: '添加 Profile' }))
+  const dialog = await screen.findByRole('dialog', { name: '添加 Profile' })
+  await user.type(within(dialog).getByLabelText('名称'), 'production')
+  await user.type(within(dialog).getByLabelText('JumpServer URL'), 'https://duplicate.example.test')
+  await user.click(within(dialog).getByRole('button', { name: '添加并登录' }))
+
+  const alert = await within(dialog).findByRole('alert')
+  expect(alert).toHaveTextContent('Profile production 已存在')
+  expect(screen.getAllByRole('alert')).toEqual([alert])
+  expect(within(dialog).getByLabelText('名称')).toHaveValue('production')
+  expect(within(dialog).getByLabelText('JumpServer URL')).toHaveValue('https://duplicate.example.test')
+  expect(backend.startLogin).not.toHaveBeenCalled()
+})
+
+test('编辑 Profile URL 后保留 Profile，并要求重新登录', async () => {
+  const updatedProfile = {
+    ...bootstrapState.profiles[0],
+    url: 'https://new-jump.example.test',
+    auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' },
+  }
+  const backend = makeBackend({
+    bootstrap: vi.fn()
+      .mockResolvedValueOnce(bootstrapState)
+      .mockResolvedValue({ ...bootstrapState, profiles: [updatedProfile] }),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  const card = screen.getByRole('heading', { name: 'production' }).closest('article')!
+  await user.click(within(card).getByRole('button', { name: '编辑 production Profile' }))
+
+  const dialog = await screen.findByRole('dialog', { name: '编辑 Profile' })
+  expect(within(dialog).getByLabelText('名称')).toBeDisabled()
+  expect(within(dialog).getByLabelText('名称')).toHaveValue('production')
+  expect(dialog).toHaveTextContent('Organization 和 Alias')
+  expect(dialog).toHaveTextContent('需要重新登录')
+  const url = within(dialog).getByLabelText('JumpServer URL')
+  expect(url).toHaveValue('https://jump.example.test')
+  await user.clear(url)
+  await user.type(url, 'https://new-jump.example.test')
+  await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+  await waitFor(() => expect(backend.updateProfileURL).toHaveBeenCalledWith('production', 'https://new-jump.example.test'))
+  expect(await screen.findByText('https://new-jump.example.test')).toBeInTheDocument()
+  expect(within(card).getByText('需要登录')).toBeInTheDocument()
+  expect(backend.startLogin).not.toHaveBeenCalled()
+})
+
+test('退出 Profile 登录前要求确认', async () => {
+  const loggedOutProfile = {
+    ...bootstrapState.profiles[0],
+    auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' },
+  }
+  const backend = makeBackend({
+    bootstrap: vi.fn()
+      .mockResolvedValueOnce(bootstrapState)
+      .mockResolvedValue({ ...bootstrapState, profiles: [loggedOutProfile] }),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  const card = screen.getByRole('heading', { name: 'production' }).closest('article')!
+  await user.click(within(card).getByRole('button', { name: '退出' }))
+
+  const dialog = await screen.findByRole('dialog', { name: '退出登录' })
+  expect(dialog).toHaveTextContent('OAuth 登录状态')
+  expect(dialog).toHaveTextContent('现有 SSH 会话不会断开')
+  expect(backend.logout).not.toHaveBeenCalled()
+  await user.click(within(dialog).getByRole('button', { name: '取消' }))
+  expect(screen.queryByRole('dialog', { name: '退出登录' })).not.toBeInTheDocument()
+  expect(backend.logout).not.toHaveBeenCalled()
+
+  await user.click(within(card).getByRole('button', { name: '退出' }))
+  await user.click(within(await screen.findByRole('dialog', { name: '退出登录' })).getByRole('button', { name: '确认退出 production' }))
+  await waitFor(() => expect(backend.logout).toHaveBeenCalledWith('production'))
+  expect(screen.queryByRole('dialog', { name: '退出登录' })).not.toBeInTheDocument()
+  expect(within(card).getByText('需要登录')).toBeInTheDocument()
+})
+
 test('Profile 卡片展示 Server URL，并在警告确认后删除全部本地内容', async () => {
   const temporarySession: SessionState = {
     id: 'temporary-session', status: 'active', title: 'temporary-shell', profile: 'temporary',
@@ -382,6 +541,7 @@ test('Profile 卡片展示 Server URL，并在警告确认后删除全部本地�
     }),
   })
   const user = userEvent.setup()
+  const writeClipboard = vi.spyOn(navigator.clipboard, 'writeText')
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
@@ -390,6 +550,8 @@ test('Profile 卡片展示 Server URL，并在警告确认后删除全部本地�
   expect(within(card).getByText('Server URL')).toBeInTheDocument()
   expect(within(card).getByText('https://temporary.example.test')).toBeInTheDocument()
   expect(within(card).queryByText('Alias')).not.toBeInTheDocument()
+  await user.click(within(card).getByRole('button', { name: '复制 temporary Server URL' }))
+  expect(writeClipboard).toHaveBeenCalledWith('https://temporary.example.test')
 
   await user.click(within(card).getByRole('button', { name: '删除 temporary Profile' }))
   const dialog = await screen.findByRole('dialog', { name: '删除 Profile' })

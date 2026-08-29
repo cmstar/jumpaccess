@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Network,
   Palette,
+  Pencil,
   Plus,
   RefreshCcw,
   Search,
@@ -160,11 +161,13 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [quickQuery, setQuickQuery] = useState('')
   const [quickResults, setQuickResults] = useState<Asset[]>([])
   const [profileDialog, setProfileDialog] = useState(false)
+  const [editingProfile, setEditingProfile] = useState<ProfileSummary | null>(null)
   const [loginAttempt, setLoginAttempt] = useState<LoginAttempt | null>(null)
   const [licenseOpen, setLicenseOpen] = useState(false)
   const [licenseText, setLicenseText] = useState('')
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
   const [pendingDisconnect, setPendingDisconnect] = useState<SessionState | null>(null)
+  const [pendingProfileLogout, setPendingProfileLogout] = useState<ProfileSummary | null>(null)
   const [pendingProfileDeletion, setPendingProfileDeletion] = useState<ProfileSummary | null>(null)
 
   const preferences = bootstrap?.preferences
@@ -325,6 +328,29 @@ export default function App({ backend = wailsBackend }: AppProps) {
     }
   }
 
+  async function addProfile(name: string, url: string) {
+    setError('')
+    await backend.addProfile(name, url)
+    setProfileDialog(false)
+    void run(async () => {
+      await reloadBootstrap()
+      setLoginAttempt(await backend.startLogin(name))
+    })
+  }
+
+  async function updateProfileURL(item: ProfileSummary, url: string) {
+    setError('')
+    await backend.updateProfileURL(item.name, url)
+    if (item.name === profile) {
+      setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setDetails({})
+      setSelectedAssetID('')
+      setLastSynced(null)
+    }
+    setEditingProfile(null)
+    void run(() => reloadBootstrap())
+  }
+
   async function syncProfileAuth(profileName: string) {
     const auth = await backend.getAuthStatus(profileName)
     setBootstrap((current) => current ? {
@@ -471,6 +497,19 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
+  async function logoutProfile(item: ProfileSummary) {
+    setError('')
+    await backend.logout(item.name)
+    if (item.name === profile) {
+      setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setDetails({})
+      setSelectedAssetID('')
+      setLastSynced(null)
+    }
+    await reloadBootstrap()
+    setPendingProfileLogout(null)
+  }
+
   async function savePreferences(next: Preferences) {
     if (!bootstrap) return
     const previous = bootstrap.preferences
@@ -527,7 +566,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
         {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={requestDisconnect} onNew={() => setView('assets')} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
 
-        {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}>{item.url}</dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => void run(async () => { await backend.logout(item.name); await reloadBootstrap(item.name) })}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
+        {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
         {view === 'settings' ? <SettingsView onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
 
@@ -537,11 +576,13 @@ export default function App({ backend = wailsBackend }: AppProps) {
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
       {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.target, account.id || account.username))} /> : null}
       {quickOpen ? <QuickConnectDialog assets={quickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
-      {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={(name, url) => void run(async () => { await backend.addProfile(name, url); await backend.useProfile(name); await reloadBootstrap(name); setProfileDialog(false); setLoginAttempt(await backend.startLogin(name)) })} /> : null}
-      {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(loginAttempt.profile) })} /> : null}
+      {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
+      {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
+      {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
       {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
       {pendingDisconnect ? <DisconnectSessionDialog session={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void disconnectSession(pendingDisconnect)} /> : null}
+      {pendingProfileLogout ? <LogoutProfileDialog profile={pendingProfileLogout} onCancel={() => setPendingProfileLogout(null)} onConfirm={() => logoutProfile(pendingProfileLogout)} /> : null}
       {pendingProfileDeletion ? <DeleteProfileDialog profile={pendingProfileDeletion} onCancel={() => setPendingProfileDeletion(null)} onConfirm={() => void deleteProfile(pendingProfileDeletion)} /> : null}
     </main>
   )
@@ -559,6 +600,10 @@ function EmptyState({ action, onAction, title }: { action: string; onAction: () 
   return <div className="empty-state"><Server /><h2>{title}</h2><button className="button primary" onClick={onAction}>{action}</button></div>
 }
 
+function isAssetRowControl(target: EventTarget | null) {
+  return target instanceof Element && target.closest('button, select, input, textarea, a, [role="menuitem"]') !== null
+}
+
 function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAlias, onDeleteAlias, onEnsureDetail, onSelect, selected }: {
   asset: Asset
   detail?: AssetDetail
@@ -571,11 +616,11 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAl
   onSelect: () => void
   selected: boolean
 }) {
-  return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={onSelect}><td><div className="asset-identity"><div className="server-glyph"><Server /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td onClick={(event) => event.stopPropagation()}><div className="inline-alias-stack">{asset.aliases.map((alias) => {
+  return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={(event) => { if (!isAssetRowControl(event.target)) onSelect() }}><td><div className="asset-identity"><div className="server-glyph"><Server /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td><div className="inline-alias-stack">{asset.aliases.map((alias) => {
     const knownAccounts = detail?.accounts ?? []
     const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
     return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select><button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
-  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td onClick={(event) => event.stopPropagation()}><AssetRowActions asset={asset} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
+  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td><AssetRowActions asset={asset} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
 }
 
 function AssetRowActions({ asset, onConnect, onCreateAlias }: { asset: Asset; onConnect: () => void; onCreateAlias: () => void }) {
@@ -615,6 +660,24 @@ function DisconnectSessionDialog({ onCancel, onConfirm, session }: { onCancel: (
   return <Modal title="断开 SSH 会话" description="连接会立即终止，但不会影响远端服务器。" onClose={onCancel}><div className="disconnect-session-summary"><span><Unplug /></span><div><strong>{session.title}</strong><small>{session.account || '未指定账号'}</small></div></div><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button className="button destructive-confirm" onClick={onConfirm}><Unplug />断开连接</button></div></Modal>
 }
 
+function LogoutProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () => void; onConfirm: () => Promise<void>; profile: ProfileSummary }) {
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function confirm() {
+    setSubmitError('')
+    setSubmitting(true)
+    try {
+      await onConfirm()
+    } catch (reason) {
+      setSubmitError(errorMessage(reason))
+      setSubmitting(false)
+    }
+  }
+
+  return <Modal title="退出登录" description="退出后，该 Profile 需要重新完成认证才能访问 JumpServer。" onClose={onCancel}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="disconnect-session-summary"><span><LogOut /></span><div><strong>{profile.name}</strong><small>{profile.url}</small></div></div><p className="delete-profile-warning">将撤销并清除该 Profile 的本地 OAuth 登录状态；Profile 配置、Organization 和 Alias 会保留，现有 SSH 会话不会断开。</p><div className="dialog-actions"><button className="button secondary" disabled={submitting} onClick={onCancel}>取消</button><button aria-label={`确认退出 ${profile.name}`} className="button destructive-confirm" disabled={submitting} onClick={() => void confirm()}><LogOut />{submitting ? '退出中…' : '确认退出'}</button></div></Modal>
+}
+
 function DeleteProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () => void; onConfirm: () => void; profile: ProfileSummary }) {
   return <Modal title="删除 Profile" description="此操作无法撤销。" onClose={onCancel}><div className="delete-profile-summary"><span><Trash2 /></span><div><strong>{profile.name}</strong><small>{profile.url}</small></div></div><p className="delete-profile-warning">将永久删除该 Profile 的 Server URL、Organization、全部 Alias 和本地 OAuth 凭据；如果存在活动 SSH 会话，也会一并断开。JumpServer 上的资产和账号不会被删除。</p><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button aria-label={`删除 ${profile.name} Profile`} className="button destructive-confirm" onClick={onConfirm}><Trash2 />确认删除</button></div></Modal>
 }
@@ -634,10 +697,54 @@ function QuickConnectDialog({ assets, onCancel, onConnectAlias, onConnectAsset, 
   return <Modal title="快速连接" description="搜索当前 Profile 中的 Asset 或 Alias。" onClose={onCancel}><label className="quick-search"><Search /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、地址、Asset ID 或 Alias" /></label><div className="quick-results">{assets.flatMap((asset) => asset.aliases.map((alias) => <button key={`alias-${alias.name}`} onClick={() => onConnectAlias(asset, alias)}><span className="quick-icon"><Tags /></span><span><strong>{alias.name}</strong><small>{asset.name} · {asset.address}</small></span><em>{alias.account || '连接时询问'}</em></button>))}{assets.map((asset) => <button key={asset.id} onClick={() => onConnectAsset(asset)}><span className="quick-icon"><Server /></span><span><strong>{asset.name}</strong><small>{asset.address} · {asset.type}</small></span><em>Asset</em></button>)}{assets.length === 0 ? <div className="quick-empty"><Search />没有匹配结果</div> : null}</div></Modal>
 }
 
-function ProfileDialog({ onCancel, onSave }: { onCancel: () => void; onSave: (name: string, url: string) => void }) {
+function ProfileDialog({ onCancel, onSave }: { onCancel: () => void; onSave: (name: string, url: string) => Promise<void> }) {
   const [name, setName] = useState('')
   const [url, setURL] = useState('')
-  return <Modal title="添加 Profile" description="为一个 JumpServer 站点创建本地连接上下文。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (name.trim() && url.trim()) onSave(name.trim(), url.trim()) }}><div className="dialog-fields"><label>名称<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 office" /></label><label>JumpServer URL<input type="url" value={url} onChange={(event) => setURL(event.target.value)} placeholder="https://jump.example.com" /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim() || !url.trim()} type="submit">添加并登录</button></div></form></Modal>
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit() {
+    setSubmitError('')
+    setSubmitting(true)
+    try {
+      await onSave(name.trim(), url.trim())
+    } catch (reason) {
+      setSubmitError(errorMessage(reason))
+      setSubmitting(false)
+    }
+  }
+
+  function changeName(value: string) {
+    setName(value)
+    setSubmitError('')
+  }
+
+  function changeURL(value: string) {
+    setURL(value)
+    setSubmitError('')
+  }
+
+  return <Modal title="添加 Profile" description="为一个 JumpServer 站点创建本地连接上下文。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (name.trim() && url.trim() && !submitting) void submit() }}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="dialog-fields"><label>名称<input autoFocus value={name} onChange={(event) => changeName(event.target.value)} placeholder="例如 office" /></label><label>JumpServer URL<input type="url" value={url} onChange={(event) => changeURL(event.target.value)} placeholder="https://jump.example.com" /></label></div><div className="dialog-actions"><button className="button secondary" disabled={submitting} type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim() || !url.trim() || submitting} type="submit">{submitting ? '添加中…' : '添加并登录'}</button></div></form></Modal>
+}
+
+function EditProfileDialog({ onCancel, onSave, profile }: { onCancel: () => void; onSave: (url: string) => Promise<void>; profile: ProfileSummary }) {
+  const [url, setURL] = useState(profile.url)
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const changed = url.trim() !== profile.url
+
+  async function submit() {
+    setSubmitError('')
+    setSubmitting(true)
+    try {
+      await onSave(url.trim())
+    } catch (reason) {
+      setSubmitError(errorMessage(reason))
+      setSubmitting(false)
+    }
+  }
+
+  return <Modal title="编辑 Profile" description={`修改 ${profile.name} 的 JumpServer 地址。`} onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (url.trim() && changed && !submitting) void submit() }}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="dialog-fields"><label>名称<input disabled value={profile.name} /></label><label>JumpServer URL<input autoFocus type="url" value={url} onChange={(event) => { setURL(event.target.value); setSubmitError('') }} /></label></div><p className="edit-profile-note"><ShieldAlert />修改 URL 会保留现有 Organization 和 Alias，但会清除旧的 OAuth 凭据，之后需要重新登录。</p><div className="dialog-actions"><button className="button secondary" disabled={submitting} type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!url.trim() || !changed || submitting} type="submit">{submitting ? '保存中…' : '保存'}</button></div></form></Modal>
 }
 
 function LoginDialog({ attempt, onCancel, onComplete }: { attempt: LoginAttempt; onCancel: () => void; onComplete: (callback: string) => void }) {

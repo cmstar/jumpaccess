@@ -35,6 +35,30 @@ func (s Service) AddProfile(name, siteURL string) error {
 	})
 }
 
+func (s Service) UpdateProfileURL(name, siteURL string) error {
+	normalizedURL, err := projectconfig.NormalizeProfileURL(siteURL)
+	if err != nil {
+		return fmt.Errorf("profile %q has invalid URL", name)
+	}
+	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
+		profile, exists := value.Profiles[name]
+		if !exists {
+			return fmt.Errorf("profile %q does not exist", name)
+		}
+		if profile.URL == normalizedURL {
+			return nil
+		}
+		if s.Credentials != nil {
+			if err := s.Credentials.Delete(name); err != nil && !errors.Is(err, credential.ErrNotFound) {
+				return fmt.Errorf("delete OAuth credential for profile %q: %w", name, err)
+			}
+		}
+		profile.URL = normalizedURL
+		value.Profiles[name] = profile
+		return nil
+	})
+}
+
 func (s Service) UseProfile(name string) error {
 	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
 		value.CurrentProfile = name

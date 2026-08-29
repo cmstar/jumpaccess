@@ -112,6 +112,7 @@ export interface Backend {
   getAsset(request: { profile: string; organization: string; asset: string }): Promise<AssetDetail>
   quickSearch(request: { profile: string; organization: string; query: string; limit: number }): Promise<Asset[]>
   addProfile(name: string, siteURL: string): Promise<void>
+  updateProfileURL(name: string, siteURL: string): Promise<void>
   deleteProfile(name: string): Promise<void>
   useProfile(name: string): Promise<void>
   setOrganization(profile: string, organization: string): Promise<void>
@@ -151,6 +152,7 @@ type DesktopBinding = {
   GetAsset(request: Parameters<Backend['getAsset']>[0]): Promise<AssetDetail>
   QuickSearch(request: Parameters<Backend['quickSearch']>[0]): Promise<Asset[]>
   AddProfile(name: string, siteURL: string): Promise<void>
+  UpdateProfileURL(name: string, siteURL: string): Promise<void>
   DeleteProfile(name: string): Promise<void>
   UseProfile(name: string): Promise<void>
   SetOrganization(profile: string, organization: string): Promise<void>
@@ -226,6 +228,7 @@ export const wailsBackend: Backend = {
   getAsset: (request) => binding().GetAsset(request),
   quickSearch: (request) => binding().QuickSearch(request),
   addProfile: (name, siteURL) => binding().AddProfile(name, siteURL),
+  updateProfileURL: (name, siteURL) => binding().UpdateProfileURL(name, siteURL),
   deleteProfile: (name) => binding().DeleteProfile(name),
   useProfile: (name) => binding().UseProfile(name),
   setOrganization: (profile, organization) => binding().SetOrganization(profile, organization),
