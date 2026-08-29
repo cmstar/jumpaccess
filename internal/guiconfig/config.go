@@ -32,7 +32,7 @@ func Default() Config {
 		Appearance: Appearance{
 			Theme:              "system",
 			TerminalFontFamily: "JetBrains Mono",
-			TerminalFontSize:   13,
+			TerminalFontSize:   12,
 		},
 		Behavior: Behavior{ConfirmCloseActiveSession: true},
 	}

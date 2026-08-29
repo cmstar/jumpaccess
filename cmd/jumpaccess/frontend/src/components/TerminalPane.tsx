@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
 import type { Backend, Preferences, SessionState } from '../lib/backend'
+import { synchronizeTerminalViewportBackground } from './terminalViewport'
 
 interface TerminalPaneProps {
   backend: Backend
@@ -21,6 +22,9 @@ export function TerminalPane({ backend, output, preferences, session }: Terminal
     const host = hostRef.current
     if (!host) return
     const dark = document.documentElement.classList.contains('dark')
+    const theme = dark
+      ? { background: '#101817', foreground: '#d8e7e1', cursor: '#63d9ae', selectionBackground: '#315d4d' }
+      : { background: '#f7faf8', foreground: '#263d35', cursor: '#16825e', selectionBackground: '#bde9d8' }
     const terminal = new Terminal({
       allowProposedApi: false,
       convertEol: false,
@@ -28,13 +32,12 @@ export function TerminalPane({ backend, output, preferences, session }: Terminal
       fontFamily: preferences.terminalFontFamily,
       fontSize: preferences.terminalFontSize,
       scrollback: 10_000,
-      theme: dark
-        ? { background: '#101817', foreground: '#d8e7e1', cursor: '#63d9ae', selectionBackground: '#315d4d' }
-        : { background: '#f7faf8', foreground: '#263d35', cursor: '#16825e', selectionBackground: '#bde9d8' },
+      theme,
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)
     terminal.open(host)
+    synchronizeTerminalViewportBackground(host, theme.background)
     terminalRef.current = terminal
     writtenRef.current = 0
     const fitAndReport = () => {

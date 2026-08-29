@@ -43,7 +43,7 @@ let state: BootstrapState = {
     { name: 'production', url: 'https://jump.example.com', organization: 'org-dev', aliasCount: 6, auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: new Date(Date.now() + 56 * 60_000).toISOString() } },
     { name: 'staging', url: 'https://staging-jump.example.com', organization: 'org-platform', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } },
   ],
-  preferences: { version: 1, theme: 'light', terminalFontFamily: 'JetBrains Mono', terminalFontSize: 13, confirmCloseActiveSession: true },
+  preferences: { version: 1, theme: 'light', terminalFontFamily: 'JetBrains Mono', terminalFontSize: 12, confirmCloseActiveSession: true },
 }
 
 let sessions: SessionState[] = []

@@ -2,6 +2,12 @@ package guiconfig
 
 import "testing"
 
+func TestDefaultUsesTwelvePointTerminalFont(t *testing.T) {
+	if got := Default().Appearance.TerminalFontSize; got != 12 {
+		t.Fatalf("Default terminal font size = %d, want 12", got)
+	}
+}
+
 func TestDecodeRejectsUnknownField(t *testing.T) {
 	_, err := Decode([]byte("" +
 		"version = 1\n" +

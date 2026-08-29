@@ -20,6 +20,12 @@ type fakePreparer struct {
 	requests []connectapp.Options
 }
 
+type prepareFunc func(context.Context, connectapp.Options) (connectapp.Prepared, error)
+
+func (f prepareFunc) Prepare(ctx context.Context, options connectapp.Options) (connectapp.Prepared, error) {
+	return f(ctx, options)
+}
+
 func (f *fakePreparer) Prepare(_ context.Context, options connectapp.Options) (connectapp.Prepared, error) {
 	f.mu.Lock()
 	f.requests = append(f.requests, options)
@@ -159,6 +165,59 @@ func TestManagerRunsIndependentSessionsAndBatchesOutput(t *testing.T) {
 	defer preparer.mu.Unlock()
 	if len(preparer.requests) != 2 || !preparer.requests[0].NonInteractive || preparer.requests[0].Target.Account != "account-1" {
 		t.Fatalf("prepare requests = %#v", preparer.requests)
+	}
+}
+
+func TestManagerUsesResizeReceivedWhileSessionIsConnecting(t *testing.T) {
+	prepareStarted := make(chan struct{})
+	releasePrepare := make(chan struct{})
+	states := make(chan StateEvent, 4)
+	opened := make(chan sshclient.OpenOptions, 1)
+	terminal := newFakeTerminalSession()
+	basePreparer := &fakePreparer{}
+	manager := &Manager{
+		Prepare: prepareFunc(func(ctx context.Context, options connectapp.Options) (connectapp.Prepared, error) {
+			close(prepareStarted)
+			select {
+			case <-releasePrepare:
+				return basePreparer.Prepare(ctx, options)
+			case <-ctx.Done():
+				return connectapp.Prepared{}, ctx.Err()
+			}
+		}),
+		HostKeyCallback: func(context.Context) (ssh.HostKeyCallback, error) {
+			return ssh.InsecureIgnoreHostKey(), nil
+		},
+		Open: func(_ context.Context, options sshclient.OpenOptions) (TerminalSession, error) {
+			opened <- options
+			return terminal, nil
+		},
+		EmitState: func(event StateEvent) { states <- event },
+	}
+
+	session, err := manager.Start(context.Background(), StartRequest{
+		Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", Columns: 120, Rows: 34,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-prepareStarted
+	if err := manager.Resize(session.ID, 156, 48); err != nil {
+		t.Fatalf("Resize while connecting returned error: %v", err)
+	}
+	close(releasePrepare)
+	waitForStatus(t, states, session.ID, StatusActive)
+
+	select {
+	case options := <-opened:
+		if options.Terminal.Columns != 156 || options.Terminal.Rows != 48 {
+			t.Fatalf("opened terminal dimensions = %dx%d, want 156x48", options.Terminal.Columns, options.Terminal.Rows)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for terminal open")
+	}
+	if err := manager.Close(session.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 

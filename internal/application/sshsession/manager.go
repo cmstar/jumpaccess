@@ -83,6 +83,8 @@ type managedSession struct {
 	cancel   context.CancelFunc
 	terminal TerminalSession
 	output   *batchWriter
+	columns  int
+	rows     int
 	dismiss  bool
 }
 
@@ -110,7 +112,7 @@ func (m *Manager) Start(parent context.Context, request StartRequest) (StateEven
 	if m.sessions == nil {
 		m.sessions = make(map[string]*managedSession)
 	}
-	m.sessions[id] = &managedSession{state: state, cancel: cancel}
+	m.sessions[id] = &managedSession{state: state, cancel: cancel, columns: request.Columns, rows: request.Rows}
 	m.mu.Unlock()
 	m.emitState(state)
 	go m.run(ctx, id, request)
@@ -137,6 +139,12 @@ func (m *Manager) run(ctx context.Context, id string, request StartRequest) {
 	output := newBatchWriter(m.batchInterval(), m.batchSize(), func(data string) {
 		m.emitOutput(OutputEvent{ID: id, Data: data})
 	})
+	columns, rows, exists := m.dimensions(id)
+	if !exists {
+		_ = output.Close()
+		m.finish(id, ctx, fmt.Errorf("SSH session %q does not exist", id))
+		return
+	}
 	terminal, err := m.Open(ctx, sshclient.OpenOptions{
 		Connection:      prepared.Connection,
 		HostKeyCallback: callback,
@@ -144,7 +152,7 @@ func (m *Manager) run(ctx context.Context, id string, request StartRequest) {
 		Stdout:          output,
 		Stderr:          output,
 		Terminal: sshclient.TerminalOptions{
-			Name: "xterm-256color", Columns: request.Columns, Rows: request.Rows,
+			Name: "xterm-256color", Columns: columns, Rows: rows,
 		},
 	})
 	if err != nil {
@@ -152,12 +160,20 @@ func (m *Manager) run(ctx context.Context, id string, request StartRequest) {
 		m.finish(id, ctx, err)
 		return
 	}
-	state, active := m.activate(id, prepared, terminal, output)
+	state, latestColumns, latestRows, active := m.activate(id, prepared, terminal, output)
 	if !active {
 		_ = terminal.Close()
 		_ = output.Close()
 		m.finish(id, ctx, ctx.Err())
 		return
+	}
+	if latestColumns != columns || latestRows != rows {
+		if err := terminal.Resize(latestColumns, latestRows); err != nil {
+			_ = terminal.Close()
+			_ = output.Close()
+			m.finish(id, ctx, err)
+			return
+		}
 	}
 	m.emitState(state)
 	err = terminal.Wait()
@@ -165,12 +181,22 @@ func (m *Manager) run(ctx context.Context, id string, request StartRequest) {
 	m.finish(id, ctx, err)
 }
 
-func (m *Manager) activate(id string, prepared connectapp.Prepared, terminal TerminalSession, output *batchWriter) (StateEvent, bool) {
+func (m *Manager) dimensions(id string) (int, int, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session, exists := m.sessions[id]
+	if !exists {
+		return 0, 0, false
+	}
+	return session.columns, session.rows, true
+}
+
+func (m *Manager) activate(id string, prepared connectapp.Prepared, terminal TerminalSession, output *batchWriter) (StateEvent, int, int, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	session, exists := m.sessions[id]
 	if !exists || session.state.Status != StatusConnecting {
-		return StateEvent{}, false
+		return StateEvent{}, 0, 0, false
 	}
 	session.terminal = terminal
 	session.output = output
@@ -187,7 +213,7 @@ func (m *Manager) activate(id string, prepared connectapp.Prepared, terminal Ter
 	} else if prepared.Asset.Name != "" {
 		session.state.Title = prepared.Asset.Name
 	}
-	return session.state, true
+	return session.state, session.columns, session.rows, true
 }
 
 func (m *Manager) finish(id string, ctx context.Context, err error) {
@@ -233,9 +259,15 @@ func (m *Manager) Resize(id string, columns, rows int) error {
 	}
 	m.mu.Lock()
 	session, exists := m.sessions[id]
-	if !exists || session.state.Status != StatusActive || session.terminal == nil {
+	if !exists || session.state.Status == StatusClosed || session.state.Status == StatusFailed {
 		m.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrSessionNotActive, id)
+	}
+	session.columns = columns
+	session.rows = rows
+	if session.state.Status == StatusConnecting || session.terminal == nil {
+		m.mu.Unlock()
+		return nil
 	}
 	terminal := session.terminal
 	m.mu.Unlock()
