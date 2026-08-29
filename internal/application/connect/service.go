@@ -109,6 +109,9 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 }
 
 func ResolveAsset(ctx context.Context, api AssetAPI, reference string) (jumpserver.AssetDetail, error) {
+	if isUUID(reference) {
+		return api.GetAsset(ctx, reference)
+	}
 	page, err := api.ListAssets(ctx, jumpserver.AssetQuery{Search: reference, Limit: 100})
 	if err != nil {
 		return jumpserver.AssetDetail{}, err
@@ -126,6 +129,28 @@ func ResolveAsset(ctx context.Context, api AssetAPI, reference string) (jumpserv
 		return jumpserver.AssetDetail{}, fmt.Errorf("%w: %q matched %d assets", ErrAssetAmbiguous, reference, len(matches))
 	}
 	return api.GetAsset(ctx, matches[0].ID)
+}
+
+func isUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index := range value {
+		switch index {
+		case 8, 13, 18, 23:
+			if value[index] != '-' {
+				return false
+			}
+		default:
+			character := value[index]
+			if !((character >= '0' && character <= '9') ||
+				(character >= 'a' && character <= 'f') ||
+				(character >= 'A' && character <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func resolveAccount(accounts []jumpserver.Account, reference string, options Options) (jumpserver.Account, error) {

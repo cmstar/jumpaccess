@@ -26,13 +26,17 @@ type fakeAPI struct {
 	detail            jumpserver.AssetDetail
 	connection        jumpserver.ClientConnection
 	connectionRequest jumpserver.ConnectionRequest
+	listQueries       []jumpserver.AssetQuery
+	getAssetIDs       []string
 }
 
-func (f *fakeAPI) ListAssets(context.Context, jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
+func (f *fakeAPI) ListAssets(_ context.Context, query jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
+	f.listQueries = append(f.listQueries, query)
 	return f.page, nil
 }
 
-func (f *fakeAPI) GetAsset(context.Context, string) (jumpserver.AssetDetail, error) {
+func (f *fakeAPI) GetAsset(_ context.Context, id string) (jumpserver.AssetDetail, error) {
+	f.getAssetIDs = append(f.getAssetIDs, id)
 	return f.detail, nil
 }
 
@@ -82,6 +86,67 @@ func TestPrepareResolvesAliasAccountAndReturnsGatewayCredential(t *testing.T) {
 	}
 	if api.connectionRequest.Asset != "asset-1" || api.connectionRequest.Account != "account-1" {
 		t.Fatalf("connection request = %#v", api.connectionRequest)
+	}
+}
+
+func TestResolveAssetUsesDetailEndpointForUUID(t *testing.T) {
+	const assetID = "123e4567-e89b-12d3-a456-426614174000"
+	api := &fakeAPI{
+		detail: jumpserver.AssetDetail{Asset: jumpserver.Asset{ID: assetID, Name: "web-01"}},
+	}
+
+	asset, err := ResolveAsset(context.Background(), api, assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asset.ID != assetID {
+		t.Fatalf("asset ID = %q, want %q", asset.ID, assetID)
+	}
+	if len(api.listQueries) != 0 {
+		t.Fatalf("ListAssets queries = %#v, want no search for UUID", api.listQueries)
+	}
+	if len(api.getAssetIDs) != 1 || api.getAssetIDs[0] != assetID {
+		t.Fatalf("GetAsset IDs = %#v, want [%q]", api.getAssetIDs, assetID)
+	}
+}
+
+func TestResolveAssetSearchesNamesAndAddresses(t *testing.T) {
+	for _, reference := range []string{"web-01", "10.0.0.1"} {
+		t.Run(reference, func(t *testing.T) {
+			api := &fakeAPI{
+				page:   jumpserver.AssetPage{Results: []jumpserver.Asset{{ID: "asset-1", Name: "web-01", Address: "10.0.0.1"}}},
+				detail: jumpserver.AssetDetail{Asset: jumpserver.Asset{ID: "asset-1", Name: "web-01", Address: "10.0.0.1"}},
+			}
+
+			asset, err := ResolveAsset(context.Background(), api, reference)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if asset.ID != "asset-1" {
+				t.Fatalf("asset ID = %q, want asset-1", asset.ID)
+			}
+			if len(api.listQueries) != 1 || api.listQueries[0].Search != reference {
+				t.Fatalf("ListAssets queries = %#v, want search %q", api.listQueries, reference)
+			}
+			if len(api.getAssetIDs) != 1 || api.getAssetIDs[0] != "asset-1" {
+				t.Fatalf("GetAsset IDs = %#v, want [asset-1]", api.getAssetIDs)
+			}
+		})
+	}
+}
+
+func TestResolveAssetRejectsAmbiguousExactMatches(t *testing.T) {
+	api := &fakeAPI{page: jumpserver.AssetPage{Results: []jumpserver.Asset{
+		{ID: "asset-1", Name: "web"},
+		{ID: "asset-2", Name: "WEB"},
+	}}}
+
+	_, err := ResolveAsset(context.Background(), api, "web")
+	if !errors.Is(err, ErrAssetAmbiguous) {
+		t.Fatalf("error = %v, want ErrAssetAmbiguous", err)
+	}
+	if len(api.getAssetIDs) != 0 {
+		t.Fatalf("GetAsset IDs = %#v, want none", api.getAssetIDs)
 	}
 }
 
