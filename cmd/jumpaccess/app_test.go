@@ -10,6 +10,7 @@ import (
 	"github.com/cmstar/jumpaccess/internal/credential"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/wailsapp/wails/v2/pkg/options"
+	macoptions "github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 type fakeDesktopWindow struct {
@@ -67,6 +68,38 @@ func TestWailsOptionsRestoreSavedWindowSizeAndMaximizedState(t *testing.T) {
 	}
 	if got.WindowStartState != options.Maximised {
 		t.Fatalf("window start state = %v, want maximised", got.WindowStartState)
+	}
+}
+
+func TestConfigureWindowChromeUsesFramelessDecoratedWindowOnWindows(t *testing.T) {
+	got := &options.App{}
+
+	configureWindowChrome(got, "windows")
+
+	if !got.Frameless {
+		t.Fatal("Windows Frameless = false, want true")
+	}
+	if got.Windows == nil {
+		t.Fatal("Windows options = nil")
+	}
+	if got.Windows.DisableFramelessWindowDecorations {
+		t.Fatal("Windows frameless decorations disabled, want DWM shadow and rounded corners preserved")
+	}
+}
+
+func TestConfigureWindowChromeUsesNativeInsetTitleBarOnMacOS(t *testing.T) {
+	got := &options.App{Frameless: true}
+
+	configureWindowChrome(got, "darwin")
+
+	if got.Frameless {
+		t.Fatal("macOS Frameless = true, want false so native traffic lights remain available")
+	}
+	if got.Mac == nil {
+		t.Fatal("macOS options = nil")
+	}
+	if want := macoptions.TitleBarHiddenInset(); !reflect.DeepEqual(got.Mac.TitleBar, want) {
+		t.Fatalf("macOS title bar = %#v, want %#v", got.Mac.TitleBar, want)
 	}
 }
 

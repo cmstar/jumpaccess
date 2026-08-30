@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/cmstar/jumpaccess/internal/appdir"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
@@ -40,7 +41,7 @@ func newWailsOptions(app *desktopApp) *options.App {
 	if placement.Maximized {
 		windowStartState = options.Maximised
 	}
-	return &options.App{
+	result := &options.App{
 		Title:     "JumpAccess",
 		Width:     placement.Width,
 		Height:    placement.Height,
@@ -58,6 +59,8 @@ func newWailsOptions(app *desktopApp) *options.App {
 			app,
 		},
 	}
+	configureWindowChrome(result, runtime.GOOS)
+	return result
 }
 
 func fail(err error) {
