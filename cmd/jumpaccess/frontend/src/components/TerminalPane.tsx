@@ -48,7 +48,9 @@ export function TerminalPane({ backend, onReconnect, output, preferences, sessio
     const fitAndReport = () => {
       try {
         fit.fit()
-        void backend.resizeSSHSession(session.id, terminal.cols, terminal.rows)
+        if (statusRef.current === 'active' && session.id) {
+          void backend.resizeSSHSession(session.id, terminal.cols, terminal.rows)
+        }
       } catch {
         // WebView may report a zero-sized host while switching views; the next resize retries.
       }
@@ -65,7 +67,9 @@ export function TerminalPane({ backend, onReconnect, output, preferences, sessio
     const input = terminal.onData((data) => {
       if (statusRef.current === 'active') void backend.writeSSHSession(session.id, data)
     })
-    const resized = terminal.onResize(({ cols, rows }) => void backend.resizeSSHSession(session.id, cols, rows))
+    const resized = terminal.onResize(({ cols, rows }) => {
+      if (statusRef.current === 'active' && session.id) void backend.resizeSSHSession(session.id, cols, rows)
+    })
     const observer = new ResizeObserver(fitAndReport)
     observer.observe(host)
     requestAnimationFrame(() => {

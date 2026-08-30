@@ -44,6 +44,7 @@ let state: BootstrapState = {
     { name: 'staging', url: 'https://staging-jump.example.com', organization: 'org-platform', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } },
   ],
   preferences: { version: 1, theme: 'light', terminalFontFamily: 'JetBrains Mono', terminalFontSize: 12, confirmCloseActiveSession: true },
+  workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
 }
 
 let sessions: SessionState[] = []
@@ -99,6 +100,7 @@ export const previewBackend: Backend = {
   async deleteAlias(_profile, name) { for (const asset of assets) asset.aliases = asset.aliases.filter((alias) => alias.name !== name) },
   async setAliasAccount(request) { for (const asset of assets) asset.aliases = asset.aliases.map((alias) => alias.name === request.name ? { ...alias, account: request.account } : alias) },
   async savePreferences(preferences: Preferences) { state = { ...state, preferences: clone(preferences) } },
+  async saveWorkspace(workspace) { state = { ...state, workspace: clone(workspace) } },
   async getAuthStatus(profile) { return clone(state.profiles.find((item) => item.name === profile)!.auth) },
   async refreshAuth(profile) { return clone(state.profiles.find((item) => item.name === profile)!.auth) },
   async startLogin(profile) { return { id: `login-${Date.now()}`, profile, expiresAt: new Date(Date.now() + 300_000).toISOString() } },

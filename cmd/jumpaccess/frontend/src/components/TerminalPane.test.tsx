@@ -7,6 +7,7 @@ import type { Backend, Preferences, SessionState } from '../lib/backend'
 const terminalMock = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   keyHandler: undefined as ((event: KeyboardEvent) => boolean) | undefined,
+  resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -23,7 +24,10 @@ vi.mock('@xterm/xterm', () => ({
       terminalMock.dataHandler = handler
       return { dispose() {} }
     }
-    onResize() { return { dispose() {} } }
+    onResize(handler: (size: { cols: number; rows: number }) => void) {
+      terminalMock.resizeHandler = handler
+      return { dispose() {} }
+    }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
       terminalMock.keyHandler = handler
     }
@@ -86,4 +90,22 @@ test('SSH 断开后仅由无修饰键的 Enter 触发重连', () => {
   }
   terminalMock.keyHandler?.(new KeyboardEvent('keydown', { key: 'x' }))
   expect(onReconnect).toHaveBeenCalledTimes(1)
+})
+
+test('恢复的断连 Tab 没有 Session ID 时不发送 resize', () => {
+  const resizeSSHSession = vi.fn().mockResolvedValue(undefined)
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession,
+  } as unknown as Backend
+
+  render(<TerminalPane
+    backend={backend}
+    output=""
+    preferences={preferences}
+    session={{ ...disconnectedSession, id: '' }}
+  />)
+  act(() => terminalMock.resizeHandler?.({ cols: 100, rows: 30 }))
+
+  expect(resizeSSHSession).not.toHaveBeenCalled()
 })

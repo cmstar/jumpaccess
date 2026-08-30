@@ -8,6 +8,25 @@ export interface Preferences {
   confirmCloseActiveSession: boolean
 }
 
+export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh'
+
+export interface WorkspaceTab {
+  id: string
+  type: WorkspaceTabType
+  profile?: string
+  organization?: string
+  target?: string
+  account?: string
+  assetId?: string
+  assetName?: string
+  alias?: string
+}
+
+export interface Workspace {
+  activeTabId: string
+  tabs: WorkspaceTab[]
+}
+
 export interface AuthStatus {
   loggedIn: boolean
   expired: boolean
@@ -29,6 +48,7 @@ export interface BootstrapState {
   currentOrganization: string
   profiles: ProfileSummary[]
   preferences: Preferences
+  workspace: Workspace
 }
 
 export interface Organization {
@@ -84,6 +104,10 @@ export interface SessionState {
   profile: string
   organization: string
   asset: string
+  target?: string
+  alias?: string
+  assetId?: string
+  assetName?: string
   account: string
   error: string
 }
@@ -120,6 +144,7 @@ export interface Backend {
   deleteAlias(profile: string, name: string): Promise<void>
   setAliasAccount(request: { profile: string; name: string; account: string }): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
+  saveWorkspace(workspace: Workspace): Promise<void>
   getAuthStatus(profile: string): Promise<AuthStatus>
   refreshAuth(profile: string): Promise<AuthStatus>
   startLogin(profile: string): Promise<LoginAttempt>
@@ -160,6 +185,7 @@ type DesktopBinding = {
   DeleteAlias(profile: string, name: string): Promise<void>
   SetAliasAccount(request: Parameters<Backend['setAliasAccount']>[0]): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
+  SaveWorkspace(workspace: Workspace): Promise<void>
   GetAuthStatus(profile: string): Promise<AuthStatus>
   RefreshAuth(profile: string): Promise<AuthStatus>
   StartLogin(profile: string): Promise<LoginAttempt>
@@ -181,6 +207,9 @@ declare global {
     go?: { main?: { desktopApp?: DesktopBinding } }
     runtime?: {
       EventsOnMultiple(eventName: string, callback: (event: unknown) => void, maxCallbacks: number): () => void
+      Quit?(): void
+      WindowMinimise?(): void
+      WindowToggleMaximise?(): void
     }
   }
 }
@@ -236,6 +265,7 @@ export const wailsBackend: Backend = {
   deleteAlias: (profile, name) => binding().DeleteAlias(profile, name),
   setAliasAccount: (request) => binding().SetAliasAccount(request),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
+  saveWorkspace: (workspace) => binding().SaveWorkspace(workspace),
   getAuthStatus: (profile) => binding().GetAuthStatus(profile),
   refreshAuth: (profile) => binding().RefreshAuth(profile),
   startLogin: (profile) => binding().StartLogin(profile),

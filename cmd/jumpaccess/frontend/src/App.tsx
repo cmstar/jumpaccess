@@ -1,4 +1,4 @@
-import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   Boxes,
@@ -10,6 +10,7 @@ import {
   Layers3,
   LogIn,
   LogOut,
+  Minus,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -20,12 +21,12 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Square,
   SlidersHorizontal,
   Tags,
   TerminalSquare,
   Trash2,
   Unplug,
-  Wifi,
   X,
 } from 'lucide-react'
 
@@ -47,15 +48,26 @@ import {
   type ProfileSummary,
   type SessionState,
   type ThemeMode,
+  type Workspace,
   wailsBackend,
 } from './lib/backend'
+import {
+  type AppTab,
+  emptyTabWorkspace,
+  reduceTabs,
+  type SSHDescriptor,
+  type SSHTab,
+  type SingletonTabKind,
+  type TabAction,
+  type TabWorkspace,
+} from './model/tabs'
 
-type View = 'assets' | 'sessions' | 'profiles' | 'settings'
 type AliasFilter = 'all' | 'with-alias' | 'without-alias'
 
 interface PendingConnection {
   asset: Asset
   target: string
+  alias: string
 }
 
 interface AppProps {
@@ -64,7 +76,73 @@ interface AppProps {
 
 const pageSize = 25
 const terminalBufferLimit = 1024 * 1024
+const disconnectedMessage = 'Connection closed.\r\n\r\nPress Enter to reconnect ...\r\n'
 const TerminalPane = lazy(() => import('./components/TerminalPane').then((module) => ({ default: module.TerminalPane })))
+
+function hydrateWorkspace(workspace: Workspace): TabWorkspace {
+  return reduceTabs(emptyTabWorkspace, {
+    type: 'hydrate',
+    workspace: {
+      activeTabID: workspace.activeTabId,
+      tabs: workspace.tabs.map((tab): AppTab => {
+        if (tab.type === 'ssh') return {
+          id: tab.id,
+          kind: 'ssh',
+          connectionStatus: 'disconnected',
+          descriptor: {
+            profile: tab.profile ?? '',
+            organization: tab.organization ?? '',
+            target: tab.target ?? '',
+            account: tab.account ?? '',
+            assetID: tab.assetId ?? '',
+            assetName: tab.assetName ?? '',
+            alias: tab.alias ?? '',
+          },
+        }
+        const kind = tab.type as SingletonTabKind
+        return { id: `system:${kind}`, kind } as AppTab
+      }),
+    },
+  })
+}
+
+function persistableWorkspace(workspace: TabWorkspace): Workspace {
+  return {
+    activeTabId: workspace.activeTabID,
+    tabs: workspace.tabs.map((tab) => tab.kind === 'ssh' ? {
+      id: tab.id,
+      type: 'ssh',
+      profile: tab.descriptor.profile,
+      organization: tab.descriptor.organization,
+      target: tab.descriptor.target,
+      account: tab.descriptor.account,
+      assetId: tab.descriptor.assetID,
+      assetName: tab.descriptor.assetName,
+      alias: tab.descriptor.alias,
+    } : { id: tab.id, type: tab.kind }),
+  }
+}
+
+function newSSHTabID(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `ssh-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function tabTitle(tab: AppTab): string {
+  if (tab.kind === 'ssh') return tab.descriptor.alias || tab.descriptor.assetName || tab.descriptor.target
+  return { assets: '资产', profiles: 'Profile', settings: '设置' }[tab.kind]
+}
+
+function tabTooltip(tab: SSHTab): string {
+  const descriptor = tab.descriptor
+  return [
+    descriptor.alias ? `Alias: ${descriptor.alias}` : '',
+    `Asset: ${descriptor.assetName || descriptor.target}`,
+    descriptor.assetID ? `ID: ${descriptor.assetID}` : '',
+    `Profile: ${descriptor.profile}`,
+    `Organization: ${descriptor.organization}`,
+    descriptor.account ? `Account: ${descriptor.account}` : '',
+  ].filter(Boolean).join('\n')
+}
 
 function AppLogo({ labelled = false, className = '' }: { labelled?: boolean; className?: string }) {
   return <img alt={labelled ? 'JumpAccess 应用图标' : ''} className={`app-logo ${className}`.trim()} src={appIconURL} />
@@ -139,8 +217,13 @@ function AliasFilterMenu({ onChange, value }: { onChange: (value: AliasFilter) =
 
 export default function App({ backend = wailsBackend }: AppProps) {
   const searchRef = useRef<HTMLInputElement>(null)
-  const [view, setView] = useState<View>('assets')
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
+  const [workspace, setWorkspace] = useState<TabWorkspace>(emptyTabWorkspace)
+  const workspaceRef = useRef<TabWorkspace>(emptyTabWorkspace)
+  const workspaceReady = useRef(false)
+  const workspaceSaveQueue = useRef(Promise.resolve())
+  const connectionAttempts = useRef(new Map<string, symbol>())
+  const pendingSessionStates = useRef(new Map<string, SessionState>())
   const [profile, setProfile] = useState('')
   const [organization, setOrganization] = useState('')
   const [organizations, setOrganizations] = useState<Organization[]>([])
@@ -154,9 +237,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [refreshing, setRefreshing] = useState(false)
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
   const [aliasFilter, setAliasFilter] = useState<AliasFilter>('all')
-  const [sessions, setSessions] = useState<SessionState[]>([])
   const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
-  const [activeSessionID, setActiveSessionID] = useState('')
   const [error, setError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
@@ -169,7 +250,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [licenseOpen, setLicenseOpen] = useState(false)
   const [licenseText, setLicenseText] = useState('')
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
-  const [pendingDisconnect, setPendingDisconnect] = useState<SessionState | null>(null)
+  const [pendingDisconnect, setPendingDisconnect] = useState<SSHTab | null>(null)
   const [pendingProfileLogout, setPendingProfileLogout] = useState<ProfileSummary | null>(null)
   const [pendingProfileDeletion, setPendingProfileDeletion] = useState<ProfileSummary | null>(null)
 
@@ -178,45 +259,77 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const currentAuth = authPresentation(currentProfile?.auth)
   const selectedAsset = assets.results.find((asset) => asset.id === selectedAssetID) ?? assets.results[0]
   const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
-  const activeSession = sessions.find((session) => session.id === activeSessionID) ?? sessions[0]
+  const activeTab = workspace.tabs.find((tab) => tab.id === workspace.activeTabID)
   const filteredAssets = useMemo(() => assets.results.filter((asset) => {
     if (aliasFilter === 'with-alias') return asset.aliases.length > 0
     if (aliasFilter === 'without-alias') return asset.aliases.length === 0
     return true
   }), [aliasFilter, assets.results])
 
+  function dispatchTabs(action: TabAction) {
+    const next = reduceTabs(workspaceRef.current, action)
+    workspaceRef.current = next
+    setWorkspace(next)
+  }
+
+  function openSingleton(kind: SingletonTabKind) {
+    dispatchTabs({ type: 'open-singleton', kind })
+  }
+
+  function appendDisconnectedPrompt(tabID: string) {
+    setSessionOutput((current) => {
+      const previous = current[tabID] ?? ''
+      const output = previous.endsWith(disconnectedMessage)
+        ? previous
+        : `${previous}${previous ? '\r\n' : ''}${disconnectedMessage}`
+      return { ...current, [tabID]: output.slice(-terminalBufferLimit) }
+    })
+  }
+
+  function applySessionState(event: SessionState, tabID: string) {
+    if (event.status !== 'active' && event.status !== 'closed' && event.status !== 'failed') return
+    dispatchTabs({ type: 'session-state', sessionID: event.id, status: event.status, error: event.error })
+    if (event.status === 'closed' || event.status === 'failed') {
+      appendDisconnectedPrompt(tabID)
+      void backend.closeSSHSession(event.id).catch(() => undefined)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
-    Promise.all([backend.bootstrap(), backend.listSSHSessions()])
-      .then(([state, initialSessions]) => {
+    backend.bootstrap()
+      .then((state) => {
         if (cancelled) return
+        const restored = hydrateWorkspace(state.workspace)
         setBootstrap(state)
         setProfile(state.currentProfile)
         setOrganization(state.currentOrganization)
-        setSessions(initialSessions)
-        setActiveSessionID(initialSessions[0]?.id ?? '')
+        workspaceRef.current = restored
+        setWorkspace(restored)
+        setSessionOutput(Object.fromEntries(restored.tabs
+          .filter((tab): tab is SSHTab => tab.kind === 'ssh')
+          .map((tab) => [tab.id, disconnectedMessage])))
+        workspaceReady.current = true
       })
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
     const offState = backend.onSessionState((event) => {
-      if (event.status === 'closed') {
-        setSessions((current) => {
-          const remaining = current.filter((session) => session.id !== event.id)
-          setActiveSessionID((active) => active === event.id ? (remaining[0]?.id ?? '') : active)
-          return remaining
-        })
-        setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== event.id)))
+      const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === event.id)
+      if (!tab) {
+        pendingSessionStates.current.set(event.id, event)
+        if (pendingSessionStates.current.size > 64) {
+          const oldest = pendingSessionStates.current.keys().next().value
+          if (oldest) pendingSessionStates.current.delete(oldest)
+        }
         return
       }
-      setSessions((current) => {
-        const exists = current.some((session) => session.id === event.id)
-        return exists ? current.map((session) => session.id === event.id ? event : session) : [...current, event]
-      })
-      if (event.status === 'failed' && event.error) setError(event.error)
+      applySessionState(event, tab.id)
     })
     const offOutput = backend.onSessionOutput((event) => {
+      const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === event.id)
+      if (!tab) return
       setSessionOutput((current) => ({
         ...current,
-        [event.id]: ((current[event.id] ?? '') + event.data).slice(-terminalBufferLimit),
+        [tab.id]: ((current[tab.id] ?? '') + event.data).slice(-terminalBufferLimit),
       }))
     })
     const offHostKey = backend.onHostKeyPrompt(setHostKeyPrompt)
@@ -225,8 +338,20 @@ export default function App({ backend = wailsBackend }: AppProps) {
       offState()
       offOutput()
       offHostKey()
+      connectionAttempts.current.clear()
+      pendingSessionStates.current.clear()
     }
   }, [backend])
+
+  useEffect(() => {
+    workspaceRef.current = workspace
+    if (!workspaceReady.current) return
+    const snapshot = persistableWorkspace(workspace)
+    workspaceSaveQueue.current = workspaceSaveQueue.current
+      .catch(() => undefined)
+      .then(() => backend.saveWorkspace(snapshot))
+      .catch((reason) => setError(errorMessage(reason)))
+  }, [backend, workspace])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -295,14 +420,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         setQuickOpen(true)
-      } else if (event.key === '/' && view === 'assets' && !(event.target instanceof HTMLInputElement)) {
+      } else if (event.key === '/' && activeTab?.kind === 'assets' && !(event.target instanceof HTMLInputElement)) {
         event.preventDefault()
         searchRef.current?.focus()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view])
+  }, [activeTab?.kind])
 
   useEffect(() => {
     if (!quickOpen || !profile || !organization) return
@@ -375,37 +500,93 @@ export default function App({ backend = wailsBackend }: AppProps) {
       const detail = await ensureDetail(asset)
       if (detail.accounts.length === 0) throw new Error('该资产没有可用于 SSH 的账号。')
       if (detail.accounts.length === 1) {
-        await startConnection(asset.id, detail.accounts[0].id || detail.accounts[0].username)
+        await startConnection(asset, asset.id, '', detail.accounts[0].id || detail.accounts[0].username)
         return
       }
-      setPendingConnection({ asset, target: asset.id })
+      setPendingConnection({ asset, target: asset.id, alias: '' })
     })
   }
 
   async function connectAlias(asset: Asset, alias: Alias) {
     await run(async () => {
       if (alias.account) {
-        await startConnection(alias.name, alias.account)
+        await startConnection(asset, alias.name, alias.name, alias.account)
         return
       }
       const detail = await ensureDetail(asset)
       if (detail.accounts.length === 0) throw new Error('该资产没有可用于 SSH 的账号。')
       if (detail.accounts.length === 1) {
-        await startConnection(alias.name, detail.accounts[0].id || detail.accounts[0].username)
+        await startConnection(asset, alias.name, alias.name, detail.accounts[0].id || detail.accounts[0].username)
         return
       }
-      setPendingConnection({ asset, target: alias.name })
+      setPendingConnection({ asset, target: alias.name, alias: alias.name })
     })
   }
 
-  async function startConnection(target: string, account: string) {
-    const session = await backend.startSSHSession({ profile, organization, target, account, columns: 120, rows: 34 })
+  async function startConnection(asset: Asset, target: string, alias: string, account: string, existingTabID?: string) {
+    const descriptor: SSHDescriptor = {
+      profile,
+      organization,
+      target,
+      alias,
+      assetID: asset.id,
+      assetName: asset.name,
+      account,
+    }
+    const tabID = existingTabID ?? newSSHTabID()
+    if (!existingTabID) dispatchTabs({ type: 'open-ssh', id: tabID, descriptor })
+    await beginSSHConnection(tabID, descriptor, false)
     void syncProfileAuth(profile).catch((reason) => setError(errorMessage(reason)))
-    setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session])
-    setActiveSessionID(session.id)
     setPendingConnection(null)
     setQuickOpen(false)
-    setView('sessions')
+  }
+
+  async function reconnectTab(tab: SSHTab) {
+    const current = workspaceRef.current.tabs.find((item): item is SSHTab => item.id === tab.id && item.kind === 'ssh')
+    if (!current || current.connectionStatus === 'active' || current.connectionStatus === 'connecting' || current.connectionStatus === 'reconnecting') return
+    await run(async () => {
+      await beginSSHConnection(current.id, current.descriptor, true)
+    })
+  }
+
+  async function beginSSHConnection(tabID: string, descriptor: SSHDescriptor, reconnecting: boolean) {
+    const attempt = Symbol(tabID)
+    connectionAttempts.current.set(tabID, attempt)
+    dispatchTabs({ type: 'begin-connection', tabID, reconnecting })
+    setSessionOutput((current) => ({ ...current, [tabID]: '' }))
+    try {
+      const session = await backend.startSSHSession({
+        profile: descriptor.profile,
+        organization: descriptor.organization,
+        target: descriptor.target,
+        account: descriptor.account,
+        columns: 120,
+        rows: 34,
+      })
+      const tabStillExists = workspaceRef.current.tabs.some((item) => item.id === tabID && item.kind === 'ssh')
+      if (connectionAttempts.current.get(tabID) !== attempt || !tabStillExists) {
+        pendingSessionStates.current.delete(session.id)
+        await backend.closeSSHSession(session.id)
+        return
+      }
+      dispatchTabs({ type: 'attach-session', tabID, sessionID: session.id })
+      const pendingState = pendingSessionStates.current.get(session.id)
+      pendingSessionStates.current.delete(session.id)
+      if (pendingState) {
+        applySessionState(pendingState, tabID)
+      } else {
+        applySessionState(session, tabID)
+      }
+      connectionAttempts.current.delete(tabID)
+    } catch (reason) {
+      const isCurrent = connectionAttempts.current.get(tabID) === attempt
+      connectionAttempts.current.delete(tabID)
+      const tabStillExists = workspaceRef.current.tabs.some((item) => item.id === tabID && item.kind === 'ssh')
+      if (!isCurrent || !tabStillExists) return
+      dispatchTabs({ type: 'connection-error', tabID, error: errorMessage(reason) })
+      appendDisconnectedPrompt(tabID)
+      throw reason
+    }
   }
 
   async function changeAliasAccount(alias: Alias, account: string) {
@@ -463,24 +644,29 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
-  function requestDisconnect(session: SessionState) {
-    if (preferences?.confirmCloseActiveSession && (session.status === 'active' || session.status === 'connecting')) {
-      setPendingDisconnect(session)
+  function requestCloseTab(tab: AppTab) {
+    if (tab.kind === 'ssh' && preferences?.confirmCloseActiveSession && (tab.connectionStatus === 'active' || tab.connectionStatus === 'connecting' || tab.connectionStatus === 'reconnecting')) {
+      setPendingDisconnect(tab)
       return
     }
-    void disconnectSession(session)
+    void closeTab(tab)
   }
 
-  async function disconnectSession(session: SessionState) {
+  async function closeTab(tab: AppTab) {
     await run(async () => {
-      await backend.closeSSHSession(session.id)
-      setSessions((current) => current.filter((item) => item.id !== session.id))
-      setSessionOutput((current) => {
+      connectionAttempts.current.delete(tab.id)
+      const currentTab = workspaceRef.current.tabs.find((item) => item.id === tab.id)
+      if (!currentTab) {
+        setPendingDisconnect(null)
+        return
+      }
+      if (currentTab.kind === 'ssh' && currentTab.sessionID) await backend.closeSSHSession(currentTab.sessionID)
+      dispatchTabs({ type: 'close', id: currentTab.id })
+      if (currentTab.kind === 'ssh') setSessionOutput((current) => {
         const next = { ...current }
-        delete next[session.id]
+        delete next[currentTab.id]
         return next
       })
-      setActiveSessionID((current) => current === session.id ? '' : current)
       setPendingDisconnect(null)
     })
   }
@@ -488,11 +674,11 @@ export default function App({ backend = wailsBackend }: AppProps) {
   async function deleteProfile(item: ProfileSummary) {
     await run(async () => {
       await backend.deleteProfile(item.name)
-      const removedSessionIDs = new Set(sessions.filter((session) => session.profile === item.name).map((session) => session.id))
-      const remainingSessions = sessions.filter((session) => !removedSessionIDs.has(session.id))
-      setSessions(remainingSessions)
-      setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedSessionIDs.has(id))))
-      setActiveSessionID((current) => removedSessionIDs.has(current) ? (remainingSessions[0]?.id ?? '') : current)
+      const removedTabs = workspaceRef.current.tabs.filter((tab): tab is SSHTab => tab.kind === 'ssh' && tab.descriptor.profile === item.name)
+      removedTabs.forEach((tab) => connectionAttempts.current.delete(tab.id))
+      const removedTabIDs = new Set(removedTabs.map((tab) => tab.id))
+      dispatchTabs({ type: 'drop-profile', profile: item.name })
+      setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedTabIDs.has(id))))
       setPendingProfileDeletion(null)
       setDetails({})
       setSelectedAssetID('')
@@ -525,38 +711,30 @@ export default function App({ backend = wailsBackend }: AppProps) {
     }
   }
 
+  async function quitApplication() {
+    await workspaceSaveQueue.current.catch(() => undefined)
+    window.runtime?.Quit?.()
+  }
+
   if (!bootstrap) {
     return <main className="loading-shell"><div className="brand-mark"><AppLogo /></div><h1>JumpAccess</h1><p>{error || '正在连接桌面服务…'}</p></main>
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand" title="JumpAccess"><div className="brand-mark"><AppLogo /></div><div><strong>JumpAccess</strong><span>Desktop</span></div></div>
-        <nav className="primary-nav" aria-label="主导航">
-          <span className="nav-label">工作区</span>
-          <NavButton active={view === 'assets'} icon={<Boxes />} label="资产" onClick={() => setView('assets')} />
-          <NavButton active={view === 'sessions'} badge={sessions.filter((item) => item.status === 'active' || item.status === 'connecting').length} icon={<TerminalSquare />} label="会话" onClick={() => setView('sessions')} />
-          <NavButton active={view === 'profiles'} icon={<Layers3 />} label="Profile" onClick={() => setView('profiles')} />
-        </nav>
-        <div className="sidebar-bottom">
-          <button
-            aria-label={`认证状态：${profile || '未选择 Profile'}，${currentAuth.title}`}
-            className={`sidebar-auth-status ${currentAuth.offline ? 'offline' : 'authenticated'}`}
-            onClick={() => setView('profiles')}
-            title={`${profile || '未选择 Profile'} · ${currentAuth.title} · ${currentAuth.description}`}
-            type="button"
-          >
-            {currentAuth.offline ? <ShieldAlert aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
-            <span aria-hidden="true" className="auth-indicator" />
-          </button>
-          <NavButton active={view === 'settings'} icon={<Settings />} label="设置" onClick={() => setView('settings')} />
-          <div className="sidebar-version">Desktop · {bootstrap.version}</div>
-        </div>
-      </aside>
-
+    <main className={`app-shell ${navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'windows'}`}>
+      <TitleBar
+        activeTabID={workspace.activeTabID}
+        auth={currentAuth}
+        onActivate={(id) => dispatchTabs({ type: 'activate', id })}
+        onClose={requestCloseTab}
+        onOpenQuick={() => setQuickOpen(true)}
+        onOpenSingleton={openSingleton}
+        onQuit={() => void quitApplication()}
+        profile={profile}
+        tabs={workspace.tabs}
+      />
       <section className="workspace">
-        {view === 'assets' ? <header className="asset-context-bar">
+        {activeTab?.kind === 'assets' ? <header className="asset-context-bar">
           <div className="context-switchers">
             <ContextSelect ariaLabel="当前 Profile" icon={<Server />} label="Profile" onChange={(value) => void run(async () => { await backend.useProfile(value); await reloadBootstrap(value); setOffset(0); setDetails({}) })} options={bootstrap.profiles.map((item) => ({ value: item.name, label: item.name }))} value={profile} />
             <div className="context-divider" />
@@ -566,11 +744,13 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
         {error ? <div className="error-banner" role="alert"><ShieldAlert /><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div> : null}
 
-        {view === 'assets' ? (
+        {!activeTab ? <StartPage onAction={(action) => action === 'quick' ? setQuickOpen(true) : openSingleton(action)} /> : null}
+
+        {activeTab?.kind === 'assets' ? (
           <div className="content">
             <section className="asset-pane">
               <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={refreshing || !organization} onClick={() => setRefreshKey((value) => value + 1)} type="button"><RefreshCcw className={refreshing ? 'spin' : ''} />{refreshing ? '同步中…' : '立即同步'}</button></div></PageHeading>
-              {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { setView('profiles'); setProfileDialog(true) }} /> : <>
+              {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
                 <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
                 <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={(alias) => void deleteAlias(alias)} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
@@ -579,32 +759,148 @@ export default function App({ backend = wailsBackend }: AppProps) {
           </div>
         ) : null}
 
-        {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={requestDisconnect} onNew={() => setQuickOpen(true)} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
+        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} onClose={() => requestCloseTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
-        {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
+        {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
-        {view === 'settings' ? <SettingsView onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
-
-        {view !== 'sessions' ? <SessionDock sessions={sessions} onOpen={(id) => { setActiveSessionID(id); setView('sessions') }} /> : null}
+        {activeTab?.kind === 'settings' ? <SettingsView onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
       </section>
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
-      {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.target, account.id || account.username))} /> : null}
+      {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.asset, pendingConnection.target, pendingConnection.alias, account.id || account.username))} /> : null}
       {quickOpen ? <QuickConnectDialog assets={quickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
       {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
       {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
-      {pendingDisconnect ? <DisconnectSessionDialog session={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void disconnectSession(pendingDisconnect)} /> : null}
+      {pendingDisconnect ? <DisconnectSessionDialog tab={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void closeTab(pendingDisconnect)} /> : null}
       {pendingProfileLogout ? <LogoutProfileDialog profile={pendingProfileLogout} onCancel={() => setPendingProfileLogout(null)} onConfirm={() => logoutProfile(pendingProfileLogout)} /> : null}
       {pendingProfileDeletion ? <DeleteProfileDialog profile={pendingProfileDeletion} onCancel={() => setPendingProfileDeletion(null)} onConfirm={() => void deleteProfile(pendingProfileDeletion)} /> : null}
     </main>
   )
 }
 
-function NavButton({ active, badge, icon, label, onClick }: { active: boolean; badge?: number; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button aria-label={label} className={active ? 'nav-item active' : 'nav-item'} onClick={onClick} title={label} type="button">{icon}<span>{label}</span>{badge ? <em>{badge}</em> : null}</button>
+function tabIcon(tab: AppTab) {
+  if (tab.kind === 'assets') return <Boxes />
+  if (tab.kind === 'profiles') return <Layers3 />
+  if (tab.kind === 'settings') return <Settings />
+  return <TerminalSquare />
+}
+
+function TitleBar({ activeTabID, auth, onActivate, onClose, onOpenQuick, onOpenSingleton, onQuit, profile, tabs }: {
+  activeTabID: string
+  auth: ReturnType<typeof authPresentation>
+  onActivate: (id: string) => void
+  onClose: (tab: AppTab) => void
+  onOpenQuick: () => void
+  onOpenSingleton: (kind: SingletonTabKind) => void
+  onQuit: () => void
+  profile: string
+  tabs: AppTab[]
+}) {
+  const mac = navigator.platform.toLowerCase().includes('mac')
+  const runtime = window.runtime
+  const activateFromKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex = index
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
+    else if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = tabs.length - 1
+    else return
+    event.preventDefault()
+    onActivate(tabs[nextIndex].id)
+    const tabButtons = event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    tabButtons?.[nextIndex]?.focus()
+  }
+  return <header className="titlebar">
+    <div className="titlebar-brand" title="JumpAccess"><AppLogo /></div>
+    <div aria-label="工作区 Tab" className="tab-strip" role="tablist">
+      {tabs.map((tab, index) => <div className={tab.id === activeTabID ? 'workspace-tab active' : 'workspace-tab'} key={tab.id}>
+        <button
+          aria-selected={tab.id === activeTabID}
+          className="tab-activate"
+          onClick={() => onActivate(tab.id)}
+          onKeyDown={(event) => activateFromKeyboard(event, index)}
+          role="tab"
+          tabIndex={tab.id === activeTabID ? 0 : -1}
+          title={tab.kind === 'ssh' ? tabTooltip(tab) : tabTitle(tab)}
+          type="button"
+        >
+          {tabIcon(tab)}<span className="tab-primary">{tabTitle(tab)}</span>
+          {tab.kind === 'ssh' && tab.descriptor.alias && tab.descriptor.assetName ? <small>{tab.descriptor.assetName}</small> : null}
+        </button>
+        <button aria-label={`关闭 ${tabTitle(tab)} Tab`} className="tab-close" onClick={() => onClose(tab)} title="关闭 Tab" type="button"><X /></button>
+      </div>)}
+    </div>
+    <button aria-label="新建连接" className="titlebar-button new-tab-button" onClick={onOpenQuick} title="新建连接 (Ctrl/Cmd+K)" type="button"><Plus /></button>
+    <div className="titlebar-drag-region" onDoubleClick={() => runtime?.WindowToggleMaximise?.()} />
+    <nav aria-label="顶部快捷操作" className="titlebar-actions">
+      <button aria-label="打开资产" className="titlebar-button" onClick={() => onOpenSingleton('assets')} title="资产" type="button"><Boxes /></button>
+      <button aria-label="打开 Profile" className="titlebar-button" onClick={() => onOpenSingleton('profiles')} title="Profile" type="button"><Layers3 /></button>
+      <button aria-label="打开设置" className="titlebar-button" onClick={() => onOpenSingleton('settings')} title="设置" type="button"><Settings /></button>
+      <button
+        aria-label={`认证状态：${profile || '未选择 Profile'}，${auth.title}`}
+        className={`titlebar-button auth-status ${auth.offline ? 'offline' : 'authenticated'}`}
+        onClick={() => onOpenSingleton('profiles')}
+        title={`${profile || '未选择 Profile'} · ${auth.title} · ${auth.description}`}
+        type="button"
+      >{auth.offline ? <ShieldAlert /> : <ShieldCheck />}<span className="auth-indicator" /></button>
+    </nav>
+    {!mac ? <div aria-label="窗口控制" className="window-controls">
+      <button aria-label="最小化" onClick={() => runtime?.WindowMinimise?.()} type="button"><Minus /></button>
+      <button aria-label="最大化或还原" onClick={() => runtime?.WindowToggleMaximise?.()} type="button"><Square /></button>
+      <button aria-label="关闭窗口" className="window-close" onClick={onQuit} type="button"><X /></button>
+    </div> : null}
+  </header>
+}
+
+function StartPage({ onAction }: { onAction: (action: SingletonTabKind | 'quick') => void }) {
+  return <section className="start-page">
+    <AppLogo labelled className="start-page-logo" />
+    <h1>开始使用 JumpAccess</h1>
+    <p>打开工作区，或者直接建立一个 SSH 连接。</p>
+    <div className="start-actions">
+      <button className="start-action primary" onClick={() => onAction('quick')} type="button"><TerminalSquare /><span><strong>新建连接</strong><small>搜索 Asset 或 Alias</small></span></button>
+      <button className="start-action" onClick={() => onAction('assets')} type="button"><Boxes /><span><strong>查看资产</strong><small>浏览当前 Organization</small></span></button>
+      <button className="start-action" onClick={() => onAction('profiles')} type="button"><Layers3 /><span><strong>查看 Profile</strong><small>管理站点与认证</small></span></button>
+      <button className="start-action" onClick={() => onAction('settings')} type="button"><Settings /><span><strong>打开设置</strong><small>调整终端与外观</small></span></button>
+    </div>
+  </section>
+}
+
+function SSHView({ backend, onClose, onReconnect, output, preferences, tab }: {
+  backend: Backend
+  onClose: () => void
+  onReconnect: () => void
+  output: string
+  preferences: Preferences
+  tab: SSHTab
+}) {
+  const descriptor = tab.descriptor
+  const status: SessionState['status'] = tab.connectionStatus === 'active'
+    ? 'active'
+    : tab.connectionStatus === 'failed' ? 'failed'
+      : tab.connectionStatus === 'disconnected' ? 'closed' : 'connecting'
+  const session: SessionState = {
+    id: tab.sessionID ?? '',
+    status,
+    title: tabTitle(tab),
+    profile: descriptor.profile,
+    organization: descriptor.organization,
+    asset: descriptor.assetName,
+    target: descriptor.target,
+    alias: descriptor.alias,
+    assetId: descriptor.assetID,
+    assetName: descriptor.assetName,
+    account: descriptor.account,
+    error: tab.error ?? '',
+  }
+  return <section className="terminal-panel tab-terminal">
+    <div className="terminal-toolbar"><div><span className={`status-dot ${status === 'active' ? '' : 'offline'}`} /><strong>{tabTitle(tab)}</strong><small>{descriptor.account} · {tab.connectionStatus}</small></div><button className="icon-button danger" aria-label={`关闭 ${tabTitle(tab)} 会话`} title="关闭 Tab" onClick={onClose}><Unplug /></button></div>
+    <div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
+    <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span></div>
+  </section>
 }
 
 function PageHeading({ children, description, eyebrow, title }: { children?: ReactNode; description?: string; eyebrow: string; title: string }) {
@@ -652,18 +948,9 @@ function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { 
   return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono">{asset.id}<button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions"><button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div></aside>
 }
 
-function SessionsView({ active, backend, onActive, onClose, onNew, output, preferences, sessions }: { active?: SessionState; backend: Backend; onActive: (id: string) => void; onClose: (session: SessionState) => void; onNew: () => void; output: string; preferences: Preferences; sessions: SessionState[] }) {
-  return <section className="terminal-workspace"><div className="terminal-sidebar"><div className="terminal-sidebar-heading"><span>会话</span><span className="badge">{sessions.length}</span></div>{sessions.map((session) => <button className={session.id === active?.id ? 'terminal-session active' : 'terminal-session'} key={session.id} onClick={() => onActive(session.id)}><span className={`session-status ${session.status}`}><Wifi /></span><span><strong>{session.title}</strong><small>{session.account || session.status}</small></span></button>)}{sessions.length > 0 ? <button className="button secondary new-session-button" onClick={onNew}><Plus />新建连接</button> : null}</div>{active ? <div className="terminal-panel"><div className="terminal-toolbar"><div><span className={`status-dot ${active.status === 'active' ? '' : 'offline'}`} /><strong>{active.title}</strong><small>{active.account} · {active.status}</small></div><button className="icon-button danger" aria-label={`断开 ${active.title} 会话`} title="断开连接" onClick={() => onClose(active)}><Unplug /></button></div><div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} output={output} preferences={preferences} session={active} /></Suspense></div><div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{active.status}</span></div></div> : <div className="terminal-empty"><TerminalSquare /><h2>没有 SSH 会话</h2><button className="button primary" onClick={onNew}>新建连接</button></div>}</section>
-}
-
 function SettingsView({ onLicense, onOpenConfig, onSave, preferences, version }: { onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
   return <section className="full-pane settings-page"><PageHeading eyebrow="桌面偏好" title="设置"><button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button></PageHeading><div className="settings-grid"><section className="settings-card"><div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div><div className="segmented-control" aria-label="界面主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}</div></section><section className="settings-card"><div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div><label>字体<select value={preferences.terminalFontFamily} onChange={(event) => update({ terminalFontFamily: event.target.value })}><option>JetBrains Mono</option><option>Cascadia Mono</option><option>Menlo</option><option>monospace</option></select></label><label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label></section><section className="settings-card wide"><div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div><div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div></section><section className="settings-card wide about-settings-card"><div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div></section></div></section>
-}
-
-function SessionDock({ onOpen, sessions }: { onOpen: (id: string) => void; sessions: SessionState[] }) {
-  const active = sessions.filter((session) => session.status === 'active' || session.status === 'connecting')
-  return <footer className="session-dock"><div className="dock-label"><TerminalSquare /><span>活动会话</span><span className="badge">{active.length}</span></div>{active.map((session) => <button key={session.id} onClick={() => onOpen(session.id)}><span className="status-dot" /><strong>{session.title}</strong><small>{session.account}</small></button>)}</footer>
 }
 
 function Modal({ children, description, onClose, title }: { children: ReactNode; description?: string; onClose: () => void; title: string }) {
@@ -671,8 +958,8 @@ function Modal({ children, description, onClose, title }: { children: ReactNode;
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby={titleID}><button className="modal-close icon-button" aria-label="关闭" onClick={onClose}><X /></button><header><h2 id={titleID}>{title}</h2>{description ? <p>{description}</p> : null}</header>{children}</section></div>
 }
 
-function DisconnectSessionDialog({ onCancel, onConfirm, session }: { onCancel: () => void; onConfirm: () => void; session: SessionState }) {
-  return <Modal title="断开 SSH 会话" description="连接会立即终止，但不会影响远端服务器。" onClose={onCancel}><div className="disconnect-session-summary"><span><Unplug /></span><div><strong>{session.title}</strong><small>{session.account || '未指定账号'}</small></div></div><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button className="button destructive-confirm" onClick={onConfirm}><Unplug />断开连接</button></div></Modal>
+function DisconnectSessionDialog({ onCancel, onConfirm, tab }: { onCancel: () => void; onConfirm: () => void; tab: SSHTab }) {
+  return <Modal title="关闭 SSH Tab" description="连接会立即终止，该 Tab 也会从工作区移除。" onClose={onCancel}><div className="disconnect-session-summary"><span><Unplug /></span><div><strong>{tabTitle(tab)}</strong><small>{tab.descriptor.account || '未指定账号'}</small></div></div><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button className="button destructive-confirm" onClick={onConfirm}><Unplug />关闭 Tab</button></div></Modal>
 }
 
 function LogoutProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () => void; onConfirm: () => Promise<void>; profile: ProfileSummary }) {

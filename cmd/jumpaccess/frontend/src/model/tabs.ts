@@ -65,11 +65,35 @@ export type TabAction = {
 } | {
   type: 'activate'
   id: string
+} | {
+  type: 'begin-connection'
+  tabID: string
+  reconnecting: boolean
+} | {
+  type: 'connection-error'
+  tabID: string
+  error: string
 }
 
 export const emptyTabWorkspace: TabWorkspace = { tabs: [], activeTabID: '' }
 
 export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace {
+  if (action.type === 'begin-connection') {
+    return {
+      ...state,
+      tabs: state.tabs.map((tab) => tab.id === action.tabID && tab.kind === 'ssh'
+        ? { ...tab, connectionStatus: action.reconnecting ? 'reconnecting' : 'connecting', error: undefined }
+        : tab),
+    }
+  }
+  if (action.type === 'connection-error') {
+    return {
+      ...state,
+      tabs: state.tabs.map((tab) => tab.id === action.tabID && tab.kind === 'ssh'
+        ? { ...tab, connectionStatus: 'failed', error: action.error, sessionID: undefined }
+        : tab),
+    }
+  }
   if (action.type === 'activate') {
     return state.tabs.some((tab) => tab.id === action.id) ? { ...state, activeTabID: action.id } : state
   }

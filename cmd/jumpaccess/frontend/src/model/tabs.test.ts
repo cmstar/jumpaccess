@@ -105,6 +105,33 @@ describe('reduceTabs', () => {
     })
   })
 
+  it('marks an SSH tab as connecting or reconnecting before a live session exists', () => {
+    const opened = reduceTabs(emptyTabWorkspace, { type: 'open-ssh', id: 'ssh-1', descriptor })
+
+    const connecting = reduceTabs(opened, {
+      type: 'begin-connection', tabID: 'ssh-1', reconnecting: false,
+    })
+    const reconnecting = reduceTabs(connecting, {
+      type: 'begin-connection', tabID: 'ssh-1', reconnecting: true,
+    })
+
+    expect(connecting.tabs[0]).toMatchObject({ connectionStatus: 'connecting' })
+    expect(reconnecting.tabs[0]).toMatchObject({ connectionStatus: 'reconnecting' })
+  })
+
+  it('marks a connection attempt failed without requiring a live session ID', () => {
+    const opened = reduceTabs(emptyTabWorkspace, { type: 'open-ssh', id: 'ssh-1', descriptor })
+    const connecting = reduceTabs(opened, {
+      type: 'begin-connection', tabID: 'ssh-1', reconnecting: false,
+    })
+
+    const failed = reduceTabs(connecting, {
+      type: 'connection-error', tabID: 'ssh-1', error: 'connection refused',
+    })
+
+    expect(failed.tabs[0]).toMatchObject({ connectionStatus: 'failed', error: 'connection refused' })
+  })
+
   it('routes an active session state to the SSH tab attached to that session', () => {
     const opened = reduceTabs(emptyTabWorkspace, { type: 'open-ssh', id: 'ssh-1', descriptor })
     const attached = reduceTabs(opened, {
