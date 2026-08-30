@@ -15,6 +15,12 @@ func TestDefaultUsesUnsavedStandardWindowPlacement(t *testing.T) {
 	}
 }
 
+func TestDefaultInitializesEmptyWorkspaceTabs(t *testing.T) {
+	if got := Default().Workspace.Tabs; got == nil || len(got) != 0 {
+		t.Fatalf("Default workspace tabs = %#v, want non-nil empty slice", got)
+	}
+}
+
 func TestDecodeOldGUIConfigUsesDefaultWindowPlacement(t *testing.T) {
 	got, err := Decode([]byte("" +
 		"version = 1\n" +

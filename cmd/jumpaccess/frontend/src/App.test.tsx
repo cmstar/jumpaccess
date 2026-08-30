@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
@@ -136,6 +136,20 @@ test('恢复空工作区时显示起始页而不自动创建资产 Tab', async (
   expect(screen.queryByRole('heading', { name: '资产' })).not.toBeInTheDocument()
 })
 
+test('后端返回 null tabs 时按空工作区启动', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      workspace: { activeTabId: '', tabs: null } as unknown as BootstrapState['workspace'],
+    }),
+  })
+
+  render(<App backend={backend} />)
+
+  expect(await screen.findByRole('heading', { name: '开始使用 JumpAccess' })).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
 test('Tab 激活控件使用标准 tab 语义和 roving tabindex', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
@@ -148,6 +162,84 @@ test('Tab 激活控件使用标准 tab 语义和 roving tabindex', async () => {
 
   expect(screen.getByRole('tab', { name: '资产' })).toHaveAttribute('tabindex', '-1')
   expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('tabindex', '0')
+})
+
+test('仅在相邻的未选中 Tab 之间显示分隔线', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      workspace: {
+        activeTabId: 'system:assets',
+        tabs: [
+          { id: 'system:assets', type: 'assets' },
+          { id: 'system:profiles', type: 'profiles' },
+          { id: 'system:settings', type: 'settings' },
+        ],
+      },
+    }),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  const tablist = await screen.findByRole('tablist', { name: '工作区 Tab' })
+  expect(tablist.querySelectorAll('.tab-separator')).toHaveLength(1)
+  expect(tablist.querySelector('.tab-separator')?.parentElement).toContainElement(screen.getByRole('tab', { name: 'Profile' }))
+
+  await user.click(screen.getByRole('tab', { name: '设置' }))
+  expect(tablist.querySelectorAll('.tab-separator')).toHaveLength(1)
+  expect(tablist.querySelector('.tab-separator')?.parentElement).toContainElement(screen.getByRole('tab', { name: '资产' }))
+})
+
+test('鼠标中键关闭 Tab，右键不会误关闭', async () => {
+  const backend = makeBackend()
+  render(<App backend={backend} />)
+
+  const assetsTab = await screen.findByRole('tab', { name: '资产' })
+  fireEvent(assetsTab, new MouseEvent('auxclick', { bubbles: true, button: 2 }))
+  expect(screen.getByRole('tab', { name: '资产' })).toBeInTheDocument()
+
+  fireEvent(assetsTab, new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+  expect(await screen.findByRole('heading', { name: '开始使用 JumpAccess' })).toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: '资产' })).not.toBeInTheDocument()
+})
+
+test('鼠标拖拽 Tab 会调整顺序并保存工作区', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('tab', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({
+    tabs: [
+      expect.objectContaining({ type: 'assets' }),
+      expect.objectContaining({ type: 'profiles' }),
+      expect.objectContaining({ type: 'settings' }),
+    ],
+  })))
+
+  const values: Record<string, string> = {}
+  const dataTransfer = {
+    dropEffect: 'none',
+    effectAllowed: 'none',
+    getData: (type: string) => values[type] ?? '',
+    setData: (type: string, value: string) => { values[type] = value },
+  }
+  const assetsTab = screen.getByRole('tab', { name: '资产' })
+  const settingsTab = screen.getByRole('tab', { name: '设置' })
+  fireEvent.dragStart(assetsTab, { dataTransfer })
+  fireEvent.dragOver(settingsTab, { dataTransfer })
+  fireEvent.drop(settingsTab, { dataTransfer })
+
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profile', '设置', '资产'])
+  await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({
+    tabs: [
+      expect.objectContaining({ type: 'profiles' }),
+      expect.objectContaining({ type: 'settings' }),
+      expect.objectContaining({ type: 'assets' }),
+    ],
+  })))
 })
 
 test('Windows 关闭按钮等待工作区保存完成后再退出', async () => {

@@ -74,8 +74,9 @@
 
 .tab-strip {
   display: flex;
+  width: max-content;
   min-width: 0;
-  max-width: min(58vw, 820px);
+  flex: 0 1 auto;
   align-items: end;
   gap: 2px;
   padding-top: 5px;
@@ -88,16 +89,28 @@
 }
 
 .workspace-tab {
+  position: relative;
   display: flex;
+  width: 220px;
   min-width: 132px;
   max-width: 228px;
   height: 38px;
-  flex: 1 1 180px;
+  flex: 0 1 220px;
   align-items: center;
   border: 1px solid transparent;
   border-bottom: 0;
   border-radius: 9px 9px 0 0;
   color: var(--muted);
+}
+
+.tab-separator {
+  position: absolute;
+  top: 9px;
+  right: -2px;
+  width: 1px;
+  height: 20px;
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  pointer-events: none;
 }
 
 .workspace-tab:hover {
@@ -109,6 +122,14 @@
   color: var(--text);
   border-color: var(--border);
   background: var(--bg);
+}
+
+.workspace-tab.dragging {
+  opacity: .48;
+}
+
+.workspace-tab.drag-target {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .tab-activate {

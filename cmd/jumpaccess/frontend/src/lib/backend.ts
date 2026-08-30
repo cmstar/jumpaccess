@@ -24,7 +24,7 @@ export interface WorkspaceTab {
 
 export interface Workspace {
   activeTabId: string
-  tabs: WorkspaceTab[]
+  tabs: WorkspaceTab[] | null
 }
 
 export interface AuthStatus {

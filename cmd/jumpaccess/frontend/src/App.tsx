@@ -84,7 +84,7 @@ function hydrateWorkspace(workspace: Workspace): TabWorkspace {
     type: 'hydrate',
     workspace: {
       activeTabID: workspace.activeTabId,
-      tabs: workspace.tabs.map((tab): AppTab => {
+      tabs: (workspace.tabs ?? []).map((tab): AppTab => {
         if (tab.type === 'ssh') return {
           id: tab.id,
           kind: 'ssh',
@@ -729,6 +729,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         onClose={requestCloseTab}
         onOpenQuick={() => setQuickOpen(true)}
         onOpenSingleton={openSingleton}
+        onMove={(id, toIndex) => dispatchTabs({ type: 'move', id, toIndex })}
         onQuit={() => void quitApplication()}
         profile={profile}
         tabs={workspace.tabs}
@@ -788,11 +789,12 @@ function tabIcon(tab: AppTab) {
   return <TerminalSquare />
 }
 
-function TitleBar({ activeTabID, auth, onActivate, onClose, onOpenQuick, onOpenSingleton, onQuit, profile, tabs }: {
+function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, tabs }: {
   activeTabID: string
   auth: ReturnType<typeof authPresentation>
   onActivate: (id: string) => void
   onClose: (tab: AppTab) => void
+  onMove: (id: string, toIndex: number) => void
   onOpenQuick: () => void
   onOpenSingleton: (kind: SingletonTabKind) => void
   onQuit: () => void
@@ -801,6 +803,8 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onOpenQuick, onOpenS
 }) {
   const mac = navigator.platform.toLowerCase().includes('mac')
   const runtime = window.runtime
+  const [draggedTabID, setDraggedTabID] = useState('')
+  const [dropTargetID, setDropTargetID] = useState('')
   const activateFromKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex = index
     if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
@@ -816,7 +820,47 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onOpenQuick, onOpenS
   return <header className="titlebar">
     <div className="titlebar-brand" title="JumpAccess"><AppLogo /></div>
     <div aria-label="工作区 Tab" className="tab-strip" role="tablist">
-      {tabs.map((tab, index) => <div className={tab.id === activeTabID ? 'workspace-tab active' : 'workspace-tab'} key={tab.id}>
+      {tabs.map((tab, index) => <div
+        className={[
+          'workspace-tab',
+          tab.id === activeTabID ? 'active' : '',
+          tab.id === draggedTabID ? 'dragging' : '',
+          tab.id === dropTargetID ? 'drag-target' : '',
+        ].filter(Boolean).join(' ')}
+        draggable
+        key={tab.id}
+        onAuxClick={(event) => {
+          if (event.button !== 1) return
+          event.preventDefault()
+          onClose(tab)
+        }}
+        onMouseDown={(event) => {
+          if (event.button === 1) event.preventDefault()
+        }}
+        onDragStart={(event) => {
+          setDraggedTabID(tab.id)
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', tab.id)
+        }}
+        onDragOver={(event) => {
+          const sourceID = draggedTabID || event.dataTransfer.getData('text/plain')
+          if (!sourceID || sourceID === tab.id) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+          setDropTargetID(tab.id)
+        }}
+        onDrop={(event) => {
+          event.preventDefault()
+          const sourceID = draggedTabID || event.dataTransfer.getData('text/plain')
+          if (sourceID && sourceID !== tab.id) onMove(sourceID, index)
+          setDraggedTabID('')
+          setDropTargetID('')
+        }}
+        onDragEnd={() => {
+          setDraggedTabID('')
+          setDropTargetID('')
+        }}
+      >
         <button
           aria-selected={tab.id === activeTabID}
           className="tab-activate"
@@ -831,6 +875,9 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onOpenQuick, onOpenS
           {tab.kind === 'ssh' && tab.descriptor.alias && tab.descriptor.assetName ? <small>{tab.descriptor.assetName}</small> : null}
         </button>
         <button aria-label={`关闭 ${tabTitle(tab)} Tab`} className="tab-close" onClick={() => onClose(tab)} title="关闭 Tab" type="button"><X /></button>
+        {tab.id !== activeTabID && tabs[index + 1] && tabs[index + 1].id !== activeTabID
+          ? <span aria-hidden="true" className="tab-separator" />
+          : null}
       </div>)}
     </div>
     <button aria-label="新建连接" className="titlebar-button new-tab-button" onClick={onOpenQuick} title="新建连接 (Ctrl/Cmd+K)" type="button"><Plus /></button>

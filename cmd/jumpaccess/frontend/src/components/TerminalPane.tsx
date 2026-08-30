@@ -48,7 +48,7 @@ export function TerminalPane({ backend, onReconnect, output, preferences, sessio
     const fitAndReport = () => {
       try {
         fit.fit()
-        if (statusRef.current === 'active' && session.id) {
+        if (session.id) {
           void backend.resizeSSHSession(session.id, terminal.cols, terminal.rows)
         }
       } catch {
@@ -68,7 +68,7 @@ export function TerminalPane({ backend, onReconnect, output, preferences, sessio
       if (statusRef.current === 'active') void backend.writeSSHSession(session.id, data)
     })
     const resized = terminal.onResize(({ cols, rows }) => {
-      if (statusRef.current === 'active' && session.id) void backend.resizeSSHSession(session.id, cols, rows)
+      if (session.id) void backend.resizeSSHSession(session.id, cols, rows)
     })
     const observer = new ResizeObserver(fitAndReport)
     observer.observe(host)

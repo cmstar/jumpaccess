@@ -109,3 +109,21 @@ test('恢复的断连 Tab 没有 Session ID 时不发送 resize', () => {
 
   expect(resizeSSHSession).not.toHaveBeenCalled()
 })
+
+test('连接建立期间也向远端同步最新终端尺寸', () => {
+  const resizeSSHSession = vi.fn().mockResolvedValue(undefined)
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession,
+  } as unknown as Backend
+
+  render(<TerminalPane
+    backend={backend}
+    output=""
+    preferences={preferences}
+    session={{ ...disconnectedSession, status: 'connecting' }}
+  />)
+  act(() => terminalMock.resizeHandler?.({ cols: 188, rows: 54 }))
+
+  expect(resizeSSHSession).toHaveBeenCalledWith('session-1', 188, 54)
+})

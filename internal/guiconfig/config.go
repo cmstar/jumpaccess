@@ -74,6 +74,7 @@ func Default() Config {
 			TerminalFontSize:   12,
 		},
 		Behavior: Behavior{ConfirmCloseActiveSession: true},
+		Workspace: Workspace{Tabs: []WorkspaceTab{}},
 		Window: WindowPlacement{
 			Width:  DefaultWindowWidth,
 			Height: DefaultWindowHeight,
