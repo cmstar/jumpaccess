@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/cmstar/jumpaccess/internal/credential"
@@ -44,7 +45,7 @@ func TestNewDesktopAppUsesSharedAndGUIConfigFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preferences != guiconfig.Default() {
+	if !reflect.DeepEqual(preferences, guiconfig.Default()) {
 		t.Fatalf("GUI preferences = %#v, want defaults", preferences)
 	}
 }
@@ -157,6 +158,30 @@ func TestDesktopAppBeforeClosePreservesNormalBoundsWhenMinimized(t *testing.T) {
 	}
 }
 
+func TestDesktopAppSaveWorkspacePersistsDisconnectedSSHTabWithoutStartingSession(t *testing.T) {
+	app, err := newDesktopApp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := guiconfig.Workspace{ActiveTabID: "ssh-1", Tabs: []guiconfig.WorkspaceTab{{
+		ID: "ssh-1", Type: "ssh", Profile: "production", Organization: "org-1", Target: "asset-1", Account: "account-1", AssetID: "asset-1", AssetName: "web-01",
+	}}}
+
+	if err := app.SaveWorkspace(want); err != nil {
+		t.Fatal(err)
+	}
+	state, err := app.Bootstrap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(state.Workspace, want) {
+		t.Fatalf("workspace = %#v, want %#v", state.Workspace, want)
+	}
+	if sessions := app.ListSSHSessions(); len(sessions) != 0 {
+		t.Fatalf("restoring workspace started SSH sessions: %#v", sessions)
+	}
+}
+
 func TestDesktopAppDeleteProfileRemovesConfigurationAndCredential(t *testing.T) {
 	app, err := newDesktopApp(t.TempDir())
 	if err != nil {
@@ -166,6 +191,12 @@ func TestDesktopAppDeleteProfileRemovesConfigurationAndCredential(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := app.core.Tokens.Save("work", credential.Token{AccessToken: "test-access-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SaveWorkspace(guiconfig.Workspace{ActiveTabID: "ssh-work", Tabs: []guiconfig.WorkspaceTab{
+		{ID: "assets", Type: "assets"},
+		{ID: "ssh-work", Type: "ssh", Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", AssetID: "asset-1", AssetName: "web-01"},
+	}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -181,5 +212,13 @@ func TestDesktopAppDeleteProfileRemovesConfigurationAndCredential(t *testing.T) 
 	}
 	if _, err := app.core.Tokens.Load("work"); !errors.Is(err, credential.ErrNotFound) {
 		t.Fatalf("credential load error = %v, want ErrNotFound", err)
+	}
+	preferences, err := app.preferences.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWorkspace := guiconfig.Workspace{ActiveTabID: "assets", Tabs: []guiconfig.WorkspaceTab{{ID: "assets", Type: "assets"}}}
+	if !reflect.DeepEqual(preferences.Workspace, wantWorkspace) {
+		t.Fatalf("workspace = %#v, want %#v", preferences.Workspace, wantWorkspace)
 	}
 }

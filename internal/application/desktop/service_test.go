@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -57,6 +58,7 @@ func TestBootstrapReturnsSortedProfilesAuthAndDesktopPreferences(t *testing.T) {
 	preferenceStore := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
 	preferences := guiconfig.Default()
 	preferences.Appearance.Theme = "dark"
+	preferences.Workspace = guiconfig.Workspace{ActiveTabID: "assets", Tabs: []guiconfig.WorkspaceTab{{ID: "assets", Type: "assets"}}}
 	if err := preferenceStore.Save(preferences); err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +74,9 @@ func TestBootstrapReturnsSortedProfilesAuthAndDesktopPreferences(t *testing.T) {
 	}
 	if got.CurrentProfile != "production" || got.CurrentOrganization != "org-1" || got.Preferences.Appearance.Theme != "dark" {
 		t.Fatalf("Bootstrap = %#v", got)
+	}
+	if !reflect.DeepEqual(got.Workspace, preferences.Workspace) {
+		t.Fatalf("workspace = %#v, want %#v", got.Workspace, preferences.Workspace)
 	}
 	if len(got.Profiles) != 2 || got.Profiles[0].Name != "production" || got.Profiles[1].Name != "staging" {
 		t.Fatalf("profiles = %#v, want sorted production, staging", got.Profiles)
@@ -311,7 +316,7 @@ func TestSavePreferencesWritesOnlyGUIStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("preferences = %#v, want %#v", got, want)
 	}
 }
@@ -320,6 +325,7 @@ func TestSavePreferencesPreservesWindowPlacement(t *testing.T) {
 	preferenceStore := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
 	stored := guiconfig.Default()
 	stored.Window = guiconfig.WindowPlacement{HasBounds: true, Maximized: true, X: 120, Y: 90, Width: 1440, Height: 900}
+	stored.Workspace = guiconfig.Workspace{ActiveTabID: "assets", Tabs: []guiconfig.WorkspaceTab{{ID: "assets", Type: "assets"}}}
 	if err := preferenceStore.Save(stored); err != nil {
 		t.Fatal(err)
 	}
@@ -339,5 +345,37 @@ func TestSavePreferencesPreservesWindowPlacement(t *testing.T) {
 	}
 	if got.Appearance.Theme != "dark" {
 		t.Fatalf("theme = %q, want dark", got.Appearance.Theme)
+	}
+	if !reflect.DeepEqual(got.Workspace, stored.Workspace) {
+		t.Fatalf("workspace = %#v, want %#v", got.Workspace, stored.Workspace)
+	}
+}
+
+func TestSaveWorkspacePreservesPreferencesAndWindowPlacement(t *testing.T) {
+	preferenceStore := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
+	stored := guiconfig.Default()
+	stored.Appearance.Theme = "dark"
+	stored.Behavior.ConfirmCloseActiveSession = false
+	stored.Window = guiconfig.WindowPlacement{HasBounds: true, X: 120, Y: 90, Width: 1440, Height: 900}
+	if err := preferenceStore.Save(stored); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Preferences: preferenceStore}
+	want := guiconfig.Workspace{ActiveTabID: "ssh-1", Tabs: []guiconfig.WorkspaceTab{{
+		ID: "ssh-1", Type: "ssh", Profile: "production", Organization: "org-1", Target: "asset-1", Account: "account-1", AssetID: "asset-1", AssetName: "web-01",
+	}}}
+
+	if err := service.SaveWorkspace(context.Background(), want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := preferenceStore.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Workspace, want) {
+		t.Fatalf("workspace = %#v, want %#v", got.Workspace, want)
+	}
+	if got.Appearance != stored.Appearance || got.Behavior != stored.Behavior || got.Window != stored.Window {
+		t.Fatalf("unrelated preferences changed: got %#v, want %#v", got, stored)
 	}
 }

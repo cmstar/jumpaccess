@@ -32,6 +32,29 @@ func TestDecodeOldGUIConfigUsesDefaultWindowPlacement(t *testing.T) {
 	}
 }
 
+func TestDecodeAcceptsPersistedWorkspaceTabs(t *testing.T) {
+	_, err := Decode([]byte("" +
+		"version = 1\n" +
+		"[workspace]\n" +
+		"active_tab_id = \"ssh-1\"\n" +
+		"[[workspace.tabs]]\n" +
+		"id = \"assets\"\n" +
+		"type = \"assets\"\n" +
+		"[[workspace.tabs]]\n" +
+		"id = \"ssh-1\"\n" +
+		"type = \"ssh\"\n" +
+		"profile = \"production\"\n" +
+		"organization = \"org-1\"\n" +
+		"target = \"production-web\"\n" +
+		"account = \"account-1\"\n" +
+		"asset_id = \"asset-1\"\n" +
+		"asset_name = \"prod-web-01\"\n" +
+		"alias = \"production-web\"\n"))
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+}
+
 func TestDecodeRejectsUnknownField(t *testing.T) {
 	_, err := Decode([]byte("" +
 		"version = 1\n" +
@@ -65,5 +88,50 @@ func TestConfigRejectsWindowBelowMinimumSize(t *testing.T) {
 
 	if err := value.Validate(); err == nil {
 		t.Fatal("Validate error = nil, want invalid window size error")
+	}
+}
+
+func TestConfigRejectsInvalidWorkspace(t *testing.T) {
+	tests := []struct {
+		name      string
+		workspace Workspace
+	}{
+		{
+			name:      "active tab is missing",
+			workspace: Workspace{ActiveTabID: "settings", Tabs: []WorkspaceTab{{ID: "assets", Type: "assets"}}},
+		},
+		{
+			name: "duplicate tab id",
+			workspace: Workspace{ActiveTabID: "assets", Tabs: []WorkspaceTab{
+				{ID: "assets", Type: "assets"},
+				{ID: "assets", Type: "profiles"},
+			}},
+		},
+		{
+			name: "duplicate singleton",
+			workspace: Workspace{ActiveTabID: "assets-1", Tabs: []WorkspaceTab{
+				{ID: "assets-1", Type: "assets"},
+				{ID: "assets-2", Type: "assets"},
+			}},
+		},
+		{
+			name:      "unknown tab type",
+			workspace: Workspace{ActiveTabID: "unknown", Tabs: []WorkspaceTab{{ID: "unknown", Type: "unknown"}}},
+		},
+		{
+			name: "incomplete SSH descriptor",
+			workspace: Workspace{ActiveTabID: "ssh-1", Tabs: []WorkspaceTab{{
+				ID: "ssh-1", Type: "ssh", Profile: "production", Target: "asset-1",
+			}}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := Default()
+			value.Workspace = test.workspace
+			if err := value.Validate(); err == nil {
+				t.Fatal("Validate error = nil, want invalid workspace error")
+			}
+		})
 	}
 }

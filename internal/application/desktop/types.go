@@ -18,11 +18,12 @@ type ProfileSummary struct {
 }
 
 type BootstrapState struct {
-	Version             string           `json:"version"`
-	CurrentProfile      string           `json:"currentProfile"`
-	CurrentOrganization string           `json:"currentOrganization"`
-	Profiles            []ProfileSummary `json:"profiles"`
-	Preferences         guiconfig.Config `json:"preferences"`
+	Version             string              `json:"version"`
+	CurrentProfile      string              `json:"currentProfile"`
+	CurrentOrganization string              `json:"currentOrganization"`
+	Profiles            []ProfileSummary    `json:"profiles"`
+	Preferences         guiconfig.Config    `json:"preferences"`
+	Workspace           guiconfig.Workspace `json:"workspace"`
 }
 
 type OrganizationView struct {

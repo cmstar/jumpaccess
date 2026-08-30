@@ -43,6 +43,7 @@ type SettingsService interface {
 type PreferenceStore interface {
 	Load() (guiconfig.Config, error)
 	Save(guiconfig.Config) error
+	Update(context.Context, func(*guiconfig.Config) error) error
 }
 
 type Service struct {
@@ -122,6 +123,7 @@ func (s Service) Bootstrap() (BootstrapState, error) {
 		CurrentOrganization: currentOrganization,
 		Profiles:            profiles,
 		Preferences:         preferences,
+		Workspace:           preferences.Workspace,
 	}, nil
 }
 
@@ -291,14 +293,22 @@ func (s Service) SavePreferences(value guiconfig.Config) error {
 	if s.Preferences == nil {
 		return fmt.Errorf("GUI preference store is unavailable")
 	}
-	stored, err := s.Preferences.Load()
-	if err != nil {
-		return err
+	return s.Preferences.Update(context.Background(), func(stored *guiconfig.Config) error {
+		stored.Version = value.Version
+		stored.Appearance = value.Appearance
+		stored.Behavior = value.Behavior
+		return nil
+	})
+}
+
+func (s Service) SaveWorkspace(ctx context.Context, workspace guiconfig.Workspace) error {
+	if s.Preferences == nil {
+		return fmt.Errorf("GUI preference store is unavailable")
 	}
-	stored.Version = value.Version
-	stored.Appearance = value.Appearance
-	stored.Behavior = value.Behavior
-	return s.Preferences.Save(stored)
+	return s.Preferences.Update(ctx, func(stored *guiconfig.Config) error {
+		stored.Workspace = workspace
+		return nil
+	})
 }
 
 func (s Service) LicenseText() string {

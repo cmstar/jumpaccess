@@ -21,6 +21,7 @@ type Config struct {
 	Version    int             `toml:"version"`
 	Appearance Appearance      `toml:"appearance"`
 	Behavior   Behavior        `toml:"behavior"`
+	Workspace  Workspace       `toml:"workspace" json:"-"`
 	Window     WindowPlacement `toml:"window" json:"-"`
 }
 
@@ -32,6 +33,25 @@ type Appearance struct {
 
 type Behavior struct {
 	ConfirmCloseActiveSession bool `toml:"confirm_close_active_session"`
+}
+
+// Workspace 保存桌面工作区的稳定 Tab 描述。SSH Tab 只保存重连所需的目标信息，
+// 不保存进程内 Session ID、终端输出或连接状态。
+type Workspace struct {
+	ActiveTabID string         `toml:"active_tab_id" json:"activeTabId"`
+	Tabs        []WorkspaceTab `toml:"tabs" json:"tabs"`
+}
+
+type WorkspaceTab struct {
+	ID           string `toml:"id" json:"id"`
+	Type         string `toml:"type" json:"type"`
+	Profile      string `toml:"profile,omitempty" json:"profile,omitempty"`
+	Organization string `toml:"organization,omitempty" json:"organization,omitempty"`
+	Target       string `toml:"target,omitempty" json:"target,omitempty"`
+	Account      string `toml:"account,omitempty" json:"account,omitempty"`
+	AssetID      string `toml:"asset_id,omitempty" json:"assetId,omitempty"`
+	AssetName    string `toml:"asset_name,omitempty" json:"assetName,omitempty"`
+	Alias        string `toml:"alias,omitempty" json:"alias,omitempty"`
 }
 
 // WindowPlacement 保存桌面窗口最近一次退出时的状态。坐标和尺寸始终表示普通窗口状态，
@@ -99,6 +119,50 @@ func (c Config) Validate() error {
 	}
 	if c.Window.Width < MinimumWindowWidth || c.Window.Height < MinimumWindowHeight {
 		return fmt.Errorf("window size must be at least %dx%d", MinimumWindowWidth, MinimumWindowHeight)
+	}
+	if err := validateWorkspace(c.Workspace); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateWorkspace(workspace Workspace) error {
+	if len(workspace.Tabs) == 0 {
+		if workspace.ActiveTabID != "" {
+			return fmt.Errorf("workspace.active_tab_id must be empty when no tabs are saved")
+		}
+		return nil
+	}
+	ids := make(map[string]struct{}, len(workspace.Tabs))
+	singletons := make(map[string]struct{}, 3)
+	activeFound := false
+	for _, tab := range workspace.Tabs {
+		if strings.TrimSpace(tab.ID) == "" || tab.ID != strings.TrimSpace(tab.ID) {
+			return fmt.Errorf("workspace tab ID is invalid")
+		}
+		if _, exists := ids[tab.ID]; exists {
+			return fmt.Errorf("workspace tab ID %q is duplicated", tab.ID)
+		}
+		ids[tab.ID] = struct{}{}
+		if tab.ID == workspace.ActiveTabID {
+			activeFound = true
+		}
+		switch tab.Type {
+		case "assets", "profiles", "settings":
+			if _, exists := singletons[tab.Type]; exists {
+				return fmt.Errorf("workspace tab type %q is duplicated", tab.Type)
+			}
+			singletons[tab.Type] = struct{}{}
+		case "ssh":
+			if tab.Profile == "" || tab.Organization == "" || tab.Target == "" || tab.Account == "" || tab.AssetID == "" || tab.AssetName == "" {
+				return fmt.Errorf("workspace SSH tab %q has an incomplete connection descriptor", tab.ID)
+			}
+		default:
+			return fmt.Errorf("workspace tab type %q is invalid", tab.Type)
+		}
+	}
+	if !activeFound {
+		return fmt.Errorf("workspace active tab %q does not exist", workspace.ActiveTabID)
 	}
 	return nil
 }

@@ -48,7 +48,28 @@ func (a *desktopApp) DeleteProfile(name string) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	return a.api.DeleteProfile(name)
+	if err := a.api.DeleteProfile(name); err != nil {
+		return err
+	}
+	return a.preferences.Update(a.context(), func(value *guiconfig.Config) error {
+		remaining := make([]guiconfig.WorkspaceTab, 0, len(value.Workspace.Tabs))
+		activeRemoved := false
+		for _, tab := range value.Workspace.Tabs {
+			if tab.Type == "ssh" && tab.Profile == name {
+				activeRemoved = activeRemoved || tab.ID == value.Workspace.ActiveTabID
+				continue
+			}
+			remaining = append(remaining, tab)
+		}
+		value.Workspace.Tabs = remaining
+		if activeRemoved {
+			value.Workspace.ActiveTabID = ""
+			if len(remaining) > 0 {
+				value.Workspace.ActiveTabID = remaining[0].ID
+			}
+		}
+		return nil
+	})
 }
 
 func (a *desktopApp) UseProfile(name string) error {
@@ -73,6 +94,10 @@ func (a *desktopApp) SetAliasAccount(request desktopapp.AliasAccountRequest) err
 
 func (a *desktopApp) SavePreferences(value guiconfig.Config) error {
 	return a.api.SavePreferences(value)
+}
+
+func (a *desktopApp) SaveWorkspace(value guiconfig.Workspace) error {
+	return a.api.SaveWorkspace(a.context(), value)
 }
 
 func (a *desktopApp) GetAuthStatus(profile string) (desktopapp.AuthStatus, error) {

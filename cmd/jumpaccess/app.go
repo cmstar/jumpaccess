@@ -137,23 +137,27 @@ func (a *desktopApp) beforeClose(ctx context.Context) bool {
 }
 
 func (a *desktopApp) saveWindowPlacement(ctx context.Context) error {
-	preferences, err := a.preferences.Load()
-	if err != nil {
-		return err
-	}
-	preferences.Window.Maximized = a.window.IsMaximized(ctx)
-	if !preferences.Window.Maximized && a.window.IsNormal(ctx) {
+	maximized := a.window.IsMaximized(ctx)
+	var normalPlacement *guiconfig.WindowPlacement
+	if !maximized && a.window.IsNormal(ctx) {
 		x, y := a.window.GetPosition(ctx)
 		width, height := a.window.GetSize(ctx)
-		preferences.Window = guiconfig.WindowPlacement{
+		placement := guiconfig.WindowPlacement{
 			HasBounds: true,
 			X:         x,
 			Y:         y,
 			Width:     width,
 			Height:    height,
 		}
+		normalPlacement = &placement
 	}
-	return a.preferences.Save(preferences)
+	return a.preferences.Update(ctx, func(preferences *guiconfig.Config) error {
+		preferences.Window.Maximized = maximized
+		if normalPlacement != nil {
+			preferences.Window = *normalPlacement
+		}
+		return nil
+	})
 }
 
 func (a *desktopApp) shutdown(context.Context) {
