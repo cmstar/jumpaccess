@@ -37,6 +37,20 @@ func securePrivatePath(path string, directory bool) error {
 	); err != nil {
 		return fmt.Errorf("set private Windows ACL: %w", err)
 	}
+	// A newly created object can be owned by the Administrators group when the
+	// process runs elevated. Apply the private DACL first so the current user
+	// receives WRITE_OWNER, then make that user the sole owner explicitly.
+	if err := windows.SetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION,
+		user,
+		nil,
+		nil,
+		nil,
+	); err != nil {
+		return fmt.Errorf("set private Windows owner: %w", err)
+	}
 	return nil
 }
 

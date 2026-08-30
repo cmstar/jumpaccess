@@ -11,6 +11,36 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestSecurePrivatePathSetsCurrentUserOwner(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "credentials")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := securePrivatePath(directory, true); err != nil {
+		t.Fatal(err)
+	}
+
+	descriptor, err := windows.GetNamedSecurityInfo(
+		directory,
+		windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _, err := descriptor.Owner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, _, err := privateSIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner == nil || !owner.Equals(user) {
+		t.Fatalf("owner = %v, want current user %v", owner, user)
+	}
+}
+
 func TestFileBackendRejectsCredentialWithBroadWindowsACL(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "credentials")
 	backend := NewFileBackend(directory)
