@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、多 xterm SSH 会话和事件桥接。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口与多 xterm SSH 会话。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -60,7 +60,7 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号、关闭活动会话确认，以及桌面窗口的最大化状态和最近一次普通状态下的坐标、大小；CLI 不读取该文件。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。共享配置的应用层修改通过 `locks/config.lock` 串行化，防止 CLI 与 GUI 并发 read-modify-write 丢失更新。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号、关闭活动会话确认、窗口最大化/普通边界，以及 Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
 
 默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 
@@ -84,7 +84,7 @@ docs/               # 长期项目知识
 - 使用本地 SSH client/server 验证直接模式和 ProxyCommand 的协议边界。
 - stdout、stderr、退出码以及敏感信息脱敏。
 - Token 刷新失败不会关闭活动 SSH Session。
-- React 界面通过可注入的类型化后端测试分页、Alias 搜索与账号选择、设置持久化、SSH 状态/输出事件和主机密钥确认。
+- React 界面通过可注入的类型化后端测试分页、Alias 搜索与账号选择、设置持久化、Tab 状态机与工作区恢复、SSH 断连/重连/输出事件和主机密钥确认。
 
 真实账号只用于开发者本机手工 smoke test，用来确认浏览器登录、MFA、真实 API、Connection Token 和 SSH 完整链路。账号、密码和 Token 不通过对话传递，不进入自动 CI；程序需要登录时，由开发者本人在系统浏览器中完成。
 
@@ -102,6 +102,8 @@ docs/               # 长期项目知识
 - 不安装或依赖 Windows Service。
 - 共享核心不能假定 Windows 路径语义；平台路径由对应适配实现计算。
 - 形成真实构建入口后，至少验证 Windows 与 macOS 目标构建；具体架构和发布矩阵随发布流程确定。
+- Windows 窗口使用 Wails `Frameless` 并保留 DWM 装饰，由 React 渲染标题栏和最小化/最大化/关闭按钮；只有标题栏空白区标记为可拖动。
+- macOS 使用 `TitleBarHiddenInset` 并保留左侧原生 traffic lights，前端不渲染右侧窗口控制按钮。
 
 ## 许可证与发布物
 

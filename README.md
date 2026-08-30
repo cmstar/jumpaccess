@@ -4,7 +4,7 @@
 
 JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含 Go 编写的命令行程序 `jumpctl`，以及基于 Wails 2、React 和 TypeScript 的桌面 GUI；两个入口复用同一套领域与连接核心。
 
-项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已实现 Profile/Organization 切换、分页资产与 Alias 管理、手工 OAuth 回调、统一主题设置和多 xterm SSH 会话。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已实现 Profile/Organization 切换、分页资产与 Alias 管理、手工 OAuth 回调、统一主题设置、浏览器式可恢复 Tab 工作区和多 xterm SSH 会话。Windows 使用自绘标题栏，macOS 保留原生 traffic lights。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 

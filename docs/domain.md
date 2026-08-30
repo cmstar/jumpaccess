@@ -58,6 +58,11 @@ Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式
 - “All organizations” 是聚合上下文：选择它时显示各具体 Organization 中与当前资产匹配的 Alias；在该聚合上下文创建的 Alias 切换到具体 Organization 后，只要对应 Asset 可见，也继续显示。
 - GUI 在资产行内纵向展示该 Asset 的全部 Alias；只有完全没有 Alias 时才显示创建入口。资产数和当前 Organization 的 Alias 总数显示在对应表头，Alias 总数不受当前分页影响。
 - GUI 从 Asset 发起连接且存在多个 Account 时必须让用户选择；从 Alias 发起连接时优先使用已绑定 Account，未绑定时同样询问，不能隐式挑选第一个 Account。
+- GUI 使用顶部 Tab 工作区：资产、Profile 和设置分别只能打开一个 Tab，SSH Tab 可以并行打开多个；任意 Tab（包括最后一个）都允许关闭，工作区为空时显示包含新建连接、资产、Profile 和设置入口的起始页。
+- Profile 与 Organization 选择只影响资产过滤，因此只显示在资产页；新建连接直接打开快速连接窗口，也可以由全局快捷键触发。顶部右侧按资产、Profile、设置、认证状态的顺序提供图标入口，认证详情通过悬停提示展示。
+- SSH Tab 标题保持单行：有 Alias 时先显示 Alias，再以弱化文字显示原始 Asset 名；没有 Alias 时只显示 Asset 名。悬停提示补充 Alias、Asset、ID、Profile、Organization 和 Account。
+- 远端断开或连接失败不得自动关闭 SSH Tab。终端保留已有输出并追加英文提示 `Connection closed.`、空行和 `Press Enter to reconnect ...`；只有终端获得焦点时的无修饰键 Enter 才能触发重连。
+- GUI 保存 Tab 顺序、活动项及 SSH 重连描述符，重启后恢复同样的工作区；恢复的 SSH Tab 一律保持断连且不得自动连接。终端输出、live session ID、运行状态和秘密不得持久化。
 - Profile 名是用户可见的精确标识，不为适配文件系统进行替换或规范化；拒绝空名称、首尾空白、控制字符以及 `.`、`..`，其余名称通过稳定摘要映射到凭据文件。
 - 创建第一个 Profile 时自动将其设为当前 Profile；已经存在当前项时，后续新建和登录其他 Profile 都不得切换当前项，用户必须显式执行“设为当前”或对应的 `profile use` 操作后才会启用。
 - 修改 Profile 的 Server URL 时保留 Profile 名称、Organization 和全部 Alias，但必须清除旧站点的 OAuth 凭据并要求用户重新登录，避免向新地址发送旧站点 Token；已经建立的 SSH Session 不受影响。

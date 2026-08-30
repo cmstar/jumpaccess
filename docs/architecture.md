@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、分页资源与 Alias 管理、统一主题、多 xterm SSH 会话和 Wails 事件桥接。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
@@ -29,15 +29,15 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | --- | --- |
 | 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
 | 应用层 | `internal/application/settings` 承载 Profile、Organization 与 Alias 修改，`internal/application/auth` 承载登录状态与 Token 生命周期，`internal/application/resources` 和 `internal/application/connect` 分别负责资源查询与连接编排 |
-| 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
+| 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好、Tab 工作区和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
-| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，承载主题、终端字体和窗口位置、大小、最大化状态等桌面偏好，不进入 CLI 配置 schema |
+| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，承载主题、终端字体、窗口状态和 Tab 顺序/活动项。SSH Tab 只保存重连所需描述符，不保存终端输出、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
 | SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
-| 桌面前端 | `cmd/jumpaccess/frontend` 使用 React 和 xterm.js 表现 Profile、Organization、分页 Asset、行内 Alias、GUI 偏好及多会话终端；生产环境只通过 Wails 绑定访问应用服务，Vite 开发服务器使用独立的内存预览适配器 |
+| 桌面前端 | `cmd/jumpaccess/frontend` 使用 React 和 xterm.js 表现浏览器式 Tab 栏、Profile、Organization、分页 Asset、行内 Alias、GUI 偏好及多会话终端；纯 reducer 管理单例页和可重复 SSH Tab，生产环境只通过 Wails 绑定访问应用服务，Vite 开发服务器使用独立的内存预览适配器 |
 
 ## 关键数据流
 
@@ -62,7 +62,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
 
-直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH 会话并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
+直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。OAuth 刷新监督器使用独立 context，只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
 ### 通用 ProxyCommand
 
@@ -87,7 +87,7 @@ ProxyCommand 有两层独立主机信任：
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
 
-共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；桌面主题、终端字体、窗口行为和最近一次窗口位置、大小、最大化状态单独保存在 `gui.toml`，CLI 不读取后者。窗口最大化退出时只更新最大化标记并保留最近的普通窗口边界；普通状态退出时更新坐标和大小，以便下次启动恢复。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免 CLI 与 GUI 同时修改时相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
+共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；桌面主题、终端字体、窗口状态与 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口最大化退出时只更新最大化标记并保留最近的普通窗口边界；普通状态退出时更新坐标和大小，以便下次启动恢复。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
 
 `credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 
