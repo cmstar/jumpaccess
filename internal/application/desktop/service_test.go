@@ -315,3 +315,29 @@ func TestSavePreferencesWritesOnlyGUIStore(t *testing.T) {
 		t.Fatalf("preferences = %#v, want %#v", got, want)
 	}
 }
+
+func TestSavePreferencesPreservesWindowPlacement(t *testing.T) {
+	preferenceStore := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
+	stored := guiconfig.Default()
+	stored.Window = guiconfig.WindowPlacement{HasBounds: true, Maximized: true, X: 120, Y: 90, Width: 1440, Height: 900}
+	if err := preferenceStore.Save(stored); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Preferences: preferenceStore}
+	request := guiconfig.Default()
+	request.Appearance.Theme = "dark"
+
+	if err := service.SavePreferences(request); err != nil {
+		t.Fatal(err)
+	}
+	got, err := preferenceStore.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Window != stored.Window {
+		t.Fatalf("window placement = %#v, want %#v", got.Window, stored.Window)
+	}
+	if got.Appearance.Theme != "dark" {
+		t.Fatalf("theme = %q, want dark", got.Appearance.Theme)
+	}
+}

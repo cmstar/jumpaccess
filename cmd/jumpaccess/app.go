@@ -18,12 +18,44 @@ import (
 
 // desktopApp 是 Wails 表现层入口，负责把共享应用服务适配为绑定方法和事件。
 type desktopApp struct {
-	ctx         context.Context
-	core        bootstrap.Runtime
-	preferences guiconfig.Store
-	api         desktopapp.Service
-	sessions    *sshsessionapp.Manager
-	hostKeys    *desktopapp.HostKeyCoordinator
+	ctx                context.Context
+	core               bootstrap.Runtime
+	preferences        guiconfig.Store
+	initialPreferences guiconfig.Config
+	window             desktopWindow
+	api                desktopapp.Service
+	sessions           *sshsessionapp.Manager
+	hostKeys           *desktopapp.HostKeyCoordinator
+}
+
+type desktopWindow interface {
+	GetPosition(context.Context) (int, int)
+	GetSize(context.Context) (int, int)
+	IsMaximized(context.Context) bool
+	IsNormal(context.Context) bool
+	SetPosition(context.Context, int, int)
+}
+
+type wailsDesktopWindow struct{}
+
+func (wailsDesktopWindow) GetPosition(ctx context.Context) (int, int) {
+	return runtime.WindowGetPosition(ctx)
+}
+
+func (wailsDesktopWindow) GetSize(ctx context.Context) (int, int) {
+	return runtime.WindowGetSize(ctx)
+}
+
+func (wailsDesktopWindow) IsMaximized(ctx context.Context) bool {
+	return runtime.WindowIsMaximised(ctx)
+}
+
+func (wailsDesktopWindow) IsNormal(ctx context.Context) bool {
+	return runtime.WindowIsNormal(ctx)
+}
+
+func (wailsDesktopWindow) SetPosition(ctx context.Context, x, y int) {
+	runtime.WindowSetPosition(ctx, x, y)
 }
 
 func newDesktopApp(rootDir string) (*desktopApp, error) {
@@ -32,7 +64,8 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 		return nil, err
 	}
 	preferences := guiconfig.Store{Path: filepath.Join(rootDir, "gui.toml")}
-	if _, err := preferences.Load(); err != nil {
+	initialPreferences, err := preferences.Load()
+	if err != nil {
 		return nil, err
 	}
 	login := &desktopapp.LoginCoordinator{
@@ -43,8 +76,10 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 		Timeout:     core.Configuration.Behavior.OAuthTimeout.Duration,
 	}
 	app := &desktopApp{
-		core:        core,
-		preferences: preferences,
+		core:               core,
+		preferences:        preferences,
+		initialPreferences: initialPreferences,
+		window:             wailsDesktopWindow{},
 		api: desktopapp.Service{
 			Version:     version,
 			Licenses:    jumpaccess.Licenses(),
@@ -88,6 +123,37 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 
 func (a *desktopApp) startup(ctx context.Context) {
 	a.ctx = ctx
+	placement := a.initialPreferences.Window
+	if placement.HasBounds && !placement.Maximized {
+		a.window.SetPosition(ctx, placement.X, placement.Y)
+	}
+}
+
+func (a *desktopApp) beforeClose(ctx context.Context) bool {
+	if err := a.saveWindowPlacement(ctx); err != nil {
+		runtime.LogErrorf(ctx, "保存窗口状态失败: %v", err)
+	}
+	return false
+}
+
+func (a *desktopApp) saveWindowPlacement(ctx context.Context) error {
+	preferences, err := a.preferences.Load()
+	if err != nil {
+		return err
+	}
+	preferences.Window.Maximized = a.window.IsMaximized(ctx)
+	if !preferences.Window.Maximized && a.window.IsNormal(ctx) {
+		x, y := a.window.GetPosition(ctx)
+		width, height := a.window.GetSize(ctx)
+		preferences.Window = guiconfig.WindowPlacement{
+			HasBounds: true,
+			X:         x,
+			Y:         y,
+			Width:     width,
+			Height:    height,
+		}
+	}
+	return a.preferences.Save(preferences)
 }
 
 func (a *desktopApp) shutdown(context.Context) {

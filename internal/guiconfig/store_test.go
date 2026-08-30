@@ -25,6 +25,7 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	want.Appearance.TerminalFontFamily = "Cascadia Mono"
 	want.Appearance.TerminalFontSize = 16
 	want.Behavior.ConfirmCloseActiveSession = false
+	want.Window = WindowPlacement{HasBounds: true, Maximized: true, X: -1200, Y: 80, Width: 1100, Height: 700}
 
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save returned error: %v", err)

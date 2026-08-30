@@ -291,7 +291,14 @@ func (s Service) SavePreferences(value guiconfig.Config) error {
 	if s.Preferences == nil {
 		return fmt.Errorf("GUI preference store is unavailable")
 	}
-	return s.Preferences.Save(value)
+	stored, err := s.Preferences.Load()
+	if err != nil {
+		return err
+	}
+	stored.Version = value.Version
+	stored.Appearance = value.Appearance
+	stored.Behavior = value.Behavior
+	return s.Preferences.Save(stored)
 }
 
 func (s Service) LicenseText() string {

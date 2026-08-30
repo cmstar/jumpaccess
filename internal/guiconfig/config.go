@@ -10,10 +10,18 @@ import (
 
 const CurrentVersion = 1
 
+const (
+	DefaultWindowWidth  = 1280
+	DefaultWindowHeight = 800
+	MinimumWindowWidth  = 960
+	MinimumWindowHeight = 640
+)
+
 type Config struct {
-	Version    int        `toml:"version"`
-	Appearance Appearance `toml:"appearance"`
-	Behavior   Behavior   `toml:"behavior"`
+	Version    int             `toml:"version"`
+	Appearance Appearance      `toml:"appearance"`
+	Behavior   Behavior        `toml:"behavior"`
+	Window     WindowPlacement `toml:"window" json:"-"`
 }
 
 type Appearance struct {
@@ -26,6 +34,17 @@ type Behavior struct {
 	ConfirmCloseActiveSession bool `toml:"confirm_close_active_session"`
 }
 
+// WindowPlacement 保存桌面窗口最近一次退出时的状态。坐标和尺寸始终表示普通窗口状态，
+// 避免最大化或最小化时的临时边界覆盖用户调整过的位置和大小。
+type WindowPlacement struct {
+	HasBounds bool `toml:"has_bounds"`
+	Maximized bool `toml:"maximized"`
+	X         int  `toml:"x"`
+	Y         int  `toml:"y"`
+	Width     int  `toml:"width"`
+	Height    int  `toml:"height"`
+}
+
 func Default() Config {
 	return Config{
 		Version: CurrentVersion,
@@ -35,6 +54,10 @@ func Default() Config {
 			TerminalFontSize:   12,
 		},
 		Behavior: Behavior{ConfirmCloseActiveSession: true},
+		Window: WindowPlacement{
+			Width:  DefaultWindowWidth,
+			Height: DefaultWindowHeight,
+		},
 	}
 }
 
@@ -73,6 +96,9 @@ func (c Config) Validate() error {
 	}
 	if c.Appearance.TerminalFontSize < 9 || c.Appearance.TerminalFontSize > 32 {
 		return fmt.Errorf("appearance.terminal_font_size must be between 9 and 32")
+	}
+	if c.Window.Width < MinimumWindowWidth || c.Window.Height < MinimumWindowHeight {
+		return fmt.Errorf("window size must be at least %dx%d", MinimumWindowWidth, MinimumWindowHeight)
 	}
 	return nil
 }

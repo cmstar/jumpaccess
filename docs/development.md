@@ -60,7 +60,7 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号和关闭活动会话确认；CLI 不读取该文件。共享配置的应用层修改通过 `locks/config.lock` 串行化，防止 CLI 与 GUI 并发 read-modify-write 丢失更新。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号、关闭活动会话确认，以及桌面窗口的最大化状态和最近一次普通状态下的坐标、大小；CLI 不读取该文件。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。共享配置的应用层修改通过 `locks/config.lock` 串行化，防止 CLI 与 GUI 并发 read-modify-write 丢失更新。
 
 默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。长连接只启动独立的刷新监督器；刷新失败会报告告警，但不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 

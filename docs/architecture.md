@@ -33,7 +33,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
-| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，只承载主题、终端字体等桌面偏好，不进入 CLI 配置 schema |
+| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，承载主题、终端字体和窗口位置、大小、最大化状态等桌面偏好，不进入 CLI 配置 schema |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
 | SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
@@ -87,7 +87,7 @@ ProxyCommand 有两层独立主机信任：
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
 
-共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；桌面主题、终端字体和窗口行为单独保存在 `gui.toml`，CLI 不读取后者。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免 CLI 与 GUI 同时修改时相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
+共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；桌面主题、终端字体、窗口行为和最近一次窗口位置、大小、最大化状态单独保存在 `gui.toml`，CLI 不读取后者。窗口最大化退出时只更新最大化标记并保留最近的普通窗口边界；普通状态退出时更新坐标和大小，以便下次启动恢复。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免 CLI 与 GUI 同时修改时相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
 
 `credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 

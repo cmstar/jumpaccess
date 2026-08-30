@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/cmstar/jumpaccess/internal/appdir"
+	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -27,24 +28,35 @@ func main() {
 		fail(err)
 		return
 	}
-	err = wails.Run(&options.App{
+	err = wails.Run(newWailsOptions(app))
+	if err != nil {
+		fail(err)
+	}
+}
+
+func newWailsOptions(app *desktopApp) *options.App {
+	placement := app.initialPreferences.Window
+	windowStartState := options.Normal
+	if placement.Maximized {
+		windowStartState = options.Maximised
+	}
+	return &options.App{
 		Title:     "JumpAccess",
-		Width:     1280,
-		Height:    800,
-		MinWidth:  960,
-		MinHeight: 640,
+		Width:     placement.Width,
+		Height:    placement.Height,
+		MinWidth:  guiconfig.MinimumWindowWidth,
+		MinHeight: guiconfig.MinimumWindowHeight,
 		AssetServer: &assetserver.Options{
 			Assets: frontendAssets,
 		},
 		BackgroundColour: &options.RGBA{R: 246, G: 247, B: 249, A: 1},
 		OnStartup:        app.startup,
+		OnBeforeClose:    app.beforeClose,
 		OnShutdown:       app.shutdown,
+		WindowStartState: windowStartState,
 		Bind: []interface{}{
 			app,
 		},
-	})
-	if err != nil {
-		fail(err)
 	}
 }
 
