@@ -526,7 +526,7 @@ test('远端断开后保留 SSH Tab 并追加 Enter 重连提示', async () => {
   terminalWrites.length = 0
   render(<App backend={backend} />)
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '使用 production-web 连接' }))
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
   await screen.findByRole('tab', { name: /production-web/ })
 
   act(() => stateHandler({
