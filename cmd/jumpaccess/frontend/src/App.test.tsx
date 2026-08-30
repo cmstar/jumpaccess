@@ -276,6 +276,41 @@ test('顶部上下文选择器和资产菜单点击外部后关闭', async () =>
   expect(screen.queryByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).not.toBeInTheDocument()
 })
 
+test('Profile 和 Organization 上下文只在资产界面显示', async () => {
+  const user = userEvent.setup()
+  render(<App backend={makeBackend()} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  expect(screen.getByRole('button', { name: '当前 Profile：production' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: '当前 Organization：研发中心' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /快速连接/ })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Profile' }))
+  expect(screen.queryByRole('button', { name: '当前 Profile：production' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '当前 Organization：研发中心' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: '设置' }))
+  expect(screen.queryByRole('button', { name: '当前 Profile：production' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '当前 Organization：研发中心' })).not.toBeInTheDocument()
+})
+
+test('会话新建连接和全局快捷键直接打开快速连接', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '会话' }))
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  expect(await screen.findByRole('dialog', { name: '快速连接' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: '资产' })).not.toBeInTheDocument()
+
+  await user.click(within(screen.getByRole('dialog', { name: '快速连接' })).getByRole('button', { name: '关闭' }))
+  await user.click(screen.getByRole('button', { name: '设置' }))
+  await user.keyboard('{Control>}k{/Control}')
+  expect(await screen.findByRole('dialog', { name: '快速连接' })).toBeInTheDocument()
+})
+
 test('创建 Alias 后局部更新并保留已有账号显示缓存', async () => {
   const secondAsset = { id: 'asset-2', name: 'new-server', address: '10.0.0.2', type: 'Linux', category: 'Host', aliases: [] }
   const pageWithEmptyAsset: AssetPage = { ...assetPage, count: 2, results: [...assetPage.results, secondAsset] }
@@ -304,7 +339,7 @@ test('创建 Alias 后局部更新并保留已有账号显示缓存', async () =
   expect(backend.listAssets).toHaveBeenCalledTimes(callsBeforeCreate)
 })
 
-test('资产请求自动续期后同步顶部认证状态', async () => {
+test('资产请求自动续期后同步侧栏认证状态并仅在悬停提示显示到期时间', async () => {
   const expiredState: BootstrapState = {
     ...bootstrapState,
     profiles: bootstrapState.profiles.map((item) => ({
@@ -326,7 +361,13 @@ test('资产请求自动续期后同步顶部认证状态', async () => {
 
   await screen.findByRole('heading', { name: '资产' })
   await waitFor(() => expect(backend.getAuthStatus).toHaveBeenCalledWith('production'))
-  expect(screen.getByRole('button', { name: /已认证/ })).toHaveTextContent(/分钟后到期/)
+  const status = screen.getByRole('button', { name: '认证状态：production，已认证' })
+  expect(status).toHaveClass('authenticated')
+  expect(status).not.toHaveTextContent('已认证')
+  expect(status.querySelector('svg')).toBeInTheDocument()
+  expect(status.querySelector('.auth-indicator')).toBeInTheDocument()
+  expect(status).toHaveAttribute('title', expect.stringMatching(/production · 已认证 · \d+ 分钟后到期/))
+  expect(screen.queryByText(/分钟后到期/)).not.toBeInTheDocument()
 })
 
 test('使用应用内确认框断开活动 SSH 会话', async () => {
@@ -368,6 +409,10 @@ test('浏览器登录弹窗说明支持原生回调和完整确认页 URL', asyn
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
+  const status = screen.getByRole('button', { name: '认证状态：production，需要登录' })
+  expect(status).toHaveClass('offline')
+  expect(status).not.toHaveTextContent('需要登录')
+  expect(status.querySelector('svg')).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Profile' }))
   await user.click(screen.getByRole('button', { name: '登录' }))
 

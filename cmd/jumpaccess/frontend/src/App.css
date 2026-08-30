@@ -205,7 +205,50 @@
 
 .sidebar-bottom {
   position: relative;
+  display: grid;
+  gap: 4px;
   margin-top: auto;
+}
+
+.sidebar-auth-status {
+  position: relative;
+  display: grid;
+  width: 48px;
+  height: 44px;
+  place-items: center;
+  margin: 0 auto;
+  padding: 0;
+  border-radius: 9px;
+  color: var(--accent-strong);
+  background: transparent;
+}
+
+.sidebar-auth-status:hover {
+  background: rgb(36 136 101 / 7%);
+}
+
+.sidebar-auth-status.offline {
+  color: var(--danger);
+}
+
+.sidebar-auth-status svg {
+  width: 18px;
+  height: 18px;
+}
+
+.auth-indicator {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2db481;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.sidebar-auth-status.offline .auth-indicator {
+  background: #d85b64;
 }
 
 .sidebar-version {
@@ -220,7 +263,7 @@
   flex-direction: column;
 }
 
-.topbar {
+.asset-context-bar {
   position: relative;
   z-index: 3;
   display: flex;
@@ -234,16 +277,13 @@
   backdrop-filter: blur(18px);
 }
 
-.dark .topbar {
+.dark .asset-context-bar {
   background: rgb(22 31 30 / 90%);
 }
 
 .context-switchers,
-.topbar-actions,
 .refresh-controls,
-.context-select,
-.auth-status,
-.quick-connect {
+.context-select {
   display: flex;
   align-items: center;
 }
@@ -386,30 +426,6 @@
   width: 14px;
 }
 
-.topbar-actions {
-  gap: 17px;
-}
-
-.quick-connect {
-  height: 34px;
-  gap: 7px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  background: var(--surface);
-  font-size: 9px;
-}
-
-.quick-connect:hover {
-  color: var(--accent-strong);
-  border-color: rgb(31 159 115 / 40%);
-}
-
-.quick-connect svg {
-  width: 13px;
-}
-
 kbd {
   padding: 2px 5px;
   border: 1px solid var(--border);
@@ -417,30 +433,6 @@ kbd {
   color: var(--subtle);
   background: var(--surface-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 8px;
-}
-
-.auth-status {
-  gap: 9px;
-  padding: 0;
-  color: var(--text);
-  background: transparent;
-  text-align: left;
-}
-
-.auth-status > span:last-child,
-.auth-status strong,
-.auth-status small {
-  display: block;
-}
-
-.auth-status strong {
-  font-size: 9px;
-}
-
-.auth-status small {
-  margin-top: 2px;
-  color: var(--muted);
   font-size: 8px;
 }
 
@@ -2192,10 +2184,7 @@ details > summary::-webkit-details-marker {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .workspace { min-height: 100vh; }
-  .topbar { padding-inline: 14px; }
-  .quick-connect span,
-  .quick-connect kbd,
-  .auth-status small,
+  .asset-context-bar { padding-inline: 14px; }
   .context-icon { display: none; }
   .asset-pane,
   .full-pane { padding-inline: 16px; }

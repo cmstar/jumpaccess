@@ -4,7 +4,6 @@ import {
   Boxes,
   ChevronDown,
   Clock3,
-  Command,
   Copy,
   FileCode2,
   KeyRound,
@@ -540,18 +539,30 @@ export default function App({ backend = wailsBackend }: AppProps) {
           <NavButton active={view === 'sessions'} badge={sessions.filter((item) => item.status === 'active' || item.status === 'connecting').length} icon={<TerminalSquare />} label="会话" onClick={() => setView('sessions')} />
           <NavButton active={view === 'profiles'} icon={<Layers3 />} label="Profile" onClick={() => setView('profiles')} />
         </nav>
-        <div className="sidebar-bottom"><NavButton active={view === 'settings'} icon={<Settings />} label="设置" onClick={() => setView('settings')} /><div className="sidebar-version">Desktop · {bootstrap.version}</div></div>
+        <div className="sidebar-bottom">
+          <button
+            aria-label={`认证状态：${profile || '未选择 Profile'}，${currentAuth.title}`}
+            className={`sidebar-auth-status ${currentAuth.offline ? 'offline' : 'authenticated'}`}
+            onClick={() => setView('profiles')}
+            title={`${profile || '未选择 Profile'} · ${currentAuth.title} · ${currentAuth.description}`}
+            type="button"
+          >
+            {currentAuth.offline ? <ShieldAlert aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
+            <span aria-hidden="true" className="auth-indicator" />
+          </button>
+          <NavButton active={view === 'settings'} icon={<Settings />} label="设置" onClick={() => setView('settings')} />
+          <div className="sidebar-version">Desktop · {bootstrap.version}</div>
+        </div>
       </aside>
 
       <section className="workspace">
-        <header className="topbar">
+        {view === 'assets' ? <header className="asset-context-bar">
           <div className="context-switchers">
             <ContextSelect ariaLabel="当前 Profile" icon={<Server />} label="Profile" onChange={(value) => void run(async () => { await backend.useProfile(value); await reloadBootstrap(value); setOffset(0); setDetails({}) })} options={bootstrap.profiles.map((item) => ({ value: item.name, label: item.name }))} value={profile} />
             <div className="context-divider" />
             <ContextSelect ariaLabel="当前 Organization" label="Organization" onChange={(value) => void run(async () => { await backend.setOrganization(profile, value); setOrganization(value); setOffset(0); setDetails({}); await reloadBootstrap(profile) })} options={organizations.map((item) => ({ value: item.id, label: item.name }))} value={organization} />
           </div>
-          <div className="topbar-actions"><button className="quick-connect" type="button" onClick={() => setQuickOpen(true)}><Command /><span>快速连接</span><kbd>Ctrl K</kbd></button><button className="auth-status" type="button" onClick={() => setView('profiles')}><span className={currentAuth.offline ? 'status-dot offline' : 'status-dot'} /><span><strong>{currentAuth.title}</strong><small>{currentAuth.description}</small></span></button></div>
-        </header>
+        </header> : null}
 
         {error ? <div className="error-banner" role="alert"><ShieldAlert /><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div> : null}
 
@@ -568,7 +579,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
           </div>
         ) : null}
 
-        {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={requestDisconnect} onNew={() => setView('assets')} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
+        {view === 'sessions' ? <SessionsView active={activeSession} backend={backend} onActive={setActiveSessionID} onClose={requestDisconnect} onNew={() => setQuickOpen(true)} output={activeSession ? sessionOutput[activeSession.id] ?? '' : ''} preferences={bootstrap.preferences} sessions={sessions} /> : null}
 
         {view === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -642,7 +653,7 @@ function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { 
 }
 
 function SessionsView({ active, backend, onActive, onClose, onNew, output, preferences, sessions }: { active?: SessionState; backend: Backend; onActive: (id: string) => void; onClose: (session: SessionState) => void; onNew: () => void; output: string; preferences: Preferences; sessions: SessionState[] }) {
-  return <section className="terminal-workspace"><div className="terminal-sidebar"><div className="terminal-sidebar-heading"><span>会话</span><span className="badge">{sessions.length}</span></div>{sessions.map((session) => <button className={session.id === active?.id ? 'terminal-session active' : 'terminal-session'} key={session.id} onClick={() => onActive(session.id)}><span className={`session-status ${session.status}`}><Wifi /></span><span><strong>{session.title}</strong><small>{session.account || session.status}</small></span></button>)}<button className="button secondary new-session-button" onClick={onNew}><Plus />新建连接</button></div>{active ? <div className="terminal-panel"><div className="terminal-toolbar"><div><span className={`status-dot ${active.status === 'active' ? '' : 'offline'}`} /><strong>{active.title}</strong><small>{active.account} · {active.status}</small></div><button className="icon-button danger" aria-label={`断开 ${active.title} 会话`} title="断开连接" onClick={() => onClose(active)}><Unplug /></button></div><div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} output={output} preferences={preferences} session={active} /></Suspense></div><div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{active.status}</span></div></div> : <div className="terminal-empty"><TerminalSquare /><h2>没有 SSH 会话</h2><button className="button primary" onClick={onNew}>选择资产</button></div>}</section>
+  return <section className="terminal-workspace"><div className="terminal-sidebar"><div className="terminal-sidebar-heading"><span>会话</span><span className="badge">{sessions.length}</span></div>{sessions.map((session) => <button className={session.id === active?.id ? 'terminal-session active' : 'terminal-session'} key={session.id} onClick={() => onActive(session.id)}><span className={`session-status ${session.status}`}><Wifi /></span><span><strong>{session.title}</strong><small>{session.account || session.status}</small></span></button>)}{sessions.length > 0 ? <button className="button secondary new-session-button" onClick={onNew}><Plus />新建连接</button> : null}</div>{active ? <div className="terminal-panel"><div className="terminal-toolbar"><div><span className={`status-dot ${active.status === 'active' ? '' : 'offline'}`} /><strong>{active.title}</strong><small>{active.account} · {active.status}</small></div><button className="icon-button danger" aria-label={`断开 ${active.title} 会话`} title="断开连接" onClick={() => onClose(active)}><Unplug /></button></div><div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} output={output} preferences={preferences} session={active} /></Suspense></div><div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{active.status}</span></div></div> : <div className="terminal-empty"><TerminalSquare /><h2>没有 SSH 会话</h2><button className="button primary" onClick={onNew}>新建连接</button></div>}</section>
 }
 
 function SettingsView({ onLicense, onOpenConfig, onSave, preferences, version }: { onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
