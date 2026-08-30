@@ -3,6 +3,7 @@ package sshsession
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -163,7 +164,13 @@ func TestManagerRunsIndependentSessionsAndBatchesOutput(t *testing.T) {
 
 	preparer.mu.Lock()
 	defer preparer.mu.Unlock()
-	if len(preparer.requests) != 2 || !preparer.requests[0].NonInteractive || preparer.requests[0].Target.Account != "account-1" {
+	requests := make(map[string]connectapp.Options, len(preparer.requests))
+	for _, request := range preparer.requests {
+		requests[request.Target.Target] = request
+	}
+	firstRequest, firstExists := requests["asset-1"]
+	secondRequest, secondExists := requests["asset-2"]
+	if len(preparer.requests) != 2 || !firstExists || !secondExists || !firstRequest.NonInteractive || !secondRequest.NonInteractive || firstRequest.Target.Account != "account-1" || secondRequest.Target.Account != "account-2" {
 		t.Fatalf("prepare requests = %#v", preparer.requests)
 	}
 }
@@ -218,6 +225,137 @@ func TestManagerUsesResizeReceivedWhileSessionIsConnecting(t *testing.T) {
 	}
 	if err := manager.Close(session.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestManagerExposesStableResolvedSessionMetadata(t *testing.T) {
+	states := make(chan StateEvent, 4)
+	terminal := newFakeTerminalSession()
+	manager := &Manager{
+		Prepare: prepareFunc(func(context.Context, connectapp.Options) (connectapp.Prepared, error) {
+			return connectapp.Prepared{
+				Selection: target.Selection{
+					Profile:      "work",
+					Organization: "org-1",
+					Alias:        "production-web",
+				},
+				Asset: jumpserver.AssetDetail{Asset: jumpserver.Asset{
+					ID:   "asset-1",
+					Name: "web-01",
+				}},
+				Account: jumpserver.Account{ID: "account-1", Username: "root"},
+				Connection: jumpserver.ClientConnection{
+					Protocol: "ssh",
+					Endpoint: jumpserver.Endpoint{Host: "gateway.example.test", Port: 2222},
+					Token:    jumpserver.ConnectionCredential{ID: "asset-1", Value: "secret"},
+				},
+			}, nil
+		}),
+		HostKeyCallback: func(context.Context) (ssh.HostKeyCallback, error) {
+			return ssh.InsecureIgnoreHostKey(), nil
+		},
+		Open:      func(context.Context, sshclient.OpenOptions) (TerminalSession, error) { return terminal, nil },
+		EmitState: func(event StateEvent) { states <- event },
+	}
+
+	started, err := manager.Start(context.Background(), StartRequest{
+		Profile: "work", Organization: "org-1", Target: "production-web", Account: "account-1", Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Target != "production-web" {
+		t.Fatalf("connecting target = %q, want production-web", started.Target)
+	}
+	active := waitForStatus(t, states, started.ID, StatusActive)
+	if active.Target != "production-web" || active.Alias != "production-web" {
+		t.Fatalf("resolved target metadata = %#v", active)
+	}
+	if active.AssetID != "asset-1" || active.AssetName != "web-01" || active.Asset != "asset-1" {
+		t.Fatalf("resolved asset metadata = %#v", active)
+	}
+	if active.Title != "production-web" {
+		t.Fatalf("resolved title = %q, want production-web", active.Title)
+	}
+	if err := manager.Close(started.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagerKeepsRemoteClosedSessionUntilExplicitClose(t *testing.T) {
+	states := make(chan StateEvent, 4)
+	terminal := newFakeTerminalSession()
+	manager := newTestManager(&fakePreparer{}, terminal, states)
+
+	started, err := manager.Start(context.Background(), StartRequest{
+		Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, states, started.ID, StatusActive)
+	if err := terminal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, states, started.ID, StatusClosed)
+
+	listed := manager.List()
+	if len(listed) != 1 || listed[0].ID != started.ID || listed[0].Status != StatusClosed {
+		t.Fatalf("sessions after remote close = %#v", listed)
+	}
+	if err := manager.Close(started.ID); err != nil {
+		t.Fatal(err)
+	}
+	if listed = manager.List(); len(listed) != 0 {
+		t.Fatalf("sessions after explicit close = %#v, want none", listed)
+	}
+}
+
+func TestManagerKeepsFailedSessionUntilExplicitClose(t *testing.T) {
+	states := make(chan StateEvent, 4)
+	manager := &Manager{
+		Prepare: prepareFunc(func(context.Context, connectapp.Options) (connectapp.Prepared, error) {
+			return connectapp.Prepared{}, errors.New("prepare failed")
+		}),
+		HostKeyCallback: func(context.Context) (ssh.HostKeyCallback, error) {
+			return ssh.InsecureIgnoreHostKey(), nil
+		},
+		Open: func(context.Context, sshclient.OpenOptions) (TerminalSession, error) {
+			return newFakeTerminalSession(), nil
+		},
+		EmitState: func(event StateEvent) { states <- event },
+	}
+
+	started, err := manager.Start(context.Background(), StartRequest{
+		Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := waitForStatus(t, states, started.ID, StatusFailed)
+	if failed.Error != "prepare failed" {
+		t.Fatalf("failed session error = %q, want prepare failed", failed.Error)
+	}
+	listed := manager.List()
+	if len(listed) != 1 || listed[0].ID != started.ID || listed[0].Status != StatusFailed {
+		t.Fatalf("sessions after failure = %#v", listed)
+	}
+	if err := manager.Close(started.ID); err != nil {
+		t.Fatal(err)
+	}
+	if listed = manager.List(); len(listed) != 0 {
+		t.Fatalf("sessions after explicit close = %#v, want none", listed)
+	}
+}
+
+func newTestManager(preparer Preparer, terminal TerminalSession, states chan<- StateEvent) *Manager {
+	return &Manager{
+		Prepare: preparer,
+		HostKeyCallback: func(context.Context) (ssh.HostKeyCallback, error) {
+			return ssh.InsecureIgnoreHostKey(), nil
+		},
+		Open:      func(context.Context, sshclient.OpenOptions) (TerminalSession, error) { return terminal, nil },
+		EmitState: func(event StateEvent) { states <- event },
 	}
 }
 

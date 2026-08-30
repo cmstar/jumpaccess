@@ -42,7 +42,11 @@ type StateEvent struct {
 	Title        string `json:"title"`
 	Profile      string `json:"profile"`
 	Organization string `json:"organization"`
+	Target       string `json:"target"`
+	Alias        string `json:"alias"`
 	Asset        string `json:"asset"`
+	AssetID      string `json:"assetId"`
+	AssetName    string `json:"assetName"`
 	Account      string `json:"account"`
 	Error        string `json:"error"`
 }
@@ -106,7 +110,8 @@ func (m *Manager) Start(parent context.Context, request StartRequest) (StateEven
 	ctx, cancel := context.WithCancel(parent)
 	state := StateEvent{
 		ID: id, Status: StatusConnecting, Title: request.Target,
-		Profile: request.Profile, Organization: request.Organization, Asset: request.Target, Account: request.Account,
+		Profile: request.Profile, Organization: request.Organization, Target: request.Target,
+		Asset: request.Target, Account: request.Account,
 	}
 	m.mu.Lock()
 	if m.sessions == nil {
@@ -203,7 +208,10 @@ func (m *Manager) activate(id string, prepared connectapp.Prepared, terminal Ter
 	session.state.Status = StatusActive
 	session.state.Profile = prepared.Selection.Profile
 	session.state.Organization = prepared.Selection.Organization
+	session.state.Alias = prepared.Selection.Alias
 	session.state.Asset = prepared.Asset.ID
+	session.state.AssetID = prepared.Asset.ID
+	session.state.AssetName = prepared.Asset.Name
 	session.state.Account = prepared.Account.ID
 	if session.state.Account == "" {
 		session.state.Account = prepared.Account.Username
