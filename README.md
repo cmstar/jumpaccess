@@ -114,4 +114,4 @@ git push origin v0.1.0
 
 正式产物包括 Windows amd64 的 CLI/GUI ZIP、macOS amd64 与 arm64 的 CLI tar.gz，以及 macOS Universal GUI ZIP。Windows ZIP 内的程序保持稳定名称 `jumpctl.exe` 和 `jumpaccess.exe`；归档同时包含可直接阅读的 `LICENSE` 与 `THIRD-PARTY-NOTICES.txt`。`jumpctl` 和桌面 GUI 也继续内嵌这些许可材料，CLI 可通过 `jumpctl licenses` 查看，GUI 可在设置底部查看。
 
-版本标签是发布版本的唯一来源。工作流通过 Go linker 注入 CLI/GUI 显示版本，并只在临时 runner 工作副本中更新 Wails 产品元数据，不需要为每次发布提交版本文件改动。当前 Windows 与 macOS 桌面产物尚未使用商业代码签名证书，操作系统可能显示安全提示。
+版本标签是发布版本的唯一来源。工作流通过 Go linker 注入 CLI/GUI 显示版本，并只在临时 runner 工作副本中更新 Wails 产品元数据，不需要为每次发布提交版本文件改动。当前 Windows 可执行文件尚未进行 Authenticode 签名，macOS 可执行文件尚未进行 Developer ID 签名与 Apple notarization；首次运行时操作系统可能显示安全提示。

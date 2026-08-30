@@ -316,7 +316,7 @@ jobs:
           persist-credentials: false
 
       - name: 下载所有发布物
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: dist
