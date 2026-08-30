@@ -8,15 +8,20 @@ import { synchronizeTerminalViewportBackground } from './terminalViewport'
 
 interface TerminalPaneProps {
   backend: Backend
+  onReconnect?: () => void
   output: string
   preferences: Preferences
   session: SessionState
 }
 
-export function TerminalPane({ backend, output, preferences, session }: TerminalPaneProps) {
+export function TerminalPane({ backend, onReconnect, output, preferences, session }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const writtenRef = useRef(0)
+  const reconnectRef = useRef(onReconnect)
+  const statusRef = useRef(session.status)
+  reconnectRef.current = onReconnect
+  statusRef.current = session.status
 
   useEffect(() => {
     const host = hostRef.current
@@ -48,7 +53,18 @@ export function TerminalPane({ backend, output, preferences, session }: Terminal
         // WebView may report a zero-sized host while switching views; the next resize retries.
       }
     }
-    const input = terminal.onData((data) => void backend.writeSSHSession(session.id, data))
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (statusRef.current === 'active') return true
+      const disconnected = statusRef.current === 'closed' || statusRef.current === 'failed'
+      if (disconnected && event.type === 'keydown' && event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+        event.preventDefault()
+        reconnectRef.current?.()
+      }
+      return false
+    })
+    const input = terminal.onData((data) => {
+      if (statusRef.current === 'active') void backend.writeSSHSession(session.id, data)
+    })
     const resized = terminal.onResize(({ cols, rows }) => void backend.resizeSSHSession(session.id, cols, rows))
     const observer = new ResizeObserver(fitAndReport)
     observer.observe(host)
