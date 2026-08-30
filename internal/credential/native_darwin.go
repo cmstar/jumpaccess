@@ -26,8 +26,8 @@ func (nativeBackend) Get(key string) ([]byte, error) {
 	var length C.UInt32
 	var data unsafe.Pointer
 	status := C.SecKeychainFindGenericPassword(
-		nil,
-		C.UInt32(len(target)), unsafe.Pointer(&target[0]),
+		C.CFTypeRef(0),
+		C.UInt32(len(target)), (*C.char)(unsafe.Pointer(&target[0])),
 		0, nil,
 		&length, &data,
 		nil,
@@ -46,8 +46,8 @@ func (nativeBackend) Set(key string, value []byte) error {
 	target := []byte(nativeTarget(key))
 	var item C.SecKeychainItemRef
 	status := C.SecKeychainFindGenericPassword(
-		nil,
-		C.UInt32(len(target)), unsafe.Pointer(&target[0]),
+		C.CFTypeRef(0),
+		C.UInt32(len(target)), (*C.char)(unsafe.Pointer(&target[0])),
 		0, nil,
 		nil, nil,
 		&item,
@@ -61,8 +61,8 @@ func (nativeBackend) Set(key string, value []byte) error {
 		status = C.SecKeychainItemModifyAttributesAndData(item, nil, C.UInt32(len(value)), valuePtr)
 	} else if status == C.errSecItemNotFound {
 		status = C.SecKeychainAddGenericPassword(
-			nil,
-			C.UInt32(len(target)), unsafe.Pointer(&target[0]),
+			C.SecKeychainRef(0),
+			C.UInt32(len(target)), (*C.char)(unsafe.Pointer(&target[0])),
 			0, nil,
 			C.UInt32(len(value)), valuePtr,
 			nil,
@@ -77,8 +77,8 @@ func (nativeBackend) Delete(key string) error {
 	target := []byte(nativeTarget(key))
 	var item C.SecKeychainItemRef
 	status := C.SecKeychainFindGenericPassword(
-		nil,
-		C.UInt32(len(target)), unsafe.Pointer(&target[0]),
+		C.CFTypeRef(0),
+		C.UInt32(len(target)), (*C.char)(unsafe.Pointer(&target[0])),
 		0, nil,
 		nil, nil,
 		&item,
