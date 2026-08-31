@@ -554,7 +554,7 @@
   box-shadow: 0 0 0 2px var(--surface);
 }
 
-.sidebar-auth-status.offline .auth-indicator {
+.auth-indicator.offline {
   background: #d85b64;
 }
 

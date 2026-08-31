@@ -106,6 +106,14 @@ function hydrateWorkspace(workspace: Workspace): TabWorkspace {
   })
 }
 
+function startupWorkspace(state: BootstrapState): TabWorkspace {
+  const restored = hydrateWorkspace(state.workspace)
+  const currentProfile = state.profiles.find((item) => item.name === state.currentProfile)
+  return currentProfile?.auth.loggedIn
+    ? restored
+    : reduceTabs(restored, { type: 'open-singleton', kind: 'profiles' })
+}
+
 function persistableWorkspace(workspace: TabWorkspace): Workspace {
   return {
     activeTabId: workspace.activeTabID,
@@ -149,7 +157,10 @@ function AppLogo({ labelled = false, className = '' }: { labelled?: boolean; cla
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  const message = error instanceof Error ? error.message : String(error)
+  return message.startsWith('login required')
+    ? '当前 Profile 需要登录，请在 Profile 页面完成认证。'
+    : message
 }
 
 function accountLabel(account: Account): string {
@@ -256,6 +267,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
   const preferences = bootstrap?.preferences
   const currentProfile = bootstrap?.profiles.find((item) => item.name === profile)
+  const currentProfileLoggedIn = currentProfile?.auth.loggedIn === true
   const currentAuth = authPresentation(currentProfile?.auth)
   const selectedAsset = assets.results.find((asset) => asset.id === selectedAssetID) ?? assets.results[0]
   const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
@@ -300,7 +312,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
     backend.bootstrap()
       .then((state) => {
         if (cancelled) return
-        const restored = hydrateWorkspace(state.workspace)
+        const restored = startupWorkspace(state)
         setBootstrap(state)
         setProfile(state.currentProfile)
         setOrganization(state.currentOrganization)
@@ -362,7 +374,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }, [search])
 
   useEffect(() => {
-    if (!profile) {
+    if (!profile || !currentProfileLoggedIn) {
       setOrganizations([])
       return
     }
@@ -371,11 +383,12 @@ export default function App({ backend = wailsBackend }: AppProps) {
       .then((values) => !cancelled && setOrganizations(values))
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
     return () => { cancelled = true }
-  }, [backend, profile])
+  }, [backend, currentProfileLoggedIn, profile])
 
   useEffect(() => {
-    if (!profile || !organization) {
+    if (!profile || !organization || !currentProfileLoggedIn) {
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setRefreshing(false)
       return
     }
     let cancelled = false
@@ -391,16 +404,16 @@ export default function App({ backend = wailsBackend }: AppProps) {
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
       .finally(() => !cancelled && setRefreshing(false))
     return () => { cancelled = true }
-  }, [backend, debouncedSearch, offset, organization, profile, refreshKey])
+  }, [backend, currentProfileLoggedIn, debouncedSearch, offset, organization, profile, refreshKey])
 
   useEffect(() => {
-    if (!selectedAsset || details[selectedAsset.id] || !profile || !organization) return
+    if (!selectedAsset || details[selectedAsset.id] || !profile || !organization || !currentProfileLoggedIn) return
     let cancelled = false
     backend.getAsset({ profile, organization, asset: selectedAsset.id })
       .then((detail) => !cancelled && setDetails((current) => ({ ...current, [detail.id]: detail })))
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
     return () => { cancelled = true }
-  }, [backend, details, organization, profile, selectedAsset])
+  }, [backend, currentProfileLoggedIn, details, organization, profile, selectedAsset])
 
   useEffect(() => {
     const theme = preferences?.theme ?? 'system'
@@ -430,14 +443,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }, [activeTab?.kind])
 
   useEffect(() => {
-    if (!quickOpen || !profile || !organization) return
+    if (!quickOpen || !profile || !organization || !currentProfileLoggedIn) return
     const timer = window.setTimeout(() => {
       backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
         .then(setQuickResults)
         .catch((reason) => setError(errorMessage(reason)))
     }, 160)
     return () => window.clearTimeout(timer)
-  }, [backend, organization, profile, quickOpen, quickQuery])
+  }, [backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
 
   async function reloadBootstrap(preferredProfile?: string) {
     const state = await backend.bootstrap()
@@ -892,7 +905,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick,
         onClick={() => onOpenSingleton('profiles')}
         title={`${profile || '未选择 Profile'} · ${auth.title} · ${auth.description}`}
         type="button"
-      >{auth.offline ? <ShieldAlert /> : <ShieldCheck />}<span className="auth-indicator" /></button>
+      >{auth.offline ? <ShieldAlert /> : <ShieldCheck />}<span className={`auth-indicator ${auth.offline ? 'offline' : ''}`.trim()} /></button>
     </nav>
     {!mac ? <div aria-label="窗口控制" className="window-controls">
       <button aria-label="最小化" onClick={() => runtime?.WindowMinimise?.()} type="button"><Minus /></button>

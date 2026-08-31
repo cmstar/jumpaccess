@@ -150,6 +150,50 @@ test('后端返回 null tabs 时按空工作区启动', async () => {
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
+test('没有可用 Profile 时启动后自动打开 Profile 页面', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      currentProfile: '',
+      currentOrganization: '',
+      profiles: [],
+    }),
+  })
+
+  render(<App backend={backend} />)
+
+  expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tab', { name: '资产' })).toHaveAttribute('aria-selected', 'false')
+  const authStatus = screen.getByRole('button', { name: '认证状态：未选择 Profile，需要登录' })
+  expect(authStatus.querySelector('.auth-indicator')).toHaveClass('offline')
+})
+
+test('当前 Profile 未登录时启动后自动打开 Profile 页面', async () => {
+  const listOrganizations = vi.fn().mockRejectedValue(new Error('login required for profile "production"; run jumpctl auth login'))
+  const listAssets = vi.fn().mockRejectedValue(new Error('login required for profile "production"; run jumpctl auth login'))
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      profiles: bootstrapState.profiles.map((item) => ({
+        ...item,
+        auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' },
+      })),
+    }),
+    listOrganizations,
+    listAssets,
+  })
+
+  render(<App backend={backend} />)
+
+  expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tab', { name: '资产' })).toHaveAttribute('aria-selected', 'false')
+  expect(listOrganizations).not.toHaveBeenCalled()
+  expect(listAssets).not.toHaveBeenCalled()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
 test('Tab 激活控件使用标准 tab 语义和 roving tabindex', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
@@ -752,12 +796,12 @@ test('浏览器登录弹窗说明支持原生回调和完整确认页 URL', asyn
   const user = userEvent.setup()
   render(<App backend={backend} />)
 
-  await screen.findByRole('heading', { name: '资产' })
+  await screen.findByRole('heading', { name: 'Profile' })
   const status = screen.getByRole('button', { name: '认证状态：production，需要登录' })
   expect(status).toHaveClass('offline')
   expect(status).not.toHaveTextContent('需要登录')
   expect(status.querySelector('svg')).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  expect(status.querySelector('.auth-indicator')).toHaveClass('offline')
   await user.click(screen.getByRole('button', { name: '登录' }))
 
   const dialog = await screen.findByRole('dialog', { name: '完成浏览器登录' })
@@ -767,6 +811,18 @@ test('浏览器登录弹窗说明支持原生回调和完整确认页 URL', asyn
     'placeholder',
     expect.stringContaining('https://'),
   )
+})
+
+test('GUI 认证错误引导到 Profile 页面而不是 CLI', async () => {
+  const backend = makeBackend({
+    listOrganizations: vi.fn().mockRejectedValue(new Error('login required for profile "production"; run jumpctl auth login')),
+  })
+
+  render(<App backend={backend} />)
+
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('当前 Profile 需要登录，请在 Profile 页面完成认证。')
+  expect(alert).not.toHaveTextContent('jumpctl')
 })
 
 test('新建并登录 Profile 后保持原来的当前 Profile', async () => {
