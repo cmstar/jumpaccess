@@ -34,6 +34,13 @@ test('设置页使用清晰的标题、正文和控件层级', () => {
   expect(appStyles).toMatch(/\.setting-row small\s*{[^}]*font-size:\s*\.65rem[^}]*font-weight:\s*450/s)
 })
 
+test('设置页使用左侧导航和右侧单列滚动布局', () => {
+  expect(appStyles).toMatch(/\.settings-layout\s*{[^}]*grid-template-columns:\s*190px minmax\(0, 1fr\)/s)
+  expect(appStyles).toMatch(/\.settings-scroll\s*{[^}]*overflow-y:\s*auto/s)
+  expect(appStyles).toMatch(/\.settings-stack\s*{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s)
+  expect(appStyles).toMatch(/\.settings-nav button\[aria-current="location"\]\s*{[^}]*background:\s*var\(--surface\)/s)
+})
+
 test('Asset ID 保留开头并在末尾显示省略号', () => {
   expect(appStyles).toMatch(/\.asset-id-value > \.asset-id-text\s*{[^}]*min-width:\s*0[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s)
   expect(appStyles).toMatch(/\.asset-id-value > button\s*{[^}]*flex:\s*0 0 auto/s)

@@ -551,6 +551,72 @@ test('设置主题会持久化 GUI 独有偏好，许可证位于关于栏', asy
   expect(await screen.findByRole('dialog', { name: '开源许可证' })).toHaveTextContent('MIT License')
 })
 
+test('设置页使用左侧导航和右侧单列滚动面板', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+  const scrollIntoView = vi.fn()
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scrollIntoView,
+  })
+
+  try {
+    render(<App backend={backend} />)
+
+    await screen.findByRole('heading', { name: '资产' })
+    await user.click(screen.getByRole('button', { name: '打开设置' }))
+
+    const navigation = screen.getByRole('navigation', { name: '设置导航' })
+    const navigationLabels = ['外观', '终端', '安全与行为', '关于 JumpAccess']
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(navigationLabels)
+
+    const scrollContainer = screen.getByTestId('settings-scroll')
+    const sectionIDs = ['settings-appearance', 'settings-terminal', 'settings-security', 'settings-about']
+    expect(Array.from(scrollContainer.querySelectorAll(':scope > .settings-stack > section')).map((section) => section.id)).toEqual(sectionIDs)
+
+    await user.click(within(navigation).getByRole('button', { name: '终端' }))
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(within(navigation).getByRole('button', { name: '终端' })).toHaveAttribute('aria-current', 'location')
+  } finally {
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView,
+      })
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
+  }
+})
+
+test('设置页滚动时同步选中对应的导航项', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+
+  const scrollContainer = screen.getByTestId('settings-scroll')
+  const sectionOffsets: Record<string, number> = {
+    'settings-appearance': 0,
+    'settings-terminal': 220,
+    'settings-security': 520,
+    'settings-about': 760,
+  }
+  for (const [id, offsetTop] of Object.entries(sectionOffsets)) {
+    Object.defineProperty(document.getElementById(id), 'offsetTop', { configurable: true, value: offsetTop })
+  }
+  Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 500 })
+
+  fireEvent.scroll(scrollContainer)
+
+  const navigation = screen.getByRole('navigation', { name: '设置导航' })
+  expect(within(navigation).getByRole('button', { name: '安全与行为' })).toHaveAttribute('aria-current', 'location')
+  expect(within(navigation).getByRole('button', { name: '外观' })).not.toHaveAttribute('aria-current')
+})
+
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {
   const listMonospaceFonts = vi.fn().mockResolvedValue(['Menlo', 'JetBrains Mono', 'Fira Code'])
   const backend = makeBackend({ listMonospaceFonts })

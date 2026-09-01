@@ -1251,31 +1251,79 @@ function TerminalFontInput({ families, onChange, value }: { families: string[]; 
   </div>
 }
 
+const settingsNavigation = [
+  { id: 'appearance', label: '外观', icon: Palette },
+  { id: 'terminal', label: '终端', icon: TerminalSquare },
+  { id: 'security', label: '安全与行为', icon: ShieldCheck },
+  { id: 'about', label: '关于 JumpAccess', icon: AppLogo },
+] as const
+
+type SettingsSectionID = typeof settingsNavigation[number]['id']
+
 function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferences, version }: { fontFamilies: string[]; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+  const [activeSection, setActiveSection] = useState<SettingsSectionID>('appearance')
+  const scrollRef = useRef<HTMLDivElement>(null)
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
+
+  function scrollToSection(sectionID: SettingsSectionID) {
+    setActiveSection(sectionID)
+    scrollRef.current?.querySelector<HTMLElement>(`#settings-${sectionID}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function syncActiveSection() {
+    const scrollContainer = scrollRef.current
+    if (!scrollContainer) return
+    if (scrollContainer.scrollHeight > scrollContainer.clientHeight
+      && scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 8) {
+      setActiveSection(settingsNavigation.at(-1)!.id)
+      return
+    }
+
+    const threshold = scrollContainer.scrollTop + Math.min(64, Math.max(24, scrollContainer.clientHeight * .12))
+    let nextSection: SettingsSectionID = settingsNavigation[0].id
+    for (const { id } of settingsNavigation) {
+      const section = scrollContainer.querySelector<HTMLElement>(`#settings-${id}`)
+      if (section && section.offsetTop <= threshold) nextSection = id
+    }
+    setActiveSection(nextSection)
+  }
+
   return <section className="full-pane settings-page">
     <PageHeading eyebrow="桌面偏好" title="设置">
       <button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button>
     </PageHeading>
-    <div className="settings-grid">
-      <section className="settings-card">
-        <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div>
-        <div className="segmented-control" aria-label="界面主题">
-          {([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}
+    <div className="settings-layout">
+      <nav aria-label="设置导航" className="settings-nav">
+        {settingsNavigation.map(({ icon: Icon, id, label }) => <button
+          aria-controls={`settings-${id}`}
+          aria-current={activeSection === id ? 'location' : undefined}
+          key={id}
+          onClick={() => scrollToSection(id)}
+          type="button"
+        ><Icon /><span>{label}</span></button>)}
+      </nav>
+      <div className="settings-scroll" data-testid="settings-scroll" onScroll={syncActiveSection} ref={scrollRef}>
+        <div className="settings-stack">
+          <section className="settings-card" id="settings-appearance">
+            <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div>
+            <div className="segmented-control" aria-label="界面主题">
+              {([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}
+            </div>
+          </section>
+          <section className="settings-card" id="settings-terminal">
+            <div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div>
+            <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
+            <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
+          </section>
+          <section className="settings-card" id="settings-security">
+            <div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div>
+            <div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div>
+          </section>
+          <section className="settings-card about-settings-card" id="settings-about">
+            <div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div>
+          </section>
         </div>
-      </section>
-      <section className="settings-card">
-        <div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div>
-        <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
-        <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
-      </section>
-      <section className="settings-card wide">
-        <div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div>
-        <div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div>
-      </section>
-      <section className="settings-card wide about-settings-card">
-        <div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div>
-      </section>
+      </div>
     </div>
   </section>
 }

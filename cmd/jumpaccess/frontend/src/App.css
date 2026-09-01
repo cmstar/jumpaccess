@@ -1624,10 +1624,106 @@ details > summary::-webkit-details-marker {
   gap: 14px;
 }
 
-.settings-grid {
+.settings-page {
+  display: flex;
+  overflow: hidden;
+  padding-bottom: 0;
+  flex-direction: column;
+}
+
+.settings-page .page-heading {
+  flex: 0 0 auto;
+}
+
+.settings-layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 22px;
+}
+
+.settings-nav {
+  display: flex;
+  min-width: 0;
+  align-self: start;
+  flex-direction: column;
+  gap: 4px;
+  padding: 3px 0;
+}
+
+.settings-nav button {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 36px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: .7rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.settings-nav button::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  content: '';
+}
+
+.settings-nav button > svg,
+.settings-nav button > img {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.settings-nav button:hover {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.settings-nav button[aria-current="location"] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(31 63 52 / 5%);
+}
+
+.settings-nav button[aria-current="location"]::before {
+  background: var(--accent);
+}
+
+.settings-scroll {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 1px 8px 92px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+}
+
+.settings-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+  padding-bottom: 32vh;
+}
+
+.settings-stack > .settings-card {
+  scroll-margin-top: 1px;
 }
 
 .profile-card,
@@ -1747,10 +1843,6 @@ details > summary::-webkit-details-marker {
   flex-wrap: nowrap;
   gap: 5px;
   padding-top: 14px;
-}
-
-.settings-card.wide {
-  grid-column: 1 / -1;
 }
 
 .settings-card-title {
@@ -2713,8 +2805,29 @@ details > summary::-webkit-details-marker {
   .page-heading { align-items: flex-start; flex-direction: column; }
   .profile-card { width: 100%; flex-basis: 100%; }
   .profile-card-actions { flex-wrap: wrap; }
-  .settings-grid { grid-template-columns: 1fr; }
-  .settings-card.wide { grid-column: auto; }
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+  }
+  .settings-nav {
+    width: 100%;
+    overflow-x: auto;
+    flex-direction: row;
+  }
+  .settings-nav button {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .settings-nav button::before {
+    top: auto;
+    right: 10px;
+    bottom: 0;
+    left: 10px;
+    width: auto;
+    height: 2px;
+  }
+  .settings-scroll { padding-right: 0; }
   .asset-table-card th:nth-child(2),
   .asset-table-card td:nth-child(2) { display: none; }
   .asset-table-card th:first-child { width: 38%; }
