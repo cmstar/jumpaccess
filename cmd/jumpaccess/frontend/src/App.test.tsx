@@ -710,6 +710,43 @@ test('Tab 栏新建连接和全局快捷键直接打开快速连接', async () =
   expect(await screen.findByRole('dialog', { name: '快速连接' })).toBeInTheDocument()
 })
 
+test('快速连接复用资产页已有数据并在本地筛选', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const dialog = await screen.findByRole('dialog', { name: '快速连接' })
+
+  expect(await within(dialog).findByText('production-web')).toBeInTheDocument()
+  expect(backend.quickSearch).not.toHaveBeenCalled()
+
+  await user.type(within(dialog).getByPlaceholderText('名称、地址、Asset ID 或 Alias'), 'missing')
+  expect(within(dialog).getByText('没有匹配结果')).toBeInTheDocument()
+  await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 220)) })
+  expect(backend.quickSearch).not.toHaveBeenCalled()
+})
+
+test('资产页没有数据时快速连接才请求 API', async () => {
+  const emptyPage: AssetPage = { ...assetPage, count: 0, aliasCount: 0, results: [] }
+  const backend = makeBackend({
+    listAssets: vi.fn().mockResolvedValue(emptyPage),
+    quickSearch: vi.fn().mockResolvedValue(assetPage.results),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await waitFor(() => expect(backend.listAssets).toHaveBeenCalled())
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const dialog = await screen.findByRole('dialog', { name: '快速连接' })
+
+  expect(await within(dialog).findByText('production-web')).toBeInTheDocument()
+  expect(backend.quickSearch).toHaveBeenCalledWith({
+    profile: 'production', organization: 'org-1', query: '', limit: 20,
+  })
+})
+
 test('创建 Alias 后局部更新并保留已有账号显示缓存', async () => {
   const secondAsset = { id: 'asset-2', name: 'new-server', address: '10.0.0.2', type: 'Linux', category: 'Host', aliases: [] }
   const pageWithEmptyAsset: AssetPage = { ...assetPage, count: 2, results: [...assetPage.results, secondAsset] }

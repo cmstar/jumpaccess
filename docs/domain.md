@@ -62,7 +62,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式
 - GUI 启动并恢复工作区后，如果没有可用 Profile，或当前 Profile 尚未登录，则自动打开并激活 Profile 页面；当前 Profile 已登录时保持原活动 Tab。
 - GUI 顶部认证状态以绿色表示已认证，以红色表示未登录或尚未配置 Profile。未登录时不请求 Organization、Asset 等远端资源；请求期间认证失效时，引导用户在 GUI 的 Profile 页面重新认证，不显示 CLI 操作提示。
 - GUI 优先使用平台原生 UI 字体，资产、Profile、设置和弹窗等应用界面采用 125% 基准及清晰的标题、正文、说明文字层级；顶部工作区 Tab 保持紧凑的原始字号，SSH 终端内容严格使用终端设置中的原始字号，二者都不随应用界面字体放大。
-- Profile 与 Organization 选择只影响资产过滤，因此只显示在资产页；新建连接直接打开快速连接窗口，也可以由全局快捷键触发。顶部右侧按资产、Profile、设置、认证状态的顺序提供图标入口，认证详情通过悬停提示展示。
+- Profile 与 Organization 选择只影响资产过滤，因此只显示在资产页；新建连接直接打开快速连接窗口，也可以由全局快捷键触发。快速连接优先复用资产页已有数据并在本地筛选，只有资产页没有数据时才请求远端。顶部右侧按资产、Profile、设置、认证状态的顺序提供图标入口，认证详情通过悬停提示展示。
 - SSH Tab 标题保持单行：有 Alias 时先显示 Alias，再以弱化文字显示原始 Asset 名；没有 Alias 时只显示 Asset 名。悬停提示补充 Alias、Asset、ID、Profile、Organization 和 Account。
 - 远端断开或连接失败不得自动关闭 SSH Tab。终端保留已有输出并追加英文提示 `Connection closed.`、空行和 `Press Enter to reconnect ...`；只有终端获得焦点时的无修饰键 Enter 才能触发重连。
 - GUI 保存 Tab 顺序、活动项及 SSH 重连描述符，重启后恢复同样的工作区；恢复的 SSH Tab 一律保持断连且不得自动连接。终端输出、live session ID、运行状态和秘密不得持久化。

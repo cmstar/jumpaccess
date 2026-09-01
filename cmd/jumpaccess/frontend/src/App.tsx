@@ -172,6 +172,17 @@ function formatSyncTime(value: Date | null): string {
   return value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+function filterQuickAssets(assets: Asset[], query: string, limit = 20): Asset[] {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return assets.slice(0, limit)
+  return assets.filter((asset) => [
+    asset.id,
+    asset.name,
+    asset.address,
+    ...asset.aliases.map((alias) => alias.name),
+  ].some((value) => value.toLowerCase().includes(normalizedQuery))).slice(0, limit)
+}
+
 function authPresentation(auth?: AuthStatus): { description: string; offline: boolean; title: string } {
   if (!auth?.loggedIn) return { title: '需要登录', description: '打开 Profile 管理', offline: true }
   const remaining = auth.expiresAt ? new Date(auth.expiresAt).getTime() - Date.now() : Number.POSITIVE_INFINITY
@@ -277,6 +288,11 @@ export default function App({ backend = wailsBackend }: AppProps) {
     if (aliasFilter === 'without-alias') return asset.aliases.length === 0
     return true
   }), [aliasFilter, assets.results])
+  const localQuickResults = useMemo(
+    () => filterQuickAssets(assets.results, quickQuery),
+    [assets.results, quickQuery],
+  )
+  const displayedQuickResults = assets.results.length > 0 ? localQuickResults : quickResults
 
   function dispatchTabs(action: TabAction) {
     const next = reduceTabs(workspaceRef.current, action)
@@ -443,14 +459,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }, [activeTab?.kind])
 
   useEffect(() => {
-    if (!quickOpen || !profile || !organization || !currentProfileLoggedIn) return
+    if (!quickOpen || !profile || !organization || !currentProfileLoggedIn || assets.results.length > 0) return
     const timer = window.setTimeout(() => {
       backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
         .then(setQuickResults)
         .catch((reason) => setError(errorMessage(reason)))
     }, 160)
     return () => window.clearTimeout(timer)
-  }, [backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
+  }, [assets.results.length, backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
 
   async function reloadBootstrap(preferredProfile?: string) {
     const state = await backend.bootstrap()
@@ -782,7 +798,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
       {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.asset, pendingConnection.target, pendingConnection.alias, account.id || account.username))} /> : null}
-      {quickOpen ? <QuickConnectDialog assets={quickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
+      {quickOpen ? <QuickConnectDialog assets={displayedQuickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
       {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
