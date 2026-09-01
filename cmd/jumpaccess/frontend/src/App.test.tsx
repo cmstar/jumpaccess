@@ -5,8 +5,9 @@ import { expect, test, vi } from 'vitest'
 import App from './App'
 import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionOutput, SessionState } from './lib/backend'
 
-const { terminalKeyHandlers, terminalWrites } = vi.hoisted(() => ({
+const { terminalKeyHandlers, terminalOscHandlers, terminalWrites } = vi.hoisted(() => ({
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
+  terminalOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   terminalWrites: [] as string[],
 }))
 
@@ -14,6 +15,12 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 120
     rows = 34
+    parser = {
+      registerOscHandler: (ident: number, handler: (data: string) => boolean | Promise<boolean>) => {
+        terminalOscHandlers.set(ident, handler)
+        return { dispose: () => terminalOscHandlers.delete(ident) }
+      },
+    }
     loadAddon() {}
     open() {}
     write(value: string) { terminalWrites.push(value) }
@@ -886,7 +893,48 @@ test('资产请求自动续期后同步 Profile 图标状态并仅在悬停提�
   expect(screen.queryByText(/分钟后到期/)).not.toBeInTheDocument()
 })
 
-test('使用应用内确认框断开活动 SSH 会话', async () => {
+test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC 7 启用路径复制', async () => {
+  let stateHandler: (event: SessionState) => void = () => undefined
+  const activeSession: SessionState = {
+    id: 'live-1', status: 'active', title: 'production-web', profile: 'production',
+    organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '',
+  }
+  const backend = makeBackend({
+    startSSHSession: vi.fn().mockResolvedValue(activeSession),
+    onSessionState: vi.fn((handler) => { stateHandler = handler; return () => undefined }),
+  })
+  const user = userEvent.setup()
+  const writeClipboard = vi.spyOn(navigator.clipboard, 'writeText')
+  terminalOscHandlers.clear()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  const disconnect = await screen.findByRole('button', { name: '断开 production-web SSH 连接' })
+  const toolbar = disconnect.closest<HTMLElement>('.terminal-toolbar')!
+  expect(Array.from(toolbar.querySelectorAll('.terminal-toolbar-name, .terminal-toolbar-meta')).map((item) => item.textContent)).toEqual([
+    'production-web', 'prod-web-01', 'asset-1',
+  ])
+  expect(within(toolbar).getByRole('img', { name: '连接状态：已连接' })).not.toHaveClass('offline')
+  expect(toolbar).not.toHaveTextContent('active')
+
+  const copyDirectory = within(toolbar).getByRole('button', { name: '复制当前路径' })
+  expect(copyDirectory).toBeDisabled()
+  expect(copyDirectory.nextElementSibling).toHaveClass('terminal-action-separator')
+  expect(copyDirectory.nextElementSibling?.nextElementSibling).toBe(disconnect)
+
+  await act(async () => terminalOscHandlers.get(7)?.('file://prod-web-01/srv/releases/current%20build'))
+  expect(copyDirectory).toBeEnabled()
+  await user.click(copyDirectory)
+  expect(writeClipboard).toHaveBeenCalledWith('/srv/releases/current build')
+
+  act(() => stateHandler({ ...activeSession, status: 'closed' }))
+  expect(copyDirectory).toBeDisabled()
+  expect(disconnect).toBeDisabled()
+  expect(within(toolbar).getByRole('img', { name: '连接状态：未连接' })).toHaveClass('offline')
+})
+
+test('标题栏断开按钮只断开活动 Session 并保留 SSH Tab', async () => {
   const activeSession: SessionState = {
     id: 'live-1', status: 'active', title: 'production-web', profile: 'production',
     organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '',
@@ -897,13 +945,54 @@ test('使用应用内确认框断开活动 SSH 会话', async () => {
 
   await screen.findByRole('heading', { name: '资产' })
   await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
-  await user.click(await screen.findByRole('button', { name: '关闭 production-web 会话' }))
+  await user.click(await screen.findByRole('button', { name: '断开 production-web SSH 连接' }))
+
+  await waitFor(() => expect(backend.closeSSHSession).toHaveBeenCalledWith('live-1'))
+  expect(screen.getByRole('tab', { name: /production-web/ })).toBeInTheDocument()
+  expect(screen.queryByRole('dialog', { name: '关闭 SSH Tab' })).not.toBeInTheDocument()
+})
+
+test('连接不可用时标题栏显示红灯并禁用断开和路径复制', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      workspace: {
+        activeTabId: 'ssh-restored',
+        tabs: [{
+          id: 'ssh-restored', type: 'ssh', profile: 'production', organization: 'org-1',
+          target: 'production-web', account: 'account-1', alias: 'production-web',
+          assetId: 'asset-1', assetName: 'prod-web-01',
+        }],
+      },
+    }),
+  })
+  render(<App backend={backend} />)
+
+  const disconnect = await screen.findByRole('button', { name: '断开 production-web SSH 连接' })
+  const toolbar = disconnect.closest<HTMLElement>('.terminal-toolbar')!
+  expect(within(toolbar).getByRole('img', { name: '连接状态：未连接' })).toHaveClass('offline')
+  expect(within(toolbar).getByRole('button', { name: '复制当前路径' })).toBeDisabled()
+  expect(disconnect).toBeDisabled()
+})
+
+test('使用应用内确认框关闭活动 SSH Tab', async () => {
+  const activeSession: SessionState = {
+    id: 'live-1', status: 'active', title: 'production-web', profile: 'production',
+    organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '',
+  }
+  const backend = makeBackend({ startSSHSession: vi.fn().mockResolvedValue(activeSession) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await user.click(await screen.findByRole('button', { name: '关闭 production-web Tab' }))
   expect(await screen.findByRole('dialog', { name: '关闭 SSH Tab' })).toBeInTheDocument()
   expect(backend.closeSSHSession).not.toHaveBeenCalled()
 
   await user.click(screen.getByRole('button', { name: '取消' }))
   expect(screen.queryByRole('dialog', { name: '关闭 SSH Tab' })).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '关闭 production-web 会话' }))
+  await user.click(screen.getByRole('button', { name: '关闭 production-web Tab' }))
   await user.click(screen.getByRole('button', { name: '关闭 Tab' }))
   await waitFor(() => expect(backend.closeSSHSession).toHaveBeenCalledWith('live-1'))
 })

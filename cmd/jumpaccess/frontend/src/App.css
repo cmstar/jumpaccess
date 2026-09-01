@@ -1284,9 +1284,22 @@ details > summary::-webkit-details-marker {
   background: var(--accent-soft);
 }
 
+.icon-button:disabled,
+.icon-button:disabled:hover {
+  cursor: not-allowed;
+  opacity: .38;
+  color: var(--muted);
+  background: transparent;
+}
+
 .icon-button.danger:hover {
   color: var(--danger);
   background: rgb(188 68 77 / 9%);
+}
+
+.icon-button.danger:disabled:hover {
+  color: var(--muted);
+  background: transparent;
 }
 
 .icon-button svg {
@@ -2162,19 +2175,62 @@ details > summary::-webkit-details-marker {
   background: var(--surface);
 }
 
-.terminal-toolbar > div {
+.terminal-toolbar-info,
+.terminal-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.terminal-toolbar strong {
+.terminal-toolbar-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.terminal-toolbar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: .7rem;
 }
 
-.terminal-toolbar small {
+.terminal-toolbar-meta {
+  min-width: 0;
+  overflow: hidden;
   color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .6rem;
+}
+
+.terminal-toolbar-meta::before {
+  margin-right: 8px;
+  content: "·";
+}
+
+.terminal-connection-status {
+  flex: none;
+  margin-right: 3px;
+  transform: translateY(.5px);
+}
+
+.terminal-connection-status.offline {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgb(188 68 77 / 12%);
+}
+
+.terminal-toolbar-actions {
+  flex: none;
+  gap: 7px;
+}
+
+.terminal-action-separator {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--border);
 }
 
 .terminal-screen,

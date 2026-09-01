@@ -8,18 +8,39 @@ import { synchronizeTerminalViewportBackground } from './terminalViewport'
 
 interface TerminalPaneProps {
   backend: Backend
+  onCurrentDirectoryChange?: (directory: string) => void
   onReconnect?: () => void
   output: string
   preferences: Preferences
   session: SessionState
 }
 
-export function TerminalPane({ backend, onReconnect, output, preferences, session }: TerminalPaneProps) {
+const osc7PayloadLimit = 4096
+
+function currentDirectoryFromOSC7(payload: string): string | undefined {
+  if (payload.length === 0 || payload.length > osc7PayloadLimit || !payload.startsWith('file://')) return undefined
+  const pathStart = payload.indexOf('/', 'file://'.length)
+  if (pathStart < 0) return undefined
+  const rawPath = payload.slice(pathStart)
+  if (rawPath.includes('?') || rawPath.includes('#')) return undefined
+  try {
+    const directory = decodeURIComponent(rawPath)
+    if (!directory.startsWith('/') || directory.split('/').includes('..') || /[\u0000-\u001f\u007f]/u.test(directory)) return undefined
+    return directory
+  } catch {
+    return undefined
+  }
+}
+
+export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, output, preferences, session }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const writtenRef = useRef(0)
+  const currentDirectoryRef = useRef('')
+  const currentDirectoryChangeRef = useRef(onCurrentDirectoryChange)
   const reconnectRef = useRef(onReconnect)
   const statusRef = useRef(session.status)
+  currentDirectoryChangeRef.current = onCurrentDirectoryChange
   reconnectRef.current = onReconnect
   statusRef.current = session.status
 
@@ -45,6 +66,17 @@ export function TerminalPane({ backend, onReconnect, output, preferences, sessio
     synchronizeTerminalViewportBackground(host, theme.background)
     terminalRef.current = terminal
     writtenRef.current = 0
+    currentDirectoryRef.current = ''
+    const osc7 = terminal.parser.registerOscHandler(7, (payload) => {
+      if (statusRef.current !== 'active') return false
+      const directory = currentDirectoryFromOSC7(payload)
+      if (!directory) return false
+      if (directory !== currentDirectoryRef.current) {
+        currentDirectoryRef.current = directory
+        currentDirectoryChangeRef.current?.(directory)
+      }
+      return true
+    })
     const fitAndReport = () => {
       try {
         fit.fit()
@@ -78,6 +110,7 @@ export function TerminalPane({ backend, onReconnect, output, preferences, sessio
     })
     return () => {
       observer.disconnect()
+      osc7.dispose()
       input.dispose()
       resized.dispose()
       terminal.dispose()

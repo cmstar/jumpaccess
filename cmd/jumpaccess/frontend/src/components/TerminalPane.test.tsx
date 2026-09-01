@@ -8,6 +8,7 @@ const terminalMock = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   keyHandler: undefined as ((event: KeyboardEvent) => boolean) | undefined,
   options: undefined as { fontFamily?: string; fontSize?: number } | undefined,
+  oscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
 }))
 
@@ -15,6 +16,12 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 120
     rows = 34
+    parser = {
+      registerOscHandler: (ident: number, handler: (data: string) => boolean | Promise<boolean>) => {
+        terminalMock.oscHandlers.set(ident, handler)
+        return { dispose: () => terminalMock.oscHandlers.delete(ident) }
+      },
+    }
     constructor(options: { fontFamily?: string; fontSize?: number }) { terminalMock.options = options }
     loadAddon() {}
     open() {}
@@ -60,6 +67,8 @@ const disconnectedSession: SessionState = {
   account: 'account-1',
   error: '',
 }
+
+const activeSession: SessionState = { ...disconnectedSession, status: 'active' }
 
 test('终端字号保持设置值，不跟随应用 UI 字体缩放', () => {
   const backend = {
@@ -139,4 +148,55 @@ test('连接建立期间也向远端同步最新终端尺寸', () => {
   act(() => terminalMock.resizeHandler?.({ cols: 188, rows: 54 }))
 
   expect(resizeSSHSession).toHaveBeenCalledWith('session-1', 188, 54)
+})
+
+test('OSC 7 上报有效远程目录时只通知一次实际变化', () => {
+  const onCurrentDirectoryChange = vi.fn()
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+
+  render(<TerminalPane
+    backend={backend}
+    onCurrentDirectoryChange={onCurrentDirectoryChange}
+    output=""
+    preferences={preferences}
+    session={activeSession}
+  />)
+
+  const reportDirectory = terminalMock.oscHandlers.get(7)
+  expect(reportDirectory).toBeDefined()
+  act(() => {
+    reportDirectory?.('file://prod-web-01/srv/releases/current%20build')
+    reportDirectory?.('file://prod-web-01/srv/releases/current%20build')
+  })
+
+  expect(onCurrentDirectoryChange).toHaveBeenCalledOnce()
+  expect(onCurrentDirectoryChange).toHaveBeenCalledWith('/srv/releases/current build')
+})
+
+test('OSC 7 拒绝非文件 URI、相对路径和控制字符', () => {
+  const onCurrentDirectoryChange = vi.fn()
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+
+  render(<TerminalPane
+    backend={backend}
+    onCurrentDirectoryChange={onCurrentDirectoryChange}
+    output=""
+    preferences={preferences}
+    session={activeSession}
+  />)
+
+  const reportDirectory = terminalMock.oscHandlers.get(7)
+  act(() => {
+    reportDirectory?.('https://prod-web-01/srv/app')
+    reportDirectory?.('file://prod-web-01/../relative')
+    reportDirectory?.('file://prod-web-01/srv/app%0aother')
+  })
+
+  expect(onCurrentDirectoryChange).not.toHaveBeenCalled()
 })

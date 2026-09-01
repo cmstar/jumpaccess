@@ -116,9 +116,11 @@ export const previewBackend: Backend = {
     sessions = [...sessions, session]
     window.setTimeout(() => {
       const active = { ...session, status: 'active' as const }
+      const remoteName = asset?.name ?? 'asset'
+      const remoteDirectory = `/home/${request.account || 'user'}`
       sessions = sessions.map((item) => item.id === active.id ? active : item)
       stateHandlers.forEach((handler) => handler(active))
-      outputHandlers.forEach((handler) => handler({ id: active.id, data: `Connecting through JumpServer gateway…\r\nConnected to ${asset?.name ?? request.target}\r\n\r\n${request.account}@${asset?.name ?? 'asset'}:~$ ` }))
+      outputHandlers.forEach((handler) => handler({ id: active.id, data: `Connecting through JumpServer gateway…\r\nConnected to ${asset?.name ?? request.target}\r\n\r\n\x1b]7;file://${remoteName}${encodeURI(remoteDirectory)}\x1b\\${request.account}@${remoteName}:~$ ` }))
     }, 500)
     return clone(session)
   },
