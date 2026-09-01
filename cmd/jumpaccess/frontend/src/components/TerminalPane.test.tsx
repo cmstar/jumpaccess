@@ -1,5 +1,5 @@
 import { act, render } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
 import { TerminalPane } from './TerminalPane'
 import type { Backend, Preferences, SessionState } from '../lib/backend'
@@ -10,6 +10,8 @@ const terminalMock = vi.hoisted(() => ({
   options: undefined as { fontFamily?: string; fontSize?: number } | undefined,
   oscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
+  writeCallbacks: [] as Array<() => void>,
+  writeResponse: '',
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -25,7 +27,10 @@ vi.mock('@xterm/xterm', () => ({
     constructor(options: { fontFamily?: string; fontSize?: number }) { terminalMock.options = options }
     loadAddon() {}
     open() {}
-    write() {}
+    write(_data: string, callback?: () => void) {
+      if (terminalMock.writeResponse) terminalMock.dataHandler?.(terminalMock.writeResponse)
+      if (callback) terminalMock.writeCallbacks.push(callback)
+    }
     reset() {}
     focus() {}
     dispose() {}
@@ -69,6 +74,15 @@ const disconnectedSession: SessionState = {
 }
 
 const activeSession: SessionState = { ...disconnectedSession, status: 'active' }
+
+beforeEach(() => {
+  terminalMock.dataHandler = undefined
+  terminalMock.keyHandler = undefined
+  terminalMock.oscHandlers.clear()
+  terminalMock.resizeHandler = undefined
+  terminalMock.writeCallbacks = []
+  terminalMock.writeResponse = ''
+})
 
 test('终端字号保持设置值，不跟随应用 UI 字体缩放', () => {
   const backend = {
@@ -199,4 +213,29 @@ test('OSC 7 拒绝非文件 URI、相对路径和控制字符', () => {
   })
 
   expect(onCurrentDirectoryChange).not.toHaveBeenCalled()
+})
+
+test('重放终端历史时不把协议响应写回 SSH，完成后恢复正常输入', () => {
+  const writeSSHSession = vi.fn().mockResolvedValue(undefined)
+  const backend = {
+    writeSSHSession,
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  terminalMock.writeResponse = '\x1b[>0;276;0c'
+
+  render(<TerminalPane
+    backend={backend}
+    output="\x1b[>c"
+    preferences={preferences}
+    session={activeSession}
+  />)
+
+  expect(writeSSHSession).not.toHaveBeenCalled()
+  expect(terminalMock.writeCallbacks).toHaveLength(1)
+
+  act(() => terminalMock.writeCallbacks[0]())
+  act(() => terminalMock.dataHandler?.('pwd\r'))
+
+  expect(writeSSHSession).toHaveBeenCalledOnce()
+  expect(writeSSHSession).toHaveBeenCalledWith('session-1', 'pwd\r')
 })

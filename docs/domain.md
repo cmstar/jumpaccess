@@ -68,6 +68,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 - SSH Tab 标题保持单行：有 Alias 时先显示 Alias，再以弱化文字显示原始 Asset 名；没有 Alias 时只显示 Asset 名。悬停提示补充 Alias、Asset、ID、Profile、Organization 和 Account。
 - SSH 页面标题栏依次显示 Alias（没有时使用原始 Asset 名）、原始 Asset 名、Asset ID 和红绿连接状态灯，不用文本重复连接状态。标题栏右侧的断开按钮只终止可用的 live Session 并保留 Tab，不可用时禁用；关闭 Tab 仍由顶部 Tab 的关闭按钮负责。
 - GUI 被动接收远端 Shell 通过 OSC 7 `file://host/path` 上报的绝对当前目录，只在 live Session 内保留最后一次有效值。收到目录前复制按钮保持禁用；有效目录变化时才更新，断开、失败或重连时清空，不轮询远端也不自动向 Shell 注入命令。
+- SSH Tab 重新挂载时可以向新终端重放已有输出，但重放过程中由终端查询触发的协议响应不得写回 live Session；历史重放完成后才恢复正常输入和实时协议响应转发。
 - 远端断开或连接失败不得自动关闭 SSH Tab。终端保留已有输出并追加英文提示 `Connection closed.`、空行和 `Press Enter to reconnect ...`；只有终端获得焦点时的无修饰键 Enter 才能触发重连。
 - GUI 保存 Tab 顺序、活动项及 SSH 重连描述符，重启后恢复同样的工作区；恢复的 SSH Tab 一律保持断连且不得自动连接。终端输出、live session ID、运行状态和秘密不得持久化。
 - Profile 名是用户可见的精确标识，不为适配文件系统进行替换或规范化；拒绝空名称、首尾空白、控制字符以及 `.`、`..`，其余名称通过稳定摘要映射到凭据文件。

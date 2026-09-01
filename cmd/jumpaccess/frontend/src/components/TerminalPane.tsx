@@ -36,6 +36,7 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const writtenRef = useRef(0)
+  const historyReplayRef = useRef(false)
   const currentDirectoryRef = useRef('')
   const currentDirectoryChangeRef = useRef(onCurrentDirectoryChange)
   const reconnectRef = useRef(onReconnect)
@@ -66,6 +67,7 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     synchronizeTerminalViewportBackground(host, theme.background)
     terminalRef.current = terminal
     writtenRef.current = 0
+    historyReplayRef.current = true
     currentDirectoryRef.current = ''
     const osc7 = terminal.parser.registerOscHandler(7, (payload) => {
       if (statusRef.current !== 'active') return false
@@ -97,7 +99,7 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
       return false
     })
     const input = terminal.onData((data) => {
-      if (statusRef.current === 'active') void backend.writeSSHSession(session.id, data)
+      if (statusRef.current === 'active' && !historyReplayRef.current) void backend.writeSSHSession(session.id, data)
     })
     const resized = terminal.onResize(({ cols, rows }) => {
       if (session.id) void backend.resizeSSHSession(session.id, cols, rows)
@@ -115,6 +117,7 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
       resized.dispose()
       terminal.dispose()
       terminalRef.current = null
+      historyReplayRef.current = false
     }
   }, [backend, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.theme, session.id])
 
@@ -124,9 +127,16 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     if (output.length < writtenRef.current) {
       terminal.reset()
       writtenRef.current = 0
+      historyReplayRef.current = true
     }
     const next = output.slice(writtenRef.current)
-    if (next) terminal.write(next)
+    if (next) {
+      terminal.write(next, () => {
+        if (terminalRef.current === terminal) historyReplayRef.current = false
+      })
+    } else {
+      historyReplayRef.current = false
+    }
     writtenRef.current = output.length
   }, [output])
 
