@@ -13,6 +13,7 @@ import {
   Minus,
   MoreHorizontal,
   Palette,
+  PanelTopClose,
   Pencil,
   Plus,
   RefreshCcw,
@@ -803,6 +804,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         onMove={(id, toIndex) => dispatchTabs({ type: 'move', id, toIndex })}
         onQuit={() => void quitApplication()}
         profile={profile}
+        showTabCloseButtons={bootstrap.preferences.showTabCloseButtons}
         tabs={workspace.tabs}
       />
       <section className="workspace">
@@ -860,7 +862,7 @@ function tabIcon(tab: AppTab) {
   return <TerminalSquare />
 }
 
-function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, tabs }: {
+function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
   activeTabID: string
   auth: ReturnType<typeof authPresentation>
   onActivate: (id: string) => void
@@ -870,6 +872,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick,
   onOpenSingleton: (kind: SingletonTabKind) => void
   onQuit: () => void
   profile: string
+  showTabCloseButtons: boolean
   tabs: AppTab[]
 }) {
   const mac = navigator.platform.toLowerCase().includes('mac')
@@ -945,7 +948,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick,
           {tabIcon(tab)}<span className="tab-primary">{tabTitle(tab)}</span>
           {tab.kind === 'ssh' && tab.descriptor.alias && tab.descriptor.assetName ? <small>{tab.descriptor.assetName}</small> : null}
         </button>
-        <button aria-label={`关闭 ${tabTitle(tab)} Tab`} className="tab-close" onClick={() => onClose(tab)} title="关闭 Tab" type="button"><X /></button>
+        {showTabCloseButtons ? <button aria-label={`关闭 ${tabTitle(tab)} Tab`} className="tab-close" onClick={() => onClose(tab)} title="关闭 Tab" type="button"><X /></button> : null}
         {tab.id !== activeTabID && tabs[index + 1] && tabs[index + 1].id !== activeTabID
           ? <span aria-hidden="true" className="tab-separator" />
           : null}
@@ -1254,7 +1257,7 @@ function TerminalFontInput({ families, onChange, value }: { families: string[]; 
 const settingsNavigation = [
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal', label: '终端', icon: TerminalSquare },
-  { id: 'security', label: '安全与行为', icon: ShieldCheck },
+  { id: 'tabs', label: 'Tab 行为', icon: PanelTopClose },
   { id: 'about', label: '关于 JumpAccess', icon: AppLogo },
 ] as const
 
@@ -1315,9 +1318,10 @@ function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferenc
             <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
             <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
           </section>
-          <section className="settings-card" id="settings-security">
-            <div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div>
-            <div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div>
+          <section className="settings-card" id="settings-tabs">
+            <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的关闭入口和确认方式。</p></div></div>
+            <div className="setting-row"><span><strong>显示 Tab 关闭按钮</strong><small>隐藏后仍可使用鼠标中键关闭 Tab。</small></span><button aria-label="显示 Tab 关闭按钮" role="switch" aria-checked={preferences.showTabCloseButtons} className={preferences.showTabCloseButtons ? 'switch on' : 'switch'} onClick={() => update({ showTabCloseButtons: !preferences.showTabCloseButtons })}><span /></button></div>
+            <div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button aria-label="关闭活动会话前确认" role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div>
           </section>
           <section className="settings-card about-settings-card" id="settings-about">
             <div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div>

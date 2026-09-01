@@ -62,7 +62,7 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号、关闭活动会话确认、窗口最大化/普通边界，以及 Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号、Tab 关闭按钮显示、关闭活动会话确认、窗口最大化/普通边界，以及 Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
 
 默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。`jumpctl ssh`、`jumpctl proxy` 和桌面 GUI 使用独立的刷新监督器；GUI 监督器覆盖所有保存了 Refresh Token 的 Profile，每轮重新读取配置和凭据以发现运行期间的变化，并在桌面程序退出时取消。刷新失败会报告告警，但监督器不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 

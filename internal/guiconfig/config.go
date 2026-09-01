@@ -33,6 +33,7 @@ type Appearance struct {
 
 type Behavior struct {
 	ConfirmCloseActiveSession bool `toml:"confirm_close_active_session"`
+	ShowTabCloseButtons       bool `toml:"show_tab_close_buttons"`
 }
 
 // Workspace 保存桌面工作区的稳定 Tab 描述。SSH Tab 只保存重连所需的目标信息，
@@ -73,7 +74,10 @@ func Default() Config {
 			TerminalFontFamily: "monospace",
 			TerminalFontSize:   12,
 		},
-		Behavior:  Behavior{ConfirmCloseActiveSession: true},
+		Behavior: Behavior{
+			ConfirmCloseActiveSession: true,
+			ShowTabCloseButtons:       true,
+		},
 		Workspace: Workspace{Tabs: []WorkspaceTab{}},
 		Window: WindowPlacement{
 			Width:  DefaultWindowWidth,

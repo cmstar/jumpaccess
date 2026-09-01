@@ -6,6 +6,7 @@ export interface Preferences {
   terminalFontFamily: string
   terminalFontSize: number
   confirmCloseActiveSession: boolean
+  showTabCloseButtons: boolean
 }
 
 export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh'
@@ -168,7 +169,7 @@ export interface Backend {
 type GoPreferences = {
   Version: number
   Appearance: { Theme: ThemeMode; TerminalFontFamily: string; TerminalFontSize: number }
-  Behavior: { ConfirmCloseActiveSession: boolean }
+  Behavior: { ConfirmCloseActiveSession: boolean; ShowTabCloseButtons: boolean }
 }
 
 type DesktopBinding = {
@@ -234,6 +235,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalFontFamily: value.Appearance.TerminalFontFamily,
     terminalFontSize: value.Appearance.TerminalFontSize,
     confirmCloseActiveSession: value.Behavior.ConfirmCloseActiveSession,
+    showTabCloseButtons: value.Behavior.ShowTabCloseButtons,
   }
 }
 
@@ -245,7 +247,10 @@ function fromPreferences(value: Preferences): GoPreferences {
       TerminalFontFamily: value.terminalFontFamily,
       TerminalFontSize: value.terminalFontSize,
     },
-    Behavior: { ConfirmCloseActiveSession: value.confirmCloseActiveSession },
+    Behavior: {
+      ConfirmCloseActiveSession: value.confirmCloseActiveSession,
+      ShowTabCloseButtons: value.showTabCloseButtons,
+    },
   }
 }
 

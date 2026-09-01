@@ -14,6 +14,12 @@ func TestDefaultUsesSystemMonospaceFont(t *testing.T) {
 	}
 }
 
+func TestDefaultShowsTabCloseButtons(t *testing.T) {
+	if !Default().Behavior.ShowTabCloseButtons {
+		t.Fatal("Default ShowTabCloseButtons = false, want true")
+	}
+}
+
 func TestDefaultUsesUnsavedStandardWindowPlacement(t *testing.T) {
 	got := Default().Window
 	if got.HasBounds || got.Maximized || got.Width != 1280 || got.Height != 800 {
@@ -41,6 +47,9 @@ func TestDecodeOldGUIConfigUsesDefaultWindowPlacement(t *testing.T) {
 	}
 	if got.Window != Default().Window {
 		t.Fatalf("Window placement = %#v, want %#v", got.Window, Default().Window)
+	}
+	if !got.Behavior.ShowTabCloseButtons {
+		t.Fatal("ShowTabCloseButtons = false, want true for old GUI config")
 	}
 }
 

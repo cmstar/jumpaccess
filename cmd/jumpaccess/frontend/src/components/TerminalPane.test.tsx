@@ -60,6 +60,7 @@ const preferences: Preferences = {
   terminalFontFamily: 'JetBrains Mono',
   terminalFontSize: 12,
   confirmCloseActiveSession: true,
+  showTabCloseButtons: true,
 }
 
 const disconnectedSession: SessionState = {

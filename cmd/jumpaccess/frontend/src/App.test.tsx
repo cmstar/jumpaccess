@@ -56,6 +56,7 @@ const bootstrapState: BootstrapState = {
     terminalFontFamily: 'JetBrains Mono',
     terminalFontSize: 13,
     confirmCloseActiveSession: true,
+    showTabCloseButtons: true,
   },
   workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
 }
@@ -568,11 +569,11 @@ test('设置页使用左侧导航和右侧单列滚动面板', async () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }))
 
     const navigation = screen.getByRole('navigation', { name: '设置导航' })
-    const navigationLabels = ['外观', '终端', '安全与行为', '关于 JumpAccess']
+    const navigationLabels = ['外观', '终端', 'Tab 行为', '关于 JumpAccess']
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(navigationLabels)
 
     const scrollContainer = screen.getByTestId('settings-scroll')
-    const sectionIDs = ['settings-appearance', 'settings-terminal', 'settings-security', 'settings-about']
+    const sectionIDs = ['settings-appearance', 'settings-terminal', 'settings-tabs', 'settings-about']
     expect(Array.from(scrollContainer.querySelectorAll(':scope > .settings-stack > section')).map((section) => section.id)).toEqual(sectionIDs)
 
     await user.click(within(navigation).getByRole('button', { name: '终端' }))
@@ -602,7 +603,7 @@ test('设置页滚动时同步选中对应的导航项', async () => {
   const sectionOffsets: Record<string, number> = {
     'settings-appearance': 0,
     'settings-terminal': 220,
-    'settings-security': 520,
+    'settings-tabs': 520,
     'settings-about': 760,
   }
   for (const [id, offsetTop] of Object.entries(sectionOffsets)) {
@@ -613,8 +614,34 @@ test('设置页滚动时同步选中对应的导航项', async () => {
   fireEvent.scroll(scrollContainer)
 
   const navigation = screen.getByRole('navigation', { name: '设置导航' })
-  expect(within(navigation).getByRole('button', { name: '安全与行为' })).toHaveAttribute('aria-current', 'location')
+  expect(within(navigation).getByRole('button', { name: 'Tab 行为' })).toHaveAttribute('aria-current', 'location')
   expect(within(navigation).getByRole('button', { name: '外观' })).not.toHaveAttribute('aria-current')
+})
+
+test('Tab 行为设置可隐藏关闭按钮且保留鼠标中键关闭', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  expect(screen.getByRole('button', { name: '关闭 资产 Tab' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+
+  const section = screen.getByRole('heading', { name: 'Tab 行为' }).closest('section')
+  expect(section).not.toBeNull()
+  expect(section!.querySelector('.lucide-panel-top-close')).toBeInTheDocument()
+  await user.click(within(section!).getByRole('switch', { name: '显示 Tab 关闭按钮' }))
+
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+    showTabCloseButtons: false,
+  })))
+  expect(screen.queryByRole('button', { name: '关闭 资产 Tab' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '关闭 设置 Tab' })).not.toBeInTheDocument()
+
+  const assetsTab = screen.getByRole('tab', { name: '资产' }).closest('.workspace-tab')
+  expect(assetsTab).not.toBeNull()
+  fireEvent(assetsTab!, new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+  expect(screen.queryByRole('tab', { name: '资产' })).not.toBeInTheDocument()
 })
 
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {
