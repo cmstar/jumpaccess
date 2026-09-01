@@ -132,6 +132,8 @@ jumpctl proxy <target> [--profile <name>] [--organization <org>] [--account <acc
 
 Proxy 模式是非交互的 SSH server façade：stdout 只承载 SSH 协议字节，诊断只写 stderr。它不会打开浏览器、选择 Account 或信任未知上游 host key。目标和 Account 必须由 Alias 或显式参数唯一确定。
 
+Windows 上，`jumpctl proxy` 会在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，如果兼容客户端已通过管道提供 stdin、stdout，且当前控制台只属于 `jumpctl`，进程会脱离该私有控制台。PowerShell、CMD、Windows Terminal、OpenSSH 等共享或交互控制台保持附着；检查无法确认时也保持原状。macOS 不执行这项 Windows 专用处理。远端程序的 stdout 和 stderr 仍作为 SSH channel 数据正常显示在客户端中，不能与 ProxyCommand stdout 上的原始 SSH 传输流混用。
+
 通用 OpenSSH 示例：
 
 ```sshconfig

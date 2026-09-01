@@ -10,9 +10,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type Server struct{}
+type Server struct {
+	OnConnected func()
+}
 
-func (Server) Run(ctx context.Context, transport net.Conn, hostKey ssh.Signer, upstream *ssh.Client) error {
+func (s Server) Run(ctx context.Context, transport net.Conn, hostKey ssh.Signer, upstream *ssh.Client) error {
 	if hostKey == nil {
 		return fmt.Errorf("ProxyCommand host key is unavailable")
 	}
@@ -26,6 +28,9 @@ func (Server) Run(ctx context.Context, transport net.Conn, hostKey ssh.Signer, u
 		return fmt.Errorf("accept ProxyCommand SSH client: %w", err)
 	}
 	defer serverConnection.Close()
+	if s.OnConnected != nil {
+		s.OnConnected()
+	}
 
 	stopped := make(chan struct{})
 	go func() {

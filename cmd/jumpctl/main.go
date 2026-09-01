@@ -14,6 +14,7 @@ import (
 	"github.com/cmstar/jumpaccess/internal/credential"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
 	"github.com/cmstar/jumpaccess/internal/oauth"
+	"github.com/cmstar/jumpaccess/internal/proxyconsole"
 	"github.com/cmstar/jumpaccess/internal/sshclient"
 	"github.com/cmstar/jumpaccess/internal/sshhostkey"
 	"github.com/cmstar/jumpaccess/internal/sshproxy"
@@ -112,7 +113,11 @@ func run() int {
 				fmt.Fprintf(os.Stderr, "warning: OAuth refresh failed: %v\n", err)
 			})
 			transport := stdioconn.New(os.Stdin, os.Stdout, nil)
-			return (sshproxy.Server{}).Run(ctx, transport, signer, upstream)
+			return (sshproxy.Server{
+				OnConnected: func() {
+					proxyconsole.DetachPrivateProxy(os.Stdin, os.Stdout)
+				},
+			}).Run(ctx, transport, signer, upstream)
 		},
 	})
 	if err := command.Execute(); err != nil {

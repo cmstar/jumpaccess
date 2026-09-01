@@ -36,6 +36,7 @@ internal/credential/# 私有文件凭据与原生凭据兼容适配
 internal/filelock/  # 多进程 Token 刷新锁
 internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
 internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
+internal/proxyconsole/ # Windows ProxyCommand 私有控制台脱离适配
 internal/sshclient/ # 直接 SSH 客户端会话
 internal/sshhostkey/# SSH gateway 主机密钥信任
 internal/sshproxy/  # 本地 SSH server 与上游 session 桥接
@@ -69,6 +70,7 @@ docs/               # 长期项目知识
 - 普通交互命令可以使用 stdout/stderr 与用户沟通。
 - `jumpctl proxy` 的 stdout 专用于 SSH 协议数据；日志、诊断和可操作错误只写 stderr。
 - Proxy 模式不得启动浏览器或请求交互选择。认证或目标解析失败时返回明确的非零退出码。
+- Windows 的 `proxy` 在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，只有 stdin、stdout 均不是 Console 句柄且当前控制台仅附着 `jumpctl` 一个进程，才以 best-effort 调用 `FreeConsole`。共享终端、交互句柄或任何检查失败时保持附着；非 Windows 平台不执行该优化。
 - CLI 文档和代码使用通用 `ProxyCommand` 术语，不增加 Tabby 专用标志、配置字段或包。
 - 错误信息和日志不得包含 Token、密码、Cookie、私钥或完整敏感响应。
 

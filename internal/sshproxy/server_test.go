@@ -39,13 +39,14 @@ func TestServerBridgesSessionRequestsStreamsAndExitStatus(t *testing.T) {
 	}
 	defer proxyListener.Close()
 	proxyDone := make(chan error, 1)
+	connected := make(chan struct{})
 	go func() {
 		serverSide, acceptErr := proxyListener.Accept()
 		if acceptErr != nil {
 			proxyDone <- acceptErr
 			return
 		}
-		proxyDone <- (Server{}).Run(context.Background(), serverSide, localSigner, upstream)
+		proxyDone <- (Server{OnConnected: func() { close(connected) }}).Run(context.Background(), serverSide, localSigner, upstream)
 	}()
 	clientSide, err := net.Dial("tcp", proxyListener.Addr().String())
 	if err != nil {
@@ -60,6 +61,11 @@ func TestServerBridgesSessionRequestsStreamsAndExitStatus(t *testing.T) {
 	outerConnection, channels, requests, err := ssh.NewClientConn(clientSide, "jumpaccess", outerConfig)
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-connected:
+	case <-time.After(time.Second):
+		t.Fatal("OnConnected was not called after the outer SSH handshake")
 	}
 	outer := ssh.NewClient(outerConnection, channels, requests)
 	if ok, _, err := outer.SendRequest("keepalive@openssh.com", true, nil); err != nil || !ok {
