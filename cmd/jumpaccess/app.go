@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 
 	jumpaccess "github.com/cmstar/jumpaccess"
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
 	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
@@ -18,14 +20,16 @@ import (
 
 // desktopApp 是 Wails 表现层入口，负责把共享应用服务适配为绑定方法和事件。
 type desktopApp struct {
-	ctx                context.Context
-	core               bootstrap.Runtime
-	preferences        guiconfig.Store
-	initialPreferences guiconfig.Config
-	window             desktopWindow
-	api                desktopapp.Service
-	sessions           *sshsessionapp.Manager
-	hostKeys           *desktopapp.HostKeyCoordinator
+	ctx                 context.Context
+	core                bootstrap.Runtime
+	preferences         guiconfig.Store
+	initialPreferences  guiconfig.Config
+	window              desktopWindow
+	api                 desktopapp.Service
+	sessions            *sshsessionapp.Manager
+	hostKeys            *desktopapp.HostKeyCoordinator
+	superviseAuth       func(context.Context)
+	stopAuthSupervision context.CancelFunc
 }
 
 type desktopWindow interface {
@@ -91,6 +95,23 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 			Preferences: preferences,
 		},
 	}
+	app.superviseAuth = authapp.ProfileSupervisor{
+		Config:      core.Store,
+		Credentials: core.Tokens,
+		Freshener:   core.AuthManager,
+		Interval:    core.Configuration.Behavior.RefreshCheckInterval.Duration,
+		OnError: func(profile string, err error) {
+			if profile == "" {
+				runtime.LogWarningf(app.context(), "OAuth 自动续期检查失败: %v", err)
+				return
+			}
+			if errors.Is(err, authapp.ErrLoginRequired) {
+				runtime.LogWarningf(app.context(), "Profile %q OAuth 授权已失效，需要在 Profile 页面重新登录", profile)
+				return
+			}
+			runtime.LogWarningf(app.context(), "Profile %q OAuth 自动续期失败: %v", profile, err)
+		},
+	}.Run
 	hostKeys := &desktopapp.HostKeyCoordinator{
 		Emit: func(prompt desktopapp.HostKeyPrompt) {
 			runtime.EventsEmit(app.context(), "ssh:host-key", prompt)
@@ -123,6 +144,14 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 
 func (a *desktopApp) startup(ctx context.Context) {
 	a.ctx = ctx
+	if a.stopAuthSupervision != nil {
+		a.stopAuthSupervision()
+	}
+	if a.superviseAuth != nil {
+		var supervisionContext context.Context
+		supervisionContext, a.stopAuthSupervision = context.WithCancel(ctx)
+		go a.superviseAuth(supervisionContext)
+	}
 	placement := a.initialPreferences.Window
 	if placement.HasBounds && !placement.Maximized {
 		a.window.SetPosition(ctx, placement.X, placement.Y)
@@ -161,5 +190,8 @@ func (a *desktopApp) saveWindowPlacement(ctx context.Context) error {
 }
 
 func (a *desktopApp) shutdown(context.Context) {
+	if a.stopAuthSupervision != nil {
+		a.stopAuthSupervision()
+	}
 	_ = a.sessions.CloseAll()
 }

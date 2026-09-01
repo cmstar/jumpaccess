@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
+	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/credential"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -118,6 +120,34 @@ func TestDesktopAppStartupRestoresSavedNormalWindowPosition(t *testing.T) {
 
 	if !window.positionSet || window.setX != -1200 || window.setY != 80 {
 		t.Fatalf("restored position = (%d, %d), set=%v", window.setX, window.setY, window.positionSet)
+	}
+}
+
+func TestDesktopAppRunsOAuthSupervisorForItsWholeLifecycle(t *testing.T) {
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	app := &desktopApp{
+		window:             &fakeDesktopWindow{},
+		initialPreferences: guiconfig.Default(),
+		superviseAuth: func(ctx context.Context) {
+			close(started)
+			<-ctx.Done()
+			close(stopped)
+		},
+		sessions: &sshsessionapp.Manager{},
+	}
+
+	app.startup(context.Background())
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("desktop startup did not start OAuth supervision")
+	}
+	app.shutdown(context.Background())
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("desktop shutdown did not stop OAuth supervision")
 	}
 }
 

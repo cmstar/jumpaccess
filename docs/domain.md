@@ -29,10 +29,11 @@ Alias 固定归属于 Profile，必须定位一个 Asset，Account 可为空。O
 1. 用户选择 Profile 并执行认证命令。
 2. JumpAccess 打开浏览器，完成 OAuth Authorization Code + PKCE 授权。
 3. Token 写入当前用户私有的 Profile 独立凭据文件，TOML 中不保存秘密。
-4. 程序启动或发起 API 请求时，根据 Token 有效期决定是否刷新。
-5. 长时间运行时可以定期检查并刷新 Token，但刷新结果不得改变现有 SSH Session 的连接状态。
+4. 程序发起 API 请求时，根据 Token 有效期决定是否刷新。
+5. 桌面 GUI 从启动到退出持续按配置周期检查所有已保存 Refresh Token 的 Profile，并自动发现运行期间新增、重新登录、退出登录或删除的 Profile；`jumpctl ssh` 和 `jumpctl proxy` 在各自进程运行期间检查所使用的 Profile。
+6. 监督器只在 Access Token 临近过期时请求刷新；刷新结果或失败不得改变现有 SSH Session 的连接状态。
 
-Refresh Token 已失效时，需要用户重新执行交互登录。Proxy 模式本身不打开浏览器。
+Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变化前，GUI 不重复尝试同一份已确认失效的 Refresh Token。Proxy 模式本身不打开浏览器。
 
 当前 GUI 登录会打开系统浏览器，并要求用户把 JumpServer 确认页中的 `jms://` 链接或完整确认页 URL 粘贴回应用。登录尝试的 state 与 PKCE verifier 只保存在当前 GUI 进程内；私有协议注册与跨进程回调尚未实现。
 

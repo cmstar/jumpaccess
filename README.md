@@ -4,7 +4,7 @@
 
 JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含 Go 编写的命令行程序 `jumpctl`，以及基于 Wails 2、React 和 TypeScript 的桌面 GUI；两个入口复用同一套领域与连接核心。
 
-项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已实现 Profile/Organization 切换、分页资产与 Alias 管理、手工 OAuth 回调、统一主题设置、浏览器式可恢复 Tab 工作区和多 xterm SSH 会话。Windows 使用自绘标题栏，macOS 保留原生 traffic lights。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
+项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已实现 Profile/Organization 切换、分页资产与 Alias 管理、手工 OAuth 回调、运行期间自动续期、统一主题设置、浏览器式可恢复 Tab 工作区和多 xterm SSH 会话。Windows 使用自绘标题栏，macOS 保留原生 traffic lights。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
 
 ## 项目目标
 
@@ -80,6 +80,8 @@ Host production-web
 ```
 
 当前开发版本的 `auth login` 默认使用手工回调：浏览器完成授权后，不要点击确认页的“确认”，而是复制页面中的 `jms://` 链接或浏览器地址栏的完整确认页 URL，粘贴到等待中的终端。`--manual` 可显式固定这一行为。正式发布后计划注册 `jms` 私有协议并默认自动接收回调，但永久保留 `--manual`，供官方客户端仍占用协议或系统不允许注册协议时使用。
+
+桌面 GUI 只要保持运行，就会按配置周期检查所有已保存 Refresh Token 的 Profile，并在 Access Token 临近过期时自动刷新；运行期间新增登录无需重启 GUI。Refresh Token 已过期或被撤销时仍需重新登录。
 
 `proxy` 模式不打开浏览器，也不提示选择 Account。缺少登录、Refresh Token 失效、目标或 Account 不唯一、上游主机尚未信任时，进程会在 SSH banner 之前失败，只向 stderr 写入可操作错误并返回非零状态。先运行 `jumpctl auth login` 完成授权；未知上游 gateway 需要先用 `jumpctl ssh` 进行一次人工指纹确认。
 
