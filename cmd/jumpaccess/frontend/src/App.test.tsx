@@ -109,6 +109,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     logout: vi.fn().mockResolvedValue(undefined),
     licenseText: vi.fn().mockResolvedValue('MIT License'),
     openConfig: vi.fn().mockResolvedValue(undefined),
+    listMonospaceFonts: vi.fn().mockResolvedValue([]),
     startSSHSession: vi.fn().mockResolvedValue(session),
     listSSHSessions: vi.fn().mockResolvedValue([]),
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
@@ -541,6 +542,83 @@ test('设置主题会持久化 GUI 独有偏好，许可证位于关于栏', asy
 
   await user.click(screen.getByRole('button', { name: '查看许可证' }))
   expect(await screen.findByRole('dialog', { name: '开源许可证' })).toHaveTextContent('MIT License')
+})
+
+test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {
+  const listMonospaceFonts = vi.fn().mockResolvedValue(['Menlo', 'JetBrains Mono', 'Fira Code'])
+  const backend = makeBackend({ listMonospaceFonts })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await waitFor(() => expect(listMonospaceFonts).toHaveBeenCalledTimes(1))
+
+  const fontInput = screen.getByLabelText('字体')
+  expect(fontInput).toHaveRole('combobox')
+  await user.click(screen.getByRole('button', { name: '展开字体列表' }))
+  const listbox = screen.getByRole('listbox', { name: '系统等宽字体' })
+  expect(within(listbox).getAllByRole('option')).toHaveLength(4)
+  expect(within(listbox).getByRole('option', { name: /monospace.*系统默认/ })).toBeVisible()
+  expect(within(listbox).getByRole('option', { name: 'Fira Code' })).toBeVisible()
+  expect(within(listbox).getByRole('option', { name: 'Menlo' })).toBeVisible()
+  expect(within(listbox).getByRole('option', { name: 'JetBrains Mono' })).toHaveAttribute('aria-selected', 'true')
+
+  await user.click(fontInput)
+  await user.clear(fontInput)
+  await user.type(fontInput, 'Fira')
+  expect(within(listbox).getByRole('option', { name: 'Fira Code' })).toBeVisible()
+  expect(within(listbox).queryByRole('option', { name: 'Menlo' })).not.toBeInTheDocument()
+  expect(backend.savePreferences).not.toHaveBeenCalled()
+  await user.click(within(listbox).getByRole('option', { name: 'Fira Code' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+    terminalFontFamily: 'Fira Code',
+  })))
+})
+
+test('系统字体枚举失败时保留 monospace 和手工字体输入', async () => {
+  const backend = makeBackend({ listMonospaceFonts: vi.fn().mockRejectedValue(new Error('unsupported')) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+
+  const fontInput = screen.getByLabelText('字体')
+  await user.click(screen.getByRole('button', { name: '展开字体列表' }))
+  const listbox = await screen.findByRole('listbox', { name: '系统等宽字体' })
+  expect(within(listbox).getByRole('option', { name: /monospace.*系统默认/ })).toBeVisible()
+
+  await user.click(fontInput)
+  await user.clear(fontInput)
+  await user.type(fontInput, 'Custom Mono')
+  await user.click(within(listbox).getByRole('option', { name: '使用 “Custom Mono”' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+    terminalFontFamily: 'Custom Mono',
+  })))
+})
+
+test('字体 Combobox 支持键盘选择和 Escape 撤销过滤', async () => {
+  const backend = makeBackend({ listMonospaceFonts: vi.fn().mockResolvedValue(['Menlo']) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const fontInput = screen.getByLabelText('字体')
+
+  await user.click(fontInput)
+  await user.keyboard('{ArrowDown}{Enter}')
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+    terminalFontFamily: 'monospace',
+  })))
+
+  await user.click(fontInput)
+  await user.clear(fontInput)
+  await user.type(fontInput, 'Men')
+  await user.keyboard('{Escape}')
+  expect(fontInput).toHaveValue('monospace')
+  expect(backend.savePreferences).toHaveBeenCalledTimes(1)
 })
 
 test('路由 SSH 状态、输出和主机密钥确认事件', async () => {

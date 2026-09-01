@@ -43,7 +43,7 @@ let state: BootstrapState = {
     { name: 'production', url: 'https://jump.example.com', organization: 'org-dev', aliasCount: 6, auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: new Date(Date.now() + 56 * 60_000).toISOString() } },
     { name: 'staging', url: 'https://staging-jump.example.com', organization: 'org-platform', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } },
   ],
-  preferences: { version: 1, theme: 'light', terminalFontFamily: 'JetBrains Mono', terminalFontSize: 12, confirmCloseActiveSession: true },
+  preferences: { version: 1, theme: 'light', terminalFontFamily: 'monospace', terminalFontSize: 12, confirmCloseActiveSession: true },
   workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
 }
 
@@ -109,6 +109,7 @@ export const previewBackend: Backend = {
   async logout(profile) { const item = state.profiles.find((value) => value.name === profile); if (item) item.auth.loggedIn = false },
   licenseText: () => delay('MIT License\n\nCopyright (c) 2026 Eric Ruan\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction.'),
   openConfig: async () => undefined,
+  listMonospaceFonts: () => delay(['Cascadia Mono', 'JetBrains Mono', 'Menlo']),
   async startSSHSession(request) {
     const asset = assets.find((item) => item.id === request.target || item.aliases.some((alias) => alias.name === request.target))
     const session: SessionState = { id: `session-${Date.now()}`, status: 'connecting', title: request.target, profile: request.profile, organization: request.organization, asset: asset?.id ?? request.target, account: request.account, error: '' }

@@ -8,6 +8,12 @@ func TestDefaultUsesTwelvePointTerminalFont(t *testing.T) {
 	}
 }
 
+func TestDefaultUsesSystemMonospaceFont(t *testing.T) {
+	if got := Default().Appearance.TerminalFontFamily; got != "monospace" {
+		t.Fatalf("Default terminal font family = %q, want monospace", got)
+	}
+}
+
 func TestDefaultUsesUnsavedStandardWindowPlacement(t *testing.T) {
 	got := Default().Window
 	if got.HasBounds || got.Maximized || got.Width != 1280 || got.Height != 800 {

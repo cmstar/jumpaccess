@@ -153,6 +153,7 @@ export interface Backend {
   logout(profile: string): Promise<void>
   licenseText(): Promise<string>
   openConfig(): Promise<void>
+  listMonospaceFonts(): Promise<string[]>
   startSSHSession(request: { profile: string; organization: string; target: string; account: string; columns: number; rows: number }): Promise<SessionState>
   listSSHSessions(): Promise<SessionState[]>
   writeSSHSession(id: string, data: string): Promise<void>
@@ -194,6 +195,7 @@ type DesktopBinding = {
   Logout(profile: string): Promise<void>
   LicenseText(): Promise<string>
   OpenConfig(): Promise<void>
+  ListMonospaceFonts(): Promise<string[]>
   StartSSHSession(request: Parameters<Backend['startSSHSession']>[0]): Promise<SessionState>
   ListSSHSessions(): Promise<SessionState[]>
   WriteSSHSession(id: string, data: string): Promise<void>
@@ -274,6 +276,7 @@ export const wailsBackend: Backend = {
   logout: (profile) => binding().Logout(profile),
   licenseText: () => binding().LicenseText(),
   openConfig: () => binding().OpenConfig(),
+  listMonospaceFonts: () => binding().ListMonospaceFonts(),
   startSSHSession: (request) => binding().StartSSHSession(request),
   listSSHSessions: () => binding().ListSSHSessions(),
   writeSSHSession: (id, data) => binding().WriteSSHSession(id, data),

@@ -7,6 +7,7 @@ import (
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
 	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
+	"github.com/cmstar/jumpaccess/internal/systemfont"
 	"github.com/cmstar/jumpaccess/internal/systemopen"
 )
 
@@ -130,6 +131,10 @@ func (a *desktopApp) LicenseText() string {
 
 func (a *desktopApp) OpenConfig() error {
 	return systemopen.Open(a.core.ConfigPath)
+}
+
+func (a *desktopApp) ListMonospaceFonts() ([]string, error) {
+	return systemfont.MonospacedFamilies()
 }
 
 func (a *desktopApp) StartSSHSession(request sshsessionapp.StartRequest) (sshsessionapp.StateEvent, error) {

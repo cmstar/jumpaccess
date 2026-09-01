@@ -42,6 +42,7 @@ internal/sshhostkey/# SSH gateway 主机密钥信任
 internal/sshproxy/  # 本地 SSH server 与上游 session 桥接
 internal/sshupstream/ # 共享上游 SSH gateway 拨号
 internal/stdioconn/ # ProxyCommand stdin/stdout 的 net.Conn 适配
+internal/systemfont/# Windows/macOS 已安装等宽字体枚举
 internal/systemopen/# 打开配置文件的平台适配
 internal/target/    # Profile、Alias 和远程目标解析
 internal/terminalprompt/ # Account 与主机密钥的直接模式提示
@@ -106,6 +107,7 @@ docs/               # 长期项目知识
 - 形成真实构建入口后，至少验证 Windows 与 macOS 目标构建；具体架构和发布矩阵随发布流程确定。
 - Windows 窗口使用 Wails `Frameless` 并保留 DWM 装饰，由 React 渲染标题栏和最小化/最大化/关闭按钮；只有标题栏空白区标记为可拖动。
 - macOS 使用 `TitleBarHiddenInset` 并保留左侧原生 traffic lights，前端不渲染右侧窗口控制按钮。
+- 终端字体候选在 Windows 通过 GDI 枚举并按 fixed-pitch 指标筛选，在 macOS 通过 CoreText family 与 monospace trait 筛选；其他目标或原生接口失败时返回空候选，由前端保留 `monospace` 和手工输入能力。
 
 ## 许可证与发布物
 

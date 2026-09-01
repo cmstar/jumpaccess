@@ -70,10 +70,10 @@ func Default() Config {
 		Version: CurrentVersion,
 		Appearance: Appearance{
 			Theme:              "system",
-			TerminalFontFamily: "JetBrains Mono",
+			TerminalFontFamily: "monospace",
 			TerminalFontSize:   12,
 		},
-		Behavior: Behavior{ConfirmCloseActiveSession: true},
+		Behavior:  Behavior{ConfirmCloseActiveSession: true},
 		Workspace: Workspace{Tabs: []WorkspaceTab{}},
 		Window: WindowPlacement{
 			Width:  DefaultWindowWidth,

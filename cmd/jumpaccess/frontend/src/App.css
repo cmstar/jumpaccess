@@ -1798,6 +1798,7 @@ details > summary::-webkit-details-marker {
   font-weight: 600;
 }
 
+.settings-card input,
 .settings-card select,
 .dialog-fields select,
 .dialog-fields input,
@@ -1829,12 +1830,139 @@ details > summary::-webkit-details-marker {
   cursor: not-allowed;
 }
 
+.settings-card input:focus,
 .settings-card select:focus,
 .dialog-fields select:focus,
 .dialog-fields input:focus,
 .dialog-fields textarea:focus {
   border-color: rgb(31 159 115 / 50%);
   box-shadow: 0 0 0 3px rgb(31 159 115 / 8%);
+}
+
+.terminal-font-field,
+.terminal-font-control {
+  position: relative;
+}
+
+.settings-card .terminal-font-control input {
+  padding-right: 36px;
+}
+
+.terminal-font-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 7px;
+  right: 1px;
+  display: grid;
+  width: 33px;
+  height: 33px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.terminal-font-toggle:hover {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.terminal-font-toggle svg {
+  width: 15px;
+  transition: transform 120ms ease;
+}
+
+.terminal-font-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.terminal-font-options {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  width: 100%;
+  max-height: 240px;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.terminal-font-options button {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  font-size: .7rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.terminal-font-options button:hover,
+.terminal-font-options button.active {
+  background: var(--surface-soft);
+}
+
+.terminal-font-options button[aria-selected="true"] {
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+
+.terminal-font-options button > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-font-options button > small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: .6rem;
+  font-weight: 500;
+}
+
+.terminal-font-options .selected-mark {
+  margin-left: auto;
+}
+
+.terminal-font-options button > small + .selected-mark {
+  margin-left: 0;
+}
+
+.terminal-font-options .terminal-font-custom {
+  margin-top: 3px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+}
+
+.terminal-font-empty {
+  padding: 12px 8px;
+  color: var(--muted);
+  font-size: .65rem;
+  text-align: center;
+}
+
+.settings-card .setting-help {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 500;
+  line-height: 1.45;
 }
 
 .setting-row {

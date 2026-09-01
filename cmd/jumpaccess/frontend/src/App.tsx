@@ -275,6 +275,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [pendingDisconnect, setPendingDisconnect] = useState<SSHTab | null>(null)
   const [pendingProfileLogout, setPendingProfileLogout] = useState<ProfileSummary | null>(null)
   const [pendingProfileDeletion, setPendingProfileDeletion] = useState<ProfileSummary | null>(null)
+  const [terminalFontFamilies, setTerminalFontFamilies] = useState<string[]>([])
+  const [terminalFontFamiliesLoaded, setTerminalFontFamiliesLoaded] = useState(false)
 
   const preferences = bootstrap?.preferences
   const currentProfile = bootstrap?.profiles.find((item) => item.name === profile)
@@ -443,6 +445,22 @@ export default function App({ backend = wailsBackend }: AppProps) {
     media.addEventListener('change', apply)
     return () => media.removeEventListener('change', apply)
   }, [preferences?.theme])
+
+  useEffect(() => {
+    if (activeTab?.kind !== 'settings' || terminalFontFamiliesLoaded) return
+    let cancelled = false
+    backend.listMonospaceFonts()
+      .then((families) => {
+        if (!cancelled) setTerminalFontFamilies(families)
+      })
+      .catch(() => {
+        if (!cancelled) setTerminalFontFamilies([])
+      })
+      .finally(() => {
+        if (!cancelled) setTerminalFontFamiliesLoaded(true)
+      })
+    return () => { cancelled = true }
+  }, [activeTab?.kind, backend, terminalFontFamiliesLoaded])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -793,7 +811,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
-        {activeTab?.kind === 'settings' ? <SettingsView onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
+        {activeTab?.kind === 'settings' ? <SettingsView fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
       </section>
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
@@ -1023,9 +1041,201 @@ function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { 
   return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono asset-id-value"><span className="asset-id-text" title={asset.id}>{asset.id}</span><button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions"><button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div></aside>
 }
 
-function SettingsView({ onLicense, onOpenConfig, onSave, preferences, version }: { onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+function TerminalFontInput({ families, onChange, value }: { families: string[]; onChange: (value: string) => void; value: string }) {
+  const input = useRef<HTMLInputElement>(null)
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const [editing, setEditing] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const root = useDismissiblePopover(open, () => {
+    setActiveIndex(-1)
+    setEditing(false)
+    setOpen(false)
+    setQuery('')
+  })
+  const options = useMemo(() => {
+    const unique = new Map<string, string>()
+    for (const family of ['monospace', ...families, value]) {
+      const trimmed = family.trim()
+      const key = trimmed.toLocaleLowerCase()
+      if (trimmed && !unique.has(key)) unique.set(key, trimmed)
+    }
+    return [...unique.values()].sort((left, right) => {
+      if (left === 'monospace') return -1
+      if (right === 'monospace') return 1
+      return left.localeCompare(right)
+    })
+  }, [families, value])
+  const normalizedQuery = query.trim()
+  const visibleOptions = editing && normalizedQuery
+    ? options.filter((family) => family.toLocaleLowerCase().includes(normalizedQuery.toLocaleLowerCase()))
+    : options
+  const exactOption = options.find((family) => family.toLocaleLowerCase() === normalizedQuery.toLocaleLowerCase())
+  const typedValue = exactOption ?? normalizedQuery
+  const customValue = editing && normalizedQuery && !exactOption
+    ? normalizedQuery
+    : ''
+  const selectableValues = customValue ? [...visibleOptions, customValue] : visibleOptions
+
+  useEffect(() => {
+    setActiveIndex(-1)
+    setEditing(false)
+    setQuery('')
+  }, [value])
+
+  const openAll = () => {
+    setActiveIndex(-1)
+    setEditing(false)
+    setOpen(true)
+    setQuery('')
+    input.current?.focus()
+    input.current?.select()
+  }
+
+  const close = () => {
+    setActiveIndex(-1)
+    setEditing(false)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const choose = (next: string) => {
+    close()
+    if (next !== value) onChange(next)
+  }
+
+  const moveActive = (direction: 1 | -1) => {
+    if (!open) openAll()
+    if (selectableValues.length === 0) return
+    setActiveIndex((current) => {
+      if (current < 0) return direction > 0 ? 0 : selectableValues.length - 1
+      return (current + direction + selectableValues.length) % selectableValues.length
+    })
+  }
+
+  return <div className="setting-field terminal-font-field" ref={root}>
+    <label htmlFor="terminal-font-family">字体</label>
+    <div className="terminal-font-control">
+      <input
+        aria-activedescendant={activeIndex >= 0 ? `terminal-font-option-${activeIndex}` : undefined}
+        aria-autocomplete="list"
+        aria-controls="terminal-font-options"
+        aria-describedby="terminal-font-help"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        autoComplete="off"
+        id="terminal-font-family"
+        onBlur={() => {
+          if (editing && typedValue) choose(typedValue)
+          else close()
+        }}
+        onChange={(event) => {
+          setActiveIndex(-1)
+          setEditing(true)
+          setOpen(true)
+          setQuery(event.target.value)
+        }}
+        onClick={() => {
+          if (!open) openAll()
+          else if (!editing) input.current?.select()
+        }}
+        onFocus={() => {
+          if (!open) openAll()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            moveActive(1)
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            moveActive(-1)
+          } else if (event.key === 'Enter') {
+            event.preventDefault()
+            const next = activeIndex >= 0 ? selectableValues[activeIndex] : typedValue
+            if (next) choose(next)
+            else close()
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            close()
+          }
+        }}
+        ref={input}
+        role="combobox"
+        spellCheck={false}
+        value={editing ? query : value}
+      />
+      <button
+        aria-controls="terminal-font-options"
+        aria-expanded={open}
+        aria-label={open ? '收起字体列表' : '展开字体列表'}
+        className="terminal-font-toggle"
+        onClick={() => open ? close() : openAll()}
+        onMouseDown={(event) => event.preventDefault()}
+        tabIndex={-1}
+        title={open ? '收起字体列表' : '展开字体列表'}
+        type="button"
+      ><ChevronDown /></button>
+      {open ? <div aria-label="系统等宽字体" className="terminal-font-options" id="terminal-font-options" role="listbox">
+      {visibleOptions.map((family, index) => {
+        const selected = family.toLocaleLowerCase() === value.toLocaleLowerCase()
+        return <button
+          aria-selected={selected}
+          className={index === activeIndex ? 'active' : ''}
+          id={`terminal-font-option-${index}`}
+          key={family}
+          onClick={() => choose(family)}
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseEnter={() => setActiveIndex(index)}
+          role="option"
+          tabIndex={-1}
+          type="button"
+        ><span>{family}</span>{family === 'monospace' ? <small>系统默认</small> : null}{selected ? <span aria-hidden="true" className="selected-mark">✓</span> : null}</button>
+      })}
+      {customValue ? <button
+        aria-selected="false"
+        className={`terminal-font-custom ${activeIndex === visibleOptions.length ? 'active' : ''}`}
+        id={`terminal-font-option-${visibleOptions.length}`}
+        onClick={() => choose(customValue)}
+        onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={() => setActiveIndex(visibleOptions.length)}
+        role="option"
+        tabIndex={-1}
+        type="button"
+      >使用 <strong>“{customValue}”</strong></button> : null}
+      {visibleOptions.length === 0 && !customValue ? <span className="terminal-font-empty">没有匹配的字体</span> : null}
+      </div> : null}
+    </div>
+    <small className="setting-help" id="terminal-font-help">输入名称可过滤系统等宽字体，也可直接填写未列出的字体。</small>
+  </div>
+}
+
+function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferences, version }: { fontFamilies: string[]; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
-  return <section className="full-pane settings-page"><PageHeading eyebrow="桌面偏好" title="设置"><button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button></PageHeading><div className="settings-grid"><section className="settings-card"><div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div><div className="segmented-control" aria-label="界面主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}</div></section><section className="settings-card"><div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div><label>字体<select value={preferences.terminalFontFamily} onChange={(event) => update({ terminalFontFamily: event.target.value })}><option>JetBrains Mono</option><option>Cascadia Mono</option><option>Menlo</option><option>monospace</option></select></label><label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label></section><section className="settings-card wide"><div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div><div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div></section><section className="settings-card wide about-settings-card"><div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div></section></div></section>
+  return <section className="full-pane settings-page">
+    <PageHeading eyebrow="桌面偏好" title="设置">
+      <button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button>
+    </PageHeading>
+    <div className="settings-grid">
+      <section className="settings-card">
+        <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div>
+        <div className="segmented-control" aria-label="界面主题">
+          {([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}
+        </div>
+      </section>
+      <section className="settings-card">
+        <div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div>
+        <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
+        <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
+      </section>
+      <section className="settings-card wide">
+        <div className="settings-card-title"><ShieldCheck /><div><h2>安全与行为</h2><p>主机密钥校验强度不可在 GUI 中关闭。</p></div></div>
+        <div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div>
+      </section>
+      <section className="settings-card wide about-settings-card">
+        <div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div>
+      </section>
+    </div>
+  </section>
 }
 
 function Modal({ children, description, onClose, title }: { children: ReactNode; description?: string; onClose: () => void; title: string }) {
