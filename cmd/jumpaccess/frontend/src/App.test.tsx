@@ -450,6 +450,16 @@ test('资产详情不显示 Gateway 主机密钥提示', async () => {
   expect(screen.queryByText('严格校验 Gateway 主机密钥')).not.toBeInTheDocument()
 })
 
+test('资产详情中的 Asset ID 使用保留开头的可收缩文本元素', async () => {
+  render(<App backend={makeBackend()} />)
+
+  const copyButton = await screen.findByRole('button', { name: '复制 Asset ID' })
+  const value = copyButton.parentElement?.querySelector('.asset-id-text')
+
+  expect(value).toHaveTextContent('asset-1')
+  expect(value).toHaveAttribute('title', 'asset-1')
+})
+
 test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
@@ -570,7 +580,7 @@ test('远端断开后保留 SSH Tab 并追加 Enter 重连提示', async () => {
   terminalWrites.length = 0
   render(<App backend={backend} />)
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '使用 production-web 连接' }))
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
   await screen.findByRole('tab', { name: /production-web/ })
 
   act(() => stateHandler({

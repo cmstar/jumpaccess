@@ -7,6 +7,7 @@ import type { Backend, Preferences, SessionState } from '../lib/backend'
 const terminalMock = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   keyHandler: undefined as ((event: KeyboardEvent) => boolean) | undefined,
+  options: undefined as { fontFamily?: string; fontSize?: number } | undefined,
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
 }))
 
@@ -14,6 +15,7 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 120
     rows = 34
+    constructor(options: { fontFamily?: string; fontSize?: number }) { terminalMock.options = options }
     loadAddon() {}
     open() {}
     write() {}
@@ -58,6 +60,17 @@ const disconnectedSession: SessionState = {
   account: 'account-1',
   error: '',
 }
+
+test('终端字号保持设置值，不跟随应用 UI 字体缩放', () => {
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+
+  render(<TerminalPane backend={backend} output="" preferences={preferences} session={disconnectedSession} />)
+
+  expect(terminalMock.options).toMatchObject({ fontFamily: 'JetBrains Mono', fontSize: 12 })
+})
 
 test('SSH 断开后不再把普通字符写入旧 Session', () => {
   const writeSSHSession = vi.fn().mockResolvedValue(undefined)
