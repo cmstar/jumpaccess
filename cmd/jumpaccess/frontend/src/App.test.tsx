@@ -165,8 +165,9 @@ test('没有可用 Profile 时启动后自动打开 Profile 页面', async () =>
   expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByRole('tab', { name: '资产' })).toHaveAttribute('aria-selected', 'false')
-  const authStatus = screen.getByRole('button', { name: '认证状态：未选择 Profile，需要登录' })
-  expect(authStatus.querySelector('.auth-indicator')).toHaveClass('offline')
+  const profileButton = screen.getByRole('button', { name: '打开 Profile，认证状态：未选择 Profile，需要登录' })
+  expect(profileButton.querySelector('.profile-status-icon .auth-indicator')).toHaveClass('offline')
+  expect(screen.queryByRole('button', { name: /^认证状态：/ })).not.toBeInTheDocument()
 })
 
 test('当前 Profile 未登录时启动后自动打开 Profile 页面', async () => {
@@ -202,7 +203,7 @@ test('Tab 激活控件使用标准 tab 语义和 roving tabindex', async () => {
   const assetsTab = await screen.findByRole('tab', { name: '资产' })
   expect(assetsTab.tagName).toBe('BUTTON')
   expect(assetsTab).toHaveAttribute('tabindex', '0')
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
 
   expect(screen.getByRole('tab', { name: '资产' })).toHaveAttribute('tabindex', '-1')
   expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('tabindex', '0')
@@ -253,7 +254,7 @@ test('鼠标拖拽 Tab 会调整顺序并保存工作区', async () => {
   render(<App backend={backend} />)
 
   await screen.findByRole('tab', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   await user.click(screen.getByRole('button', { name: '打开设置' }))
   await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({
     tabs: [
@@ -403,8 +404,8 @@ test('顶部单例页不重复打开，且允许关闭最后一个 Tab', async (
   render(<App backend={backend} />)
   await screen.findByRole('heading', { name: '资产' })
 
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   expect(screen.getAllByRole('tab')).toHaveLength(2)
   await user.click(screen.getByRole('button', { name: '关闭 Profile Tab' }))
   await user.click(screen.getByRole('button', { name: '关闭 资产 Tab' }))
@@ -413,13 +414,13 @@ test('顶部单例页不重复打开，且允许关闭最后一个 Tab', async (
   await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith({ activeTabId: '', tabs: [] }))
 })
 
-test('macOS 保留原生 traffic lights，认证图标右侧不渲染自定义窗口按钮', async () => {
+test('macOS 保留原生 traffic lights，Profile 状态图标右侧不渲染自定义窗口按钮', async () => {
   const platform = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
   render(<App backend={makeBackend()} />)
 
   await screen.findByRole('heading', { name: '资产' })
   expect(screen.queryByLabelText('窗口控制')).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '认证状态：production，已认证' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '打开 Profile，认证状态：production，已认证' })).toBeInTheDocument()
   platform.mockRestore()
 })
 
@@ -685,7 +686,7 @@ test('Profile 和 Organization 上下文只在资产界面显示', async () => {
   expect(await screen.findByRole('button', { name: '当前 Organization：研发中心' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /快速连接/ })).not.toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   expect(screen.queryByRole('button', { name: '当前 Profile：production' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '当前 Organization：研发中心' })).not.toBeInTheDocument()
 
@@ -775,7 +776,7 @@ test('创建 Alias 后局部更新并保留已有账号显示缓存', async () =
   expect(backend.listAssets).toHaveBeenCalledTimes(callsBeforeCreate)
 })
 
-test('资产请求自动续期后同步顶部认证状态并仅在悬停提示显示到期时间', async () => {
+test('资产请求自动续期后同步 Profile 图标状态并仅在悬停提示显示到期时间', async () => {
   const expiredState: BootstrapState = {
     ...bootstrapState,
     profiles: bootstrapState.profiles.map((item) => ({
@@ -797,12 +798,13 @@ test('资产请求自动续期后同步顶部认证状态并仅在悬停提示�
 
   await screen.findByRole('heading', { name: '资产' })
   await waitFor(() => expect(backend.getAuthStatus).toHaveBeenCalledWith('production'))
-  const status = screen.getByRole('button', { name: '认证状态：production，已认证' })
-  expect(status).toHaveClass('authenticated')
-  expect(status).not.toHaveTextContent('已认证')
-  expect(status.querySelector('svg')).toBeInTheDocument()
-  expect(status.querySelector('.auth-indicator')).toBeInTheDocument()
-  expect(status).toHaveAttribute('title', expect.stringMatching(/production · 已认证 · \d+ 分钟后到期/))
+  const profileButton = screen.getByRole('button', { name: '打开 Profile，认证状态：production，已认证' })
+  expect(profileButton).toHaveClass('profile-auth-button')
+  expect(profileButton.querySelectorAll('svg')).toHaveLength(1)
+  expect(profileButton.querySelector('.profile-status-icon .auth-indicator')).toBeInTheDocument()
+  expect(profileButton).toHaveAttribute('title', expect.stringMatching(/Profile · production · 已认证 · \d+ 分钟后到期/))
+  expect(screen.queryByRole('button', { name: /^认证状态：/ })).not.toBeInTheDocument()
+  expect(within(screen.getByRole('navigation', { name: '顶部快捷操作' })).getAllByRole('button')).toHaveLength(3)
   expect(screen.queryByText(/分钟后到期/)).not.toBeInTheDocument()
 })
 
@@ -844,11 +846,11 @@ test('浏览器登录弹窗说明支持原生回调和完整确认页 URL', asyn
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: 'Profile' })
-  const status = screen.getByRole('button', { name: '认证状态：production，需要登录' })
-  expect(status).toHaveClass('offline')
-  expect(status).not.toHaveTextContent('需要登录')
-  expect(status.querySelector('svg')).toBeInTheDocument()
-  expect(status.querySelector('.auth-indicator')).toHaveClass('offline')
+  const profileButton = screen.getByRole('button', { name: '打开 Profile，认证状态：production，需要登录' })
+  expect(profileButton).toHaveClass('profile-auth-button')
+  expect(profileButton.querySelectorAll('svg')).toHaveLength(1)
+  expect(profileButton.querySelector('.profile-status-icon .auth-indicator')).toHaveClass('offline')
+  expect(screen.queryByRole('button', { name: /^认证状态：/ })).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '登录' }))
 
   const dialog = await screen.findByRole('dialog', { name: '完成浏览器登录' })
@@ -896,7 +898,7 @@ test('新建并登录 Profile 后保持原来的当前 Profile', async () => {
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   await user.click(screen.getByRole('button', { name: '添加 Profile' }))
   const addDialog = await screen.findByRole('dialog', { name: '添加 Profile' })
   await user.type(within(addDialog).getByLabelText('名称'), 'staging')
@@ -923,7 +925,7 @@ test('重复的 Profile 名称错误显示在创建弹窗内', async () => {
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   await user.click(screen.getByRole('button', { name: '添加 Profile' }))
   const dialog = await screen.findByRole('dialog', { name: '添加 Profile' })
   await user.type(within(dialog).getByLabelText('名称'), 'production')
@@ -953,7 +955,7 @@ test('编辑 Profile URL 后保留 Profile，并要求重新登录', async () =>
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   const card = screen.getByRole('heading', { name: 'production' }).closest('article')!
   await user.click(within(card).getByRole('button', { name: '编辑 production Profile' }))
 
@@ -988,7 +990,7 @@ test('退出 Profile 登录前要求确认', async () => {
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   const card = screen.getByRole('heading', { name: 'production' }).closest('article')!
   await user.click(within(card).getByRole('button', { name: '退出' }))
 
@@ -1040,7 +1042,7 @@ test('Profile 卡片展示 Server URL，并在警告确认后删除全部本地�
   render(<App backend={backend} />)
 
   await screen.findByRole('heading', { name: '资产' })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   const card = screen.getByRole('heading', { name: 'temporary' }).closest('article')!
   expect(within(card).getByText('Server URL')).toBeInTheDocument()
   expect(within(card).getByText('https://temporary.example.test')).toBeInTheDocument()
@@ -1075,7 +1077,7 @@ test('删除 Profile 时由后端统一关闭活动 Session，前端不重复关
 
   await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
   await screen.findByRole('tab', { name: /production-web/ })
-  await user.click(screen.getByRole('button', { name: '打开 Profile' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
   const card = screen.getByRole('heading', { name: 'production' }).closest('article')!
   await user.click(within(card).getByRole('button', { name: '删除 production Profile' }))
   await user.click(within(await screen.findByRole('dialog', { name: '删除 Profile' })).getByRole('button', { name: '删除 production Profile' }))

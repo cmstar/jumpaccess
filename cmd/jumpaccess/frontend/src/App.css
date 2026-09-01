@@ -234,21 +234,17 @@
   flex: 0 0 auto;
 }
 
-.auth-status {
+.profile-status-icon {
+  display: grid;
   position: relative;
+  width: 15px;
+  height: 15px;
+  place-items: center;
 }
 
-.auth-status.authenticated {
-  color: var(--accent-strong);
-}
-
-.auth-status.offline {
-  color: var(--danger);
-}
-
-.auth-status .auth-indicator {
-  right: 8px;
-  bottom: 8px;
+.profile-status-icon .auth-indicator {
+  right: -3px;
+  bottom: -3px;
 }
 
 .window-controls button {

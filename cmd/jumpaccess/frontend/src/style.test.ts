@@ -20,6 +20,12 @@ test('顶部 Tab 保持放大前的视觉字号', () => {
   expect(appStyles).toMatch(/\.tab-activate small\s*{[^}]*font-size:\s*\.5rem/s)
 })
 
+test('Profile 认证状态点固定在图标右下角', () => {
+  expect(appStyles).toMatch(/\.profile-status-icon\s*{[^}]*position:\s*relative[^}]*width:\s*15px[^}]*height:\s*15px/s)
+  expect(appStyles).toMatch(/\.profile-status-icon \.auth-indicator\s*{[^}]*right:\s*-3px[^}]*bottom:\s*-3px/s)
+  expect(appStyles).not.toMatch(/\.auth-status(?:\s|\.|\{|:)/)
+})
+
 test('设置页使用清晰的标题、正文和控件层级', () => {
   expect(appStyles).toMatch(/\.settings-card-title h2\s*{[^}]*font-size:\s*\.8rem[^}]*font-weight:\s*650/s)
   expect(appStyles).toMatch(/\.settings-card-title p\s*{[^}]*font-size:\s*\.65rem[^}]*font-weight:\s*450/s)

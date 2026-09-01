@@ -913,15 +913,14 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick,
     <div className="titlebar-drag-region" onDoubleClick={() => runtime?.WindowToggleMaximise?.()} />
     <nav aria-label="顶部快捷操作" className="titlebar-actions">
       <button aria-label="打开资产" className="titlebar-button" onClick={() => onOpenSingleton('assets')} title="资产" type="button"><Boxes /></button>
-      <button aria-label="打开 Profile" className="titlebar-button" onClick={() => onOpenSingleton('profiles')} title="Profile" type="button"><Layers3 /></button>
-      <button aria-label="打开设置" className="titlebar-button" onClick={() => onOpenSingleton('settings')} title="设置" type="button"><Settings /></button>
       <button
-        aria-label={`认证状态：${profile || '未选择 Profile'}，${auth.title}`}
-        className={`titlebar-button auth-status ${auth.offline ? 'offline' : 'authenticated'}`}
+        aria-label={`打开 Profile，认证状态：${profile || '未选择 Profile'}，${auth.title}`}
+        className="titlebar-button profile-auth-button"
         onClick={() => onOpenSingleton('profiles')}
-        title={`${profile || '未选择 Profile'} · ${auth.title} · ${auth.description}`}
+        title={`Profile · ${profile || '未选择 Profile'} · ${auth.title} · ${auth.description}`}
         type="button"
-      >{auth.offline ? <ShieldAlert /> : <ShieldCheck />}<span className={`auth-indicator ${auth.offline ? 'offline' : ''}`.trim()} /></button>
+      ><span className="profile-status-icon"><Layers3 /><span aria-hidden="true" className={`auth-indicator ${auth.offline ? 'offline' : ''}`.trim()} /></span></button>
+      <button aria-label="打开设置" className="titlebar-button" onClick={() => onOpenSingleton('settings')} title="设置" type="button"><Settings /></button>
     </nav>
     {!mac ? <div aria-label="窗口控制" className="window-controls">
       <button aria-label="最小化" onClick={() => runtime?.WindowMinimise?.()} type="button"><Minus /></button>
