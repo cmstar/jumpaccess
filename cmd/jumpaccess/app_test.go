@@ -22,6 +22,12 @@ type fakeDesktopWindow struct {
 	normal        bool
 	setX, setY    int
 	positionSet   bool
+	setWidth      int
+	setHeight     int
+	sizeSet       bool
+	centered      bool
+	shown         bool
+	minimized     bool
 }
 
 func (w *fakeDesktopWindow) GetPosition(context.Context) (int, int) { return w.x, w.y }
@@ -31,6 +37,12 @@ func (w *fakeDesktopWindow) IsNormal(context.Context) bool          { return w.n
 func (w *fakeDesktopWindow) SetPosition(_ context.Context, x, y int) {
 	w.setX, w.setY, w.positionSet = x, y, true
 }
+func (w *fakeDesktopWindow) SetSize(_ context.Context, width, height int) {
+	w.setWidth, w.setHeight, w.sizeSet = width, height, true
+}
+func (w *fakeDesktopWindow) Center(context.Context)   { w.centered = true }
+func (w *fakeDesktopWindow) Show(context.Context)     { w.shown = true }
+func (w *fakeDesktopWindow) Minimize(context.Context) { w.minimized = true; w.normal = false }
 
 func TestNewDesktopAppUsesSharedAndGUIConfigFiles(t *testing.T) {
 	root := t.TempDir()
@@ -71,6 +83,9 @@ func TestWailsOptionsRestoreSavedWindowSizeAndMaximizedState(t *testing.T) {
 	if got.WindowStartState != options.Maximised {
 		t.Fatalf("window start state = %v, want maximised", got.WindowStartState)
 	}
+	if !got.StartHidden {
+		t.Fatal("StartHidden = false, want startup to place the window before showing it")
+	}
 }
 
 func TestConfigureWindowChromeUsesFramelessDecoratedWindowOnWindows(t *testing.T) {
@@ -106,8 +121,15 @@ func TestConfigureWindowChromeUsesNativeInsetTitleBarOnMacOS(t *testing.T) {
 }
 
 func TestDesktopAppStartupRestoresSavedNormalWindowPosition(t *testing.T) {
-	window := &fakeDesktopWindow{}
-	app := &desktopApp{window: window, initialPreferences: guiconfig.Default()}
+	window := &fakeDesktopWindow{x: 300, y: 100, width: 1100, height: 700}
+	app := &desktopApp{
+		window:             window,
+		initialPreferences: guiconfig.Default(),
+		goos:               "windows",
+		displayAreas: func(context.Context) ([]displayArea, error) {
+			return dualDisplays, nil
+		},
+	}
 	app.initialPreferences.Window = guiconfig.WindowPlacement{
 		HasBounds: true,
 		X:         -1200,
@@ -116,10 +138,40 @@ func TestDesktopAppStartupRestoresSavedNormalWindowPosition(t *testing.T) {
 		Height:    700,
 	}
 
-	app.startup(context.Background())
+	app.domReady(context.Background())
 
 	if !window.positionSet || window.setX != -1200 || window.setY != 80 {
 		t.Fatalf("restored position = (%d, %d), set=%v", window.setX, window.setY, window.positionSet)
+	}
+	if !window.shown {
+		t.Fatal("startup did not show the window after restoring its position")
+	}
+}
+
+func TestDesktopAppMinimizeAndRestoreKeepsTheSameDisplay(t *testing.T) {
+	window := &fakeDesktopWindow{x: -1200, y: 80, width: 1100, height: 700, normal: true}
+	app := &desktopApp{
+		ctx:    context.Background(),
+		window: window,
+		goos:   "windows",
+		displayAreas: func(context.Context) ([]displayArea, error) {
+			return dualDisplays, nil
+		},
+	}
+
+	app.MinimizeWindow()
+	if !window.minimized {
+		t.Fatal("MinimizeWindow did not minimize the native window")
+	}
+
+	// 模拟系统错误地把窗口恢复到主屏；获得焦点后的可见性校正应移回左屏。
+	window.normal = true
+	window.x, window.y = 100, 80
+	window.positionSet = false
+	app.EnsureWindowVisible()
+
+	if !window.positionSet || window.setX != -1200 || window.setY != 80 {
+		t.Fatalf("restored position = (%d, %d), set=%v, want left display", window.setX, window.setY, window.positionSet)
 	}
 }
 
@@ -197,6 +249,37 @@ func TestDesktopAppBeforeCloseSavesMaximizedStateWithoutReplacingNormalBounds(t 
 	want.Maximized = true
 	if got.Window != want {
 		t.Fatalf("window placement = %#v, want %#v", got.Window, want)
+	}
+}
+
+func TestDesktopAppBeforeCloseMaximizedWithoutNormalBoundsRemembersCurrentDisplay(t *testing.T) {
+	store := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
+	preferences := guiconfig.Default()
+	if err := store.Save(preferences); err != nil {
+		t.Fatal(err)
+	}
+	window := &fakeDesktopWindow{x: -1920, y: 0, width: 1920, height: 1080, maximized: true}
+	app := &desktopApp{
+		preferences:        store,
+		initialPreferences: preferences,
+		window:             window,
+		goos:               "windows",
+		displayAreas: func(context.Context) ([]displayArea, error) {
+			return dualDisplays, nil
+		},
+	}
+
+	app.beforeClose(context.Background())
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Window.HasBounds || !got.Window.Maximized || got.Window.Display != "left" {
+		t.Fatalf("window placement = %#v, want maximized bounds on left display", got.Window)
+	}
+	if got.Window.X != 320 || got.Window.Y != 120 || got.Window.Width != 1280 || got.Window.Height != 800 {
+		t.Fatalf("normal fallback bounds = %#v, want centered default size", got.Window)
 	}
 }
 

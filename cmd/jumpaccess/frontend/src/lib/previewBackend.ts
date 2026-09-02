@@ -115,6 +115,8 @@ export const previewBackend: Backend = {
     return clone(renamed)
   },
   async setAliasAccount(request) { for (const asset of assets) asset.aliases = asset.aliases.map((alias) => alias.name === request.name ? { ...alias, account: request.account } : alias) },
+  async minimizeWindow() {},
+  async ensureWindowVisible() {},
   async savePreferences(preferences: Preferences) { state = { ...state, preferences: clone(preferences) } },
   async saveWorkspace(workspace) { state = { ...state, workspace: clone(workspace) } },
   async getAuthStatus(profile) { return clone(state.profiles.find((item) => item.name === profile)!.auth) },

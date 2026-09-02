@@ -108,6 +108,8 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     deleteAlias: vi.fn().mockResolvedValue(undefined),
     renameAlias: vi.fn().mockResolvedValue(assetPage.results[0].aliases[0]),
     setAliasAccount: vi.fn().mockResolvedValue(undefined),
+    minimizeWindow: vi.fn().mockResolvedValue(undefined),
+    ensureWindowVisible: vi.fn().mockResolvedValue(undefined),
     savePreferences: vi.fn().mockResolvedValue(undefined),
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
     getAuthStatus: vi.fn().mockResolvedValue(bootstrapState.profiles[0].auth),
@@ -322,6 +324,19 @@ test('Windows 关闭按钮等待工作区保存完成后再退出', async () => 
   } finally {
     window.runtime = previousRuntime
   }
+})
+
+test('Windows 最小化交给后端记录当前显示器，恢复焦点时校正窗口可见性', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '最小化' }))
+  expect(backend.minimizeWindow).toHaveBeenCalledTimes(1)
+
+  fireEvent.focus(window)
+  expect(backend.ensureWindowVisible).toHaveBeenCalledTimes(1)
 })
 
 test('恢复 SSH Tab 时保持断连并且不自动连接', async () => {

@@ -510,6 +510,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }, [activeTab?.kind])
 
   useEffect(() => {
+    const ensureWindowVisible = () => {
+      void backend.ensureWindowVisible().catch(() => undefined)
+    }
+    window.addEventListener('focus', ensureWindowVisible)
+    return () => window.removeEventListener('focus', ensureWindowVisible)
+  }, [backend])
+
+  useEffect(() => {
     if (!quickOpen || !profile || !organization || !currentProfileLoggedIn || assets.results.length > 0) return
     const timer = window.setTimeout(() => {
       backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
@@ -842,6 +850,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         auth={currentAuth}
         onActivate={(id) => dispatchTabs({ type: 'activate', id })}
         onClose={requestCloseTab}
+        onMinimize={() => void backend.minimizeWindow()}
         onOpenQuick={() => setQuickOpen(true)}
         onOpenSingleton={openSingleton}
         onMove={(id, toIndex) => dispatchTabs({ type: 'move', id, toIndex })}
@@ -907,11 +916,12 @@ function tabIcon(tab: AppTab) {
   return <TerminalSquare />
 }
 
-function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
   activeTabID: string
   auth: ReturnType<typeof authPresentation>
   onActivate: (id: string) => void
   onClose: (tab: AppTab) => void
+  onMinimize: () => void
   onMove: (id: string, toIndex: number) => void
   onOpenQuick: () => void
   onOpenSingleton: (kind: SingletonTabKind) => void
@@ -1013,7 +1023,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMove, onOpenQuick,
       <button aria-label="打开设置" className="titlebar-button" onClick={() => onOpenSingleton('settings')} title="设置" type="button"><Settings /></button>
     </nav>
     {!mac ? <div aria-label="窗口控制" className="window-controls">
-      <button aria-label="最小化" onClick={() => runtime?.WindowMinimise?.()} type="button"><Minus /></button>
+      <button aria-label="最小化" onClick={onMinimize} type="button"><Minus /></button>
       <button aria-label="最大化或还原" onClick={() => runtime?.WindowToggleMaximise?.()} type="button"><Square /></button>
       <button aria-label="关闭窗口" className="window-close" onClick={onQuit} type="button"><X /></button>
     </div> : null}

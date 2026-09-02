@@ -62,7 +62,7 @@ docs/               # 长期项目知识
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前包含主题、终端字体、字号、Tab 关闭按钮显示、关闭活动会话确认、窗口最大化/普通边界，以及 Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `2`，包含主题、终端字体、字号、Tab 关闭按钮显示、关闭活动会话确认、窗口最大化/普通边界，以及 Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。窗口边界以显示器标识和工作区相对坐标保存，启动恢复必须在显示窗口前校验当前显示器拓扑并把窗口限制在可见工作区；目标显示器缺失时在主显示器居中。GUI schema v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标；读取时保留原值，由恢复逻辑按平台迁移为 v2。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
 
 默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。`jumpctl ssh`、`jumpctl proxy` 和桌面 GUI 使用独立的刷新监督器；GUI 监督器覆盖所有保存了 Refresh Token 的 Profile，每轮重新读取配置和凭据以发现运行期间的变化，并在桌面程序退出时取消。刷新失败会报告告警，但监督器不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 
@@ -107,6 +107,7 @@ docs/               # 长期项目知识
 - 形成真实构建入口后，至少验证 Windows 与 macOS 目标构建；具体架构和发布矩阵随发布流程确定。
 - Windows 窗口使用 Wails `Frameless` 并保留 DWM 装饰，由 React 渲染标题栏和最小化/最大化/关闭按钮；只有标题栏空白区标记为可拖动。
 - macOS 使用 `TitleBarHiddenInset` 并保留左侧原生 traffic lights，前端不渲染右侧窗口控制按钮。
+- Windows 通过 `EnumDisplayMonitors` 与显示器工作区恢复窗口；macOS 通过 AppKit `NSScreen` 恢复窗口。不得把 Wails 在不同平台返回的窗口坐标直接当作统一的虚拟桌面绝对坐标持久化。
 - 终端字体候选在 Windows 通过 GDI 枚举并按 fixed-pitch 指标筛选，在 macOS 通过 CoreText family 与 monospace trait 筛选；其他目标或原生接口失败时返回空候选，由前端保留 `monospace` 和手工输入能力。
 
 ## 许可证与发布物

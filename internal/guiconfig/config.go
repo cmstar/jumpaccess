@@ -8,7 +8,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 const (
 	DefaultWindowWidth  = 1280
@@ -55,15 +55,17 @@ type WorkspaceTab struct {
 	Alias        string `toml:"alias,omitempty" json:"alias,omitempty"`
 }
 
-// WindowPlacement 保存桌面窗口最近一次退出时的状态。坐标和尺寸始终表示普通窗口状态，
+// WindowPlacement 保存桌面窗口最近一次退出时的状态。Display 标识目标显示器，
+// X/Y 是该显示器工作区内的相对坐标；坐标和尺寸始终表示普通窗口状态，
 // 避免最大化或最小化时的临时边界覆盖用户调整过的位置和大小。
 type WindowPlacement struct {
-	HasBounds bool `toml:"has_bounds"`
-	Maximized bool `toml:"maximized"`
-	X         int  `toml:"x"`
-	Y         int  `toml:"y"`
-	Width     int  `toml:"width"`
-	Height    int  `toml:"height"`
+	HasBounds bool   `toml:"has_bounds"`
+	Maximized bool   `toml:"maximized"`
+	Display   string `toml:"display,omitempty"`
+	X         int    `toml:"x"`
+	Y         int    `toml:"y"`
+	Width     int    `toml:"width"`
+	Height    int    `toml:"height"`
 }
 
 func Default() Config {
@@ -95,6 +97,11 @@ func Decode(data []byte) (Config, error) {
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
 	}
+	if result.Version == 1 {
+		// Version 1 没有保存显示器标识；X/Y 在 Windows 是虚拟桌面绝对坐标，
+		// 在 macOS 是当前显示器相对坐标。保留原值并由窗口恢复逻辑完成一次性解释。
+		result.Version = CurrentVersion
+	}
 	if err := result.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -124,6 +131,14 @@ func (c Config) Validate() error {
 	}
 	if c.Window.Width < MinimumWindowWidth || c.Window.Height < MinimumWindowHeight {
 		return fmt.Errorf("window size must be at least %dx%d", MinimumWindowWidth, MinimumWindowHeight)
+	}
+	if display := strings.TrimSpace(c.Window.Display); display != c.Window.Display {
+		return fmt.Errorf("window.display is invalid")
+	}
+	for _, character := range c.Window.Display {
+		if unicode.IsControl(character) {
+			return fmt.Errorf("window.display is invalid")
+		}
 	}
 	if err := validateWorkspace(c.Workspace); err != nil {
 		return err

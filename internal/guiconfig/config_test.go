@@ -48,8 +48,28 @@ func TestDecodeOldGUIConfigUsesDefaultWindowPlacement(t *testing.T) {
 	if got.Window != Default().Window {
 		t.Fatalf("Window placement = %#v, want %#v", got.Window, Default().Window)
 	}
+	if got.Version != CurrentVersion {
+		t.Fatalf("Version = %d, want migrated current version %d", got.Version, CurrentVersion)
+	}
 	if !got.Behavior.ShowTabCloseButtons {
 		t.Fatal("ShowTabCloseButtons = false, want true for old GUI config")
+	}
+}
+
+func TestDecodeMigratesVersionOneWindowCoordinatesWithoutInventingDisplay(t *testing.T) {
+	got, err := Decode([]byte("" +
+		"version = 1\n" +
+		"[window]\n" +
+		"has_bounds = true\n" +
+		"x = -1200\n" +
+		"y = 80\n" +
+		"width = 1100\n" +
+		"height = 700\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != CurrentVersion || got.Window.Display != "" || got.Window.X != -1200 || got.Window.Y != 80 {
+		t.Fatalf("migrated config = %#v", got)
 	}
 }
 

@@ -52,9 +52,11 @@ func newWailsOptions(app *desktopApp) *options.App {
 		},
 		BackgroundColour: &options.RGBA{R: 246, G: 247, B: 249, A: 1},
 		OnStartup:        app.startup,
+		OnDomReady:       app.domReady,
 		OnBeforeClose:    app.beforeClose,
 		OnShutdown:       app.shutdown,
 		WindowStartState: windowStartState,
+		StartHidden:      true,
 		Bind: []interface{}{
 			app,
 		},

@@ -151,6 +151,8 @@ export interface Backend {
   deleteAlias(profile: string, name: string): Promise<void>
   renameAlias(request: { profile: string; currentName: string; newName: string }): Promise<Alias>
   setAliasAccount(request: { profile: string; name: string; account: string }): Promise<void>
+  minimizeWindow(): Promise<void>
+  ensureWindowVisible(): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
   saveWorkspace(workspace: Workspace): Promise<void>
   getAuthStatus(profile: string): Promise<AuthStatus>
@@ -195,6 +197,8 @@ type DesktopBinding = {
   DeleteAlias(profile: string, name: string): Promise<void>
   RenameAlias(request: Parameters<Backend['renameAlias']>[0]): Promise<Alias>
   SetAliasAccount(request: Parameters<Backend['setAliasAccount']>[0]): Promise<void>
+  MinimizeWindow(): Promise<void>
+  EnsureWindowVisible(): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
   SaveWorkspace(workspace: Workspace): Promise<void>
   GetAuthStatus(profile: string): Promise<AuthStatus>
@@ -281,6 +285,8 @@ export const wailsBackend: Backend = {
   deleteAlias: (profile, name) => binding().DeleteAlias(profile, name),
   renameAlias: (request) => binding().RenameAlias(request),
   setAliasAccount: (request) => binding().SetAliasAccount(request),
+  minimizeWindow: () => binding().MinimizeWindow(),
+  ensureWindowVisible: () => binding().EnsureWindowVisible(),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
   saveWorkspace: (workspace) => binding().SaveWorkspace(workspace),
   getAuthStatus: (profile) => binding().GetAuthStatus(profile),

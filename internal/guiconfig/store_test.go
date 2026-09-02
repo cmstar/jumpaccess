@@ -85,7 +85,7 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 			{ID: "ssh-1", Type: "ssh", Profile: "production", Organization: "org-1", Target: "production-web", Account: "account-1", AssetID: "asset-1", AssetName: "prod-web-01", Alias: "production-web"},
 		},
 	}
-	want.Window = WindowPlacement{HasBounds: true, Maximized: true, X: -1200, Y: 80, Width: 1100, Height: 700}
+	want.Window = WindowPlacement{HasBounds: true, Maximized: true, Display: `\\.\DISPLAY2`, X: 720, Y: 80, Width: 1100, Height: 700}
 
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save returned error: %v", err)
