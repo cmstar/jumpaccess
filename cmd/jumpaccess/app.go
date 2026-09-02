@@ -138,6 +138,9 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 		EmitOutput: func(event sshsessionapp.OutputEvent) {
 			runtime.EventsEmit(app.context(), "ssh:output", event)
 		},
+		EmitLatency: func(event sshsessionapp.LatencyEvent) {
+			runtime.EventsEmit(app.context(), "ssh:latency", event)
+		},
 	}
 	return app, nil
 }

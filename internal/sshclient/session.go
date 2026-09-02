@@ -133,6 +133,17 @@ func (s *Session) Resize(columns, rows int) error {
 	return nil
 }
 
+// ProbeLatency 测量一次到 JumpServer SSH 网关的协议往返时间。
+// 网关拒绝未知请求时仍然完成了应答，因此也构成有效测量。
+func (s *Session) ProbeLatency() (time.Duration, error) {
+	started := time.Now()
+	_, _, err := s.client.SendRequest("keepalive@openssh.com", true, nil)
+	if err != nil {
+		return 0, fmt.Errorf("measure JumpServer SSH gateway latency: %w", err)
+	}
+	return time.Since(started), nil
+}
+
 func (s *Session) Wait() error {
 	err := s.remote.Wait()
 	_ = s.Close()

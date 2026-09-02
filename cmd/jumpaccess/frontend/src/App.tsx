@@ -47,6 +47,7 @@ import {
   type Organization,
   type Preferences,
   type ProfileSummary,
+  type SessionLatency,
   type SessionState,
   type ThemeMode,
   type Workspace,
@@ -261,6 +262,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
   const [aliasFilter, setAliasFilter] = useState<AliasFilter>('all')
   const [sessionDirectories, setSessionDirectories] = useState<Record<string, string>>({})
+  const [sessionLatencies, setSessionLatencies] = useState<Record<string, SessionLatency>>({})
   const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
@@ -327,10 +329,21 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
+  function clearSessionLatency(sessionID: string) {
+    if (!sessionID) return
+    setSessionLatencies((current) => {
+      if (!(sessionID in current)) return current
+      const next = { ...current }
+      delete next[sessionID]
+      return next
+    })
+  }
+
   function applySessionState(event: SessionState, tabID: string) {
     if (event.status !== 'active' && event.status !== 'closed' && event.status !== 'failed') return
     dispatchTabs({ type: 'session-state', sessionID: event.id, status: event.status, error: event.error })
     if (event.status === 'closed' || event.status === 'failed') {
+      clearSessionLatency(event.id)
       clearSessionDirectory(tabID)
       appendDisconnectedPrompt(tabID)
       void backend.closeSSHSession(event.id).catch(() => undefined)
@@ -352,6 +365,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
           .filter((tab): tab is SSHTab => tab.kind === 'ssh')
           .map((tab) => [tab.id, disconnectedMessage])))
         setSessionDirectories({})
+        setSessionLatencies({})
         workspaceReady.current = true
       })
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
@@ -375,11 +389,15 @@ export default function App({ backend = wailsBackend }: AppProps) {
         [tab.id]: ((current[tab.id] ?? '') + event.data).slice(-terminalBufferLimit),
       }))
     })
+    const offLatency = backend.onSessionLatency((event) => {
+      setSessionLatencies((current) => ({ ...current, [event.id]: event }))
+    })
     const offHostKey = backend.onHostKeyPrompt(setHostKeyPrompt)
     return () => {
       cancelled = true
       offState()
       offOutput()
+      offLatency()
       offHostKey()
       connectionAttempts.current.clear()
       pendingSessionStates.current.clear()
@@ -628,6 +646,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
       if (connectionAttempts.current.get(tabID) !== attempt || !tabStillExists) {
         pendingSessionStates.current.delete(session.id)
         await backend.closeSSHSession(session.id)
+        clearSessionLatency(session.id)
         return
       }
       dispatchTabs({ type: 'attach-session', tabID, sessionID: session.id })
@@ -731,6 +750,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         return
       }
       if (currentTab.kind === 'ssh' && currentTab.sessionID) await backend.closeSSHSession(currentTab.sessionID)
+      if (currentTab.kind === 'ssh' && currentTab.sessionID) clearSessionLatency(currentTab.sessionID)
       dispatchTabs({ type: 'close', id: currentTab.id })
       if (currentTab.kind === 'ssh') setSessionOutput((current) => {
         const next = { ...current }
@@ -751,6 +771,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
       dispatchTabs({ type: 'drop-profile', profile: item.name })
       setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedTabIDs.has(id))))
       setSessionDirectories((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedTabIDs.has(id))))
+      const removedSessionIDs = new Set(removedTabs.flatMap((tab) => tab.sessionID ? [tab.sessionID] : []))
+      setSessionLatencies((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedSessionIDs.has(id))))
       setPendingProfileDeletion(null)
       setDetails({})
       setSelectedAssetID('')
@@ -833,7 +855,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
           </div>
         ) : null}
 
-        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} currentDirectory={sessionDirectories[activeTab.id] ?? ''} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
+        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -989,9 +1011,10 @@ function StartPage({ onAction }: { onAction: (action: SingletonTabKind | 'quick'
   </section>
 }
 
-function SSHView({ backend, currentDirectory, onCurrentDirectoryChange, onDisconnect, onReconnect, output, preferences, tab }: {
+function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onReconnect, output, preferences, tab }: {
   backend: Backend
   currentDirectory: string
+  latency?: SessionLatency
   onCurrentDirectoryChange: (directory: string) => void
   onDisconnect: () => void
   onReconnect: () => void
@@ -1022,13 +1045,29 @@ function SSHView({ backend, currentDirectory, onCurrentDirectoryChange, onDiscon
   const statusLabel = status === 'active' ? '已连接'
     : status === 'connecting' ? '连接中'
       : status === 'failed' ? '连接失败' : '未连接'
+  const latencyAvailable = status === 'active' && latency?.available
+  const showLatency = status === 'active' || status === 'connecting'
+  const latencyText = latencyAvailable ? `${latency.milliseconds} ms` : '— ms'
+  const latencyClass = status === 'closed' || status === 'failed'
+    ? 'offline'
+    : !latencyAvailable
+      ? 'latency-pending'
+      : latency.milliseconds < 100
+        ? 'latency-good'
+        : latency.milliseconds <= 200 ? 'latency-warning' : 'latency-slow'
+  const latencyTitle = latencyAvailable
+    ? `${statusLabel} · 到 JumpServer SSH 网关的往返延迟 ${latency.milliseconds} ms`
+    : status === 'active' ? `${statusLabel} · 正在检测 JumpServer SSH 网关延迟` : statusLabel
   return <section className="terminal-panel tab-terminal">
     <div className="terminal-toolbar">
       <div className="terminal-toolbar-info">
         <strong className="terminal-toolbar-name">{descriptor.alias || assetName}</strong>
         {descriptor.alias && assetName ? <small className="terminal-toolbar-meta">{assetName}</small> : null}
         {descriptor.assetID ? <small className="terminal-toolbar-meta" title={descriptor.assetID}>{descriptor.assetID}</small> : null}
-        <span aria-label={`连接状态：${statusLabel}`} className={`status-dot terminal-connection-status ${status === 'active' ? '' : 'offline'}`} role="img" title={statusLabel} />
+        <span className={`terminal-connection-metric${showLatency ? '' : ' latency-hidden'}`} title={latencyTitle}>
+          <span aria-label={`连接状态：${statusLabel}`} className={`status-dot terminal-connection-status ${latencyClass}`} role="img" />
+          {showLatency ? <small className="terminal-latency-value">{latencyText}</small> : null}
+        </span>
       </div>
       <div className="terminal-toolbar-actions">
         <button aria-label="复制当前路径" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={currentDirectory || '当前目录不可用'} type="button"><Copy /></button>

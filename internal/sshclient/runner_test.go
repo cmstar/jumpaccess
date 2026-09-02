@@ -50,6 +50,13 @@ func TestOpenStreamsInputOutputAndResizesTerminal(t *testing.T) {
 	if err := session.Resize(120, 36); err != nil {
 		t.Fatalf("Resize returned error: %v", err)
 	}
+	latency, err := session.ProbeLatency()
+	if err != nil {
+		t.Fatalf("ProbeLatency returned error: %v", err)
+	}
+	if latency < 0 {
+		t.Fatalf("latency = %v, want non-negative duration", latency)
+	}
 	if err := session.Wait(); err != nil {
 		t.Fatalf("Wait returned error: %v", err)
 	}

@@ -46,6 +46,9 @@ test('Asset ID 保留开头并在末尾显示省略号', () => {
   expect(appStyles).toMatch(/\.asset-id-value > button\s*{[^}]*flex:\s*0 0 auto/s)
 })
 
-test('SSH 连接状态灯为外圈保留空间并与文字做光学居中', () => {
-  expect(appStyles).toMatch(/\.terminal-connection-status\s*{[^}]*margin-right:\s*3px[^}]*transform:\s*translateY\(\.5px\)/s)
+test('SSH 连接状态灯与延迟文本保持固定间距并做光学居中', () => {
+  expect(appStyles).toMatch(/\.terminal-connection-metric\s*{[^}]*display:\s*inline-flex[^}]*flex:\s*none[^}]*gap:\s*5px/s)
+  expect(appStyles).toMatch(/\.terminal-connection-metric\.latency-hidden\s*{[^}]*padding-right:\s*3px/s)
+  expect(appStyles).toMatch(/\.terminal-connection-status\s*{[^}]*flex:\s*none[^}]*transform:\s*translateY\(\.5px\)/s)
+  expect(appStyles).toMatch(/\.terminal-latency-value\s*{[^}]*min-width:\s*34px[^}]*white-space:\s*nowrap/s)
 })

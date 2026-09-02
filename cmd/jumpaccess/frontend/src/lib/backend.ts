@@ -118,6 +118,12 @@ export interface SessionOutput {
   data: string
 }
 
+export interface SessionLatency {
+  id: string
+  milliseconds: number
+  available: boolean
+}
+
 export interface HostKeyPrompt {
   id: string
   host: string
@@ -163,6 +169,7 @@ export interface Backend {
   resolveSSHHostKey(id: string, accepted: boolean): Promise<void>
   onSessionState(handler: (event: SessionState) => void): () => void
   onSessionOutput(handler: (event: SessionOutput) => void): () => void
+  onSessionLatency(handler: (event: SessionLatency) => void): () => void
   onHostKeyPrompt(handler: (event: HostKeyPrompt) => void): () => void
 }
 
@@ -290,5 +297,6 @@ export const wailsBackend: Backend = {
   resolveSSHHostKey: (id, accepted) => binding().ResolveSSHHostKey(id, accepted),
   onSessionState: (handler) => subscribe('ssh:state', handler),
   onSessionOutput: (handler) => subscribe('ssh:output', handler),
+  onSessionLatency: (handler) => subscribe('ssh:latency', handler),
   onHostKeyPrompt: (handler) => subscribe('ssh:host-key', handler),
 }

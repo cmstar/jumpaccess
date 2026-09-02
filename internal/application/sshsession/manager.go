@@ -56,6 +56,12 @@ type OutputEvent struct {
 	Data string `json:"data"`
 }
 
+type LatencyEvent struct {
+	ID           string `json:"id"`
+	Milliseconds int64  `json:"milliseconds"`
+	Available    bool   `json:"available"`
+}
+
 type Preparer interface {
 	Prepare(context.Context, connectapp.Options) (connectapp.Prepared, error)
 }
@@ -63,6 +69,7 @@ type Preparer interface {
 type TerminalSession interface {
 	io.WriteCloser
 	Resize(columns, rows int) error
+	ProbeLatency() (time.Duration, error)
 	Wait() error
 }
 
@@ -75,8 +82,10 @@ type Manager struct {
 	Timeout         time.Duration
 	EmitState       func(StateEvent)
 	EmitOutput      func(OutputEvent)
+	EmitLatency     func(LatencyEvent)
 	BatchInterval   time.Duration
 	BatchSize       int
+	LatencyInterval time.Duration
 
 	mu       sync.Mutex
 	sessions map[string]*managedSession
@@ -181,9 +190,43 @@ func (m *Manager) run(ctx context.Context, id string, request StartRequest) {
 		}
 	}
 	m.emitState(state)
+	latencyContext, stopLatency := context.WithCancel(ctx)
+	if m.EmitLatency != nil {
+		go m.monitorLatency(latencyContext, id, terminal)
+	}
 	err = terminal.Wait()
+	stopLatency()
 	_ = output.Close()
 	m.finish(id, ctx, err)
+}
+
+func (m *Manager) monitorLatency(ctx context.Context, id string, terminal TerminalSession) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		latency, err := terminal.ProbeLatency()
+		if ctx.Err() != nil {
+			return
+		}
+		event := LatencyEvent{ID: id}
+		if err == nil {
+			event.Available = true
+			event.Milliseconds = max(latency.Milliseconds(), 0)
+		}
+		m.emitLatency(event)
+
+		timer := time.NewTimer(m.latencyInterval())
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 func (m *Manager) dimensions(id string) (int, int, bool) {
@@ -342,6 +385,12 @@ func (m *Manager) emitOutput(event OutputEvent) {
 	}
 }
 
+func (m *Manager) emitLatency(event LatencyEvent) {
+	if m.EmitLatency != nil {
+		m.EmitLatency(event)
+	}
+}
+
 func (m *Manager) batchInterval() time.Duration {
 	if m.BatchInterval > 0 {
 		return m.BatchInterval
@@ -354,6 +403,13 @@ func (m *Manager) batchSize() int {
 		return m.BatchSize
 	}
 	return 32 * 1024
+}
+
+func (m *Manager) latencyInterval() time.Duration {
+	if m.LatencyInterval > 0 {
+		return m.LatencyInterval
+	}
+	return 3 * time.Second
 }
 
 func newSessionID() (string, error) {

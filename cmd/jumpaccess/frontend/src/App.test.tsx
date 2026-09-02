@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
 import App from './App'
-import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionOutput, SessionState } from './lib/backend'
+import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionLatency, SessionOutput, SessionState } from './lib/backend'
 
 const { terminalKeyHandlers, terminalOscHandlers, terminalWrites } = vi.hoisted(() => ({
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
@@ -126,6 +126,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     resolveSSHHostKey: vi.fn().mockResolvedValue(undefined),
     onSessionState: vi.fn().mockReturnValue(() => undefined),
     onSessionOutput: vi.fn().mockReturnValue(() => undefined),
+    onSessionLatency: vi.fn().mockReturnValue(() => undefined),
     onHostKeyPrompt: vi.fn().mockReturnValue(() => undefined),
     ...overrides,
   }
@@ -988,6 +989,7 @@ test('资产请求自动续期后同步 Profile 图标状态并仅在悬停提�
 
 test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC 7 启用路径复制', async () => {
   let stateHandler: (event: SessionState) => void = () => undefined
+  let latencyHandler: (event: SessionLatency) => void = () => undefined
   const activeSession: SessionState = {
     id: 'live-1', status: 'active', title: 'production-web', profile: 'production',
     organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '',
@@ -995,6 +997,7 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   const backend = makeBackend({
     startSSHSession: vi.fn().mockResolvedValue(activeSession),
     onSessionState: vi.fn((handler) => { stateHandler = handler; return () => undefined }),
+    onSessionLatency: vi.fn((handler) => { latencyHandler = handler; return () => undefined }),
   })
   const user = userEvent.setup()
   const writeClipboard = vi.spyOn(navigator.clipboard, 'writeText')
@@ -1008,8 +1011,15 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   expect(Array.from(toolbar.querySelectorAll('.terminal-toolbar-name, .terminal-toolbar-meta')).map((item) => item.textContent)).toEqual([
     'production-web', 'prod-web-01', 'asset-1',
   ])
-  expect(within(toolbar).getByRole('img', { name: '连接状态：已连接' })).not.toHaveClass('offline')
+  expect(within(toolbar).getByRole('img', { name: '连接状态：已连接' })).toHaveClass('latency-pending')
+  expect(within(toolbar).getByText('— ms')).toBeInTheDocument()
   expect(toolbar).not.toHaveTextContent('active')
+
+  for (const [milliseconds, indicatorClass] of [[99, 'latency-good'], [100, 'latency-warning'], [200, 'latency-warning'], [201, 'latency-slow']] as const) {
+    act(() => latencyHandler({ id: 'live-1', milliseconds, available: true }))
+    expect(within(toolbar).getByRole('img', { name: '连接状态：已连接' })).toHaveClass(indicatorClass)
+    expect(within(toolbar).getByText(`${milliseconds} ms`)).toBeInTheDocument()
+  }
 
   const copyDirectory = within(toolbar).getByRole('button', { name: '复制当前路径' })
   expect(copyDirectory).toBeDisabled()
@@ -1025,6 +1035,7 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   expect(copyDirectory).toBeDisabled()
   expect(disconnect).toBeDisabled()
   expect(within(toolbar).getByRole('img', { name: '连接状态：未连接' })).toHaveClass('offline')
+  expect(within(toolbar).queryByText('— ms')).not.toBeInTheDocument()
 })
 
 test('标题栏断开按钮只断开活动 Session 并保留 SSH Tab', async () => {
@@ -1063,7 +1074,10 @@ test('连接不可用时标题栏显示红灯并禁用断开和路径复制', as
 
   const disconnect = await screen.findByRole('button', { name: '断开 production-web SSH 连接' })
   const toolbar = disconnect.closest<HTMLElement>('.terminal-toolbar')!
-  expect(within(toolbar).getByRole('img', { name: '连接状态：未连接' })).toHaveClass('offline')
+  const disconnectedIndicator = within(toolbar).getByRole('img', { name: '连接状态：未连接' })
+  expect(disconnectedIndicator).toHaveClass('offline')
+  expect(disconnectedIndicator.closest('.terminal-connection-metric')).toHaveClass('latency-hidden')
+  expect(within(toolbar).queryByText(/ms$/)).not.toBeInTheDocument()
   expect(within(toolbar).getByRole('button', { name: '复制当前路径' })).toBeDisabled()
   expect(disconnect).toBeDisabled()
 })

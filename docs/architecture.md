@@ -63,7 +63,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
 
-直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
+直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
 ### 通用 ProxyCommand
 

@@ -2302,15 +2302,53 @@ details > summary::-webkit-details-marker {
   content: "·";
 }
 
+.terminal-connection-metric {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.terminal-connection-metric.latency-hidden {
+  padding-right: 3px;
+}
+
 .terminal-connection-status {
   flex: none;
-  margin-right: 3px;
   transform: translateY(.5px);
+}
+
+.terminal-connection-status.latency-pending {
+  background: color-mix(in srgb, var(--muted) 68%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.terminal-connection-status.latency-good {
+  background: var(--accent);
+}
+
+.terminal-connection-status.latency-warning {
+  background: #d0a126;
+  box-shadow: 0 0 0 3px rgb(208 161 38 / 12%);
+}
+
+.terminal-connection-status.latency-slow {
+  background: #dd782d;
+  box-shadow: 0 0 0 3px rgb(221 120 45 / 12%);
 }
 
 .terminal-connection-status.offline {
   background: var(--danger);
   box-shadow: 0 0 0 3px rgb(188 68 77 / 12%);
+}
+
+.terminal-latency-value {
+  min-width: 34px;
+  font-size: .6rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .terminal-toolbar-actions {

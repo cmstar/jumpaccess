@@ -44,11 +44,13 @@ func (f *fakePreparer) Prepare(_ context.Context, options connectapp.Options) (c
 }
 
 type fakeTerminalSession struct {
-	mu        sync.Mutex
-	writes    bytes.Buffer
-	resizes   [][2]int
-	closed    chan struct{}
-	closeOnce sync.Once
+	mu         sync.Mutex
+	writes     bytes.Buffer
+	resizes    [][2]int
+	latency    time.Duration
+	latencyErr error
+	closed     chan struct{}
+	closeOnce  sync.Once
 }
 
 func newFakeTerminalSession() *fakeTerminalSession {
@@ -68,6 +70,10 @@ func (s *fakeTerminalSession) Resize(columns, rows int) error {
 	return nil
 }
 
+func (s *fakeTerminalSession) ProbeLatency() (time.Duration, error) {
+	return s.latency, s.latencyErr
+}
+
 func (s *fakeTerminalSession) Wait() error {
 	<-s.closed
 	return nil
@@ -76,6 +82,51 @@ func (s *fakeTerminalSession) Wait() error {
 func (s *fakeTerminalSession) Close() error {
 	s.closeOnce.Do(func() { close(s.closed) })
 	return nil
+}
+
+func TestManagerLatencyIntervalDefaultsToThreeSeconds(t *testing.T) {
+	manager := &Manager{}
+	if got := manager.latencyInterval(); got != 3*time.Second {
+		t.Fatalf("latency interval = %s, want 3s", got)
+	}
+}
+
+func TestManagerEmitsGatewayLatencyForActiveSession(t *testing.T) {
+	states := make(chan StateEvent, 4)
+	latencies := make(chan LatencyEvent, 2)
+	terminal := newFakeTerminalSession()
+	terminal.latency = 149 * time.Millisecond
+	manager := &Manager{
+		Prepare: &fakePreparer{},
+		HostKeyCallback: func(context.Context) (ssh.HostKeyCallback, error) {
+			return ssh.InsecureIgnoreHostKey(), nil
+		},
+		Open:            func(context.Context, sshclient.OpenOptions) (TerminalSession, error) { return terminal, nil },
+		EmitState:       func(event StateEvent) { states <- event },
+		EmitLatency:     func(event LatencyEvent) { latencies <- event },
+		LatencyInterval: time.Hour,
+	}
+
+	session, err := manager.Start(context.Background(), StartRequest{
+		Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, states, session.ID, StatusActive)
+
+	select {
+	case event := <-latencies:
+		if event.ID != session.ID || !event.Available || event.Milliseconds != 149 {
+			t.Fatalf("latency event = %#v, want available 149 ms for %q", event, session.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for SSH gateway latency")
+	}
+
+	if err := manager.Close(session.ID); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestManagerRunsIndependentSessionsAndBatchesOutput(t *testing.T) {

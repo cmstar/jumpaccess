@@ -6,6 +6,7 @@ import type {
   BootstrapState,
   HostKeyPrompt,
   Preferences,
+  SessionLatency,
   SessionOutput,
   SessionState,
 } from './backend'
@@ -50,6 +51,7 @@ let state: BootstrapState = {
 let sessions: SessionState[] = []
 const stateHandlers = new Set<(event: SessionState) => void>()
 const outputHandlers = new Set<(event: SessionOutput) => void>()
+const latencyHandlers = new Set<(event: SessionLatency) => void>()
 const hostKeyHandlers = new Set<(event: HostKeyPrompt) => void>()
 
 const delay = <T>(value: T, milliseconds = 90) => new Promise<T>((resolve) => window.setTimeout(() => resolve(value), milliseconds))
@@ -120,6 +122,7 @@ export const previewBackend: Backend = {
       const remoteDirectory = `/home/${request.account || 'user'}`
       sessions = sessions.map((item) => item.id === active.id ? active : item)
       stateHandlers.forEach((handler) => handler(active))
+      latencyHandlers.forEach((handler) => handler({ id: active.id, milliseconds: 42, available: true }))
       outputHandlers.forEach((handler) => handler({ id: active.id, data: `Connecting through JumpServer gateway…\r\nConnected to ${asset?.name ?? request.target}\r\n\r\n\x1b]7;file://${remoteName}${encodeURI(remoteDirectory)}\x1b\\${request.account}@${remoteName}:~$ ` }))
     }, 500)
     return clone(session)
@@ -131,5 +134,6 @@ export const previewBackend: Backend = {
   resolveSSHHostKey: async () => undefined,
   onSessionState(handler) { stateHandlers.add(handler); return () => stateHandlers.delete(handler) },
   onSessionOutput(handler) { outputHandlers.add(handler); return () => outputHandlers.delete(handler) },
+  onSessionLatency(handler) { latencyHandlers.add(handler); return () => latencyHandlers.delete(handler) },
   onHostKeyPrompt(handler) { hostKeyHandlers.add(handler); return () => hostKeyHandlers.delete(handler) },
 }
