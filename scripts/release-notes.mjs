@@ -88,7 +88,7 @@ export function renderReleaseNotes({ commits, previousTag, repository, tag }) {
     `- \`jumpaccess-${tag}-darwin-universal.zip\`：macOS Universal 桌面 GUI`,
     '- `checksums.txt`：所有发布文件的 SHA-256 校验值',
     '',
-    '> Windows 可执行文件尚未进行 Authenticode 签名；macOS 可执行文件尚未进行 Developer ID 签名与 Apple notarization。首次运行时操作系统可能显示安全提示。',
+    '> 可执行文件没有进行 Windows/macOS 签名，新下载的文件首次运行时操作系统可能显示安全提醒，放行后可正常使用，后续不会再次提示。',
     '',
     '## 完整变更',
     '',
