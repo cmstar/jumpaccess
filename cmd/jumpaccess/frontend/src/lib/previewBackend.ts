@@ -100,6 +100,20 @@ export const previewBackend: Backend = {
     return clone(alias)
   },
   async deleteAlias(_profile, name) { for (const asset of assets) asset.aliases = asset.aliases.filter((alias) => alias.name !== name) },
+  async renameAlias(request) {
+    let renamed: Alias | undefined
+    for (const asset of assets) {
+      asset.aliases = asset.aliases.map((alias) => {
+        if (alias.name !== request.currentName) return alias
+        renamed = { ...alias, name: request.newName }
+        return renamed
+      })
+      const detail = details.get(asset.id)
+      if (detail) details.set(asset.id, { ...detail, aliases: asset.aliases })
+    }
+    if (!renamed) throw new Error(`Alias ${request.currentName} 不存在`)
+    return clone(renamed)
+  },
   async setAliasAccount(request) { for (const asset of assets) asset.aliases = asset.aliases.map((alias) => alias.name === request.name ? { ...alias, account: request.account } : alias) },
   async savePreferences(preferences: Preferences) { state = { ...state, preferences: clone(preferences) } },
   async saveWorkspace(workspace) { state = { ...state, workspace: clone(workspace) } },

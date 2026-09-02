@@ -89,6 +89,10 @@ func (a *desktopApp) DeleteAlias(profile, name string) error {
 	return a.api.DeleteAlias(profile, name)
 }
 
+func (a *desktopApp) RenameAlias(request desktopapp.RenameAliasRequest) (desktopapp.AliasView, error) {
+	return a.api.RenameAlias(request)
+}
+
 func (a *desktopApp) SetAliasAccount(request desktopapp.AliasAccountRequest) error {
 	return a.api.SetAliasAccount(a.context(), request)
 }

@@ -63,6 +63,11 @@ export type TabAction = {
   type: 'drop-profile'
   profile: string
 } | {
+  type: 'rename-alias'
+  profile: string
+  currentName: string
+  newName: string
+} | {
   type: 'activate'
   id: string
 } | {
@@ -78,6 +83,22 @@ export type TabAction = {
 export const emptyTabWorkspace: TabWorkspace = { tabs: [], activeTabID: '' }
 
 export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace {
+  if (action.type === 'rename-alias') {
+    return {
+      ...state,
+      tabs: state.tabs.map((tab) => {
+        if (tab.kind !== 'ssh' || tab.descriptor.profile !== action.profile || tab.descriptor.alias !== action.currentName) return tab
+        return {
+          ...tab,
+          descriptor: {
+            ...tab.descriptor,
+            alias: action.newName,
+            target: action.newName,
+          },
+        }
+      }),
+    }
+  }
   if (action.type === 'begin-connection') {
     return {
       ...state,

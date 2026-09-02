@@ -149,6 +149,7 @@ export interface Backend {
   setOrganization(profile: string, organization: string): Promise<void>
   createAlias(request: { profile: string; asset: string; name: string; account: string }): Promise<Alias>
   deleteAlias(profile: string, name: string): Promise<void>
+  renameAlias(request: { profile: string; currentName: string; newName: string }): Promise<Alias>
   setAliasAccount(request: { profile: string; name: string; account: string }): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
   saveWorkspace(workspace: Workspace): Promise<void>
@@ -192,6 +193,7 @@ type DesktopBinding = {
   SetOrganization(profile: string, organization: string): Promise<void>
   CreateAlias(request: Parameters<Backend['createAlias']>[0]): Promise<Alias>
   DeleteAlias(profile: string, name: string): Promise<void>
+  RenameAlias(request: Parameters<Backend['renameAlias']>[0]): Promise<Alias>
   SetAliasAccount(request: Parameters<Backend['setAliasAccount']>[0]): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
   SaveWorkspace(workspace: Workspace): Promise<void>
@@ -277,6 +279,7 @@ export const wailsBackend: Backend = {
   setOrganization: (profile, organization) => binding().SetOrganization(profile, organization),
   createAlias: (request) => binding().CreateAlias(request),
   deleteAlias: (profile, name) => binding().DeleteAlias(profile, name),
+  renameAlias: (request) => binding().RenameAlias(request),
   setAliasAccount: (request) => binding().SetAliasAccount(request),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
   saveWorkspace: (workspace) => binding().SaveWorkspace(workspace),

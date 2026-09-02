@@ -134,6 +134,29 @@ func (s Service) DeleteAlias(profileName, name string) error {
 	})
 }
 
+func (s Service) RenameAlias(profileName, currentName, newName string) error {
+	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
+		resolvedName, profile, err := resolveProfile(*value, profileName)
+		if err != nil {
+			return err
+		}
+		alias, exists := profile.Aliases[currentName]
+		if !exists {
+			return fmt.Errorf("alias %q does not exist in profile %q", currentName, resolvedName)
+		}
+		if currentName == newName {
+			return nil
+		}
+		if _, exists := profile.Aliases[newName]; exists {
+			return fmt.Errorf("alias %q already exists in profile %q", newName, resolvedName)
+		}
+		profile.Aliases[newName] = alias
+		delete(profile.Aliases, currentName)
+		value.Profiles[resolvedName] = profile
+		return nil
+	})
+}
+
 func (s Service) SetAliasAccount(profileName, name, account string) error {
 	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
 		resolvedName, profile, err := resolveProfile(*value, profileName)

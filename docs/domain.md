@@ -57,7 +57,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 - Alias 位于 TOML 配置中，允许用户批量直接编辑；项目需要提供打开配置文件的快捷命令。
 - GUI 的资产搜索同时匹配远端 Asset 与本地 Alias；合并结果按 Asset ID 去重。远端 Asset API 使用 offset/limit 分页，GUI 保留对应分页语义。
 - “All organizations” 是聚合上下文：选择它时显示各具体 Organization 中与当前资产匹配的 Alias；在该聚合上下文创建的 Alias 切换到具体 Organization 后，只要对应 Asset 可见，也继续显示。
-- GUI 在资产行内纵向展示该 Asset 的全部 Alias；只有完全没有 Alias 时才显示创建入口。资产数和当前 Organization 的 Alias 总数显示在对应表头，Alias 总数不受当前分页影响。
+- GUI 在资产行内纵向展示该 Asset 的全部 Alias；资产行的更多操作始终提供创建入口，因此同一 Asset 可以拥有多个 Alias。Alias 可重命名或删除：重命名必须原子保留 Asset、Organization 和 Account 映射，并同步更新匹配的已打开 SSH Tab 重连描述符，但不中断活动 Session；删除必须使用应用内确认对话框，不依赖系统或浏览器原生确认框。资产数和当前 Organization 的 Alias 总数显示在对应表头，Alias 总数不受当前分页影响。
 - GUI 从 Asset 发起连接且存在多个 Account 时必须让用户选择；从 Alias 发起连接时优先使用已绑定 Account，未绑定时同样询问，不能隐式挑选第一个 Account。
 - GUI 使用顶部 Tab 工作区：资产、Profile 和设置分别只能打开一个 Tab，SSH Tab 可以并行打开多个；任意 Tab（包括最后一个）都允许关闭，工作区为空时显示包含新建连接、资产、Profile 和设置入口的起始页。Tab 默认显示关闭按钮，用户可以在设置中隐藏；按钮隐藏后鼠标中键关闭仍然可用。
 - GUI 启动并恢复工作区后，如果没有可用 Profile，或当前 Profile 尚未登录，则自动打开并激活 Profile 页面；当前 Profile 已登录时保持原活动 Tab。

@@ -258,6 +258,46 @@ func TestDeleteAliasRejectsUnknownAlias(t *testing.T) {
 	}
 }
 
+func TestRenameAliasPreservesMappingAndRejectsCollision(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	service := Service{Store: store}
+	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	original := projectconfig.Alias{Asset: "asset-1", Account: "root", Organization: "org-1"}
+	if err := service.SetAlias("", "production", original); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetAlias("", "staging", projectconfig.Alias{Asset: "asset-2"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RenameAlias("", "production", "primary"); err != nil {
+		t.Fatalf("RenameAlias returned error: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := got.Profiles["work"].Aliases["production"]; exists {
+		t.Fatal("old Alias production still exists after RenameAlias")
+	}
+	if got.Profiles["work"].Aliases["primary"] != original {
+		t.Fatalf("renamed Alias = %#v, want %#v", got.Profiles["work"].Aliases["primary"], original)
+	}
+
+	if err := service.RenameAlias("", "primary", "staging"); err == nil {
+		t.Fatal("RenameAlias error = nil, want duplicate name error")
+	}
+	got, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Profiles["work"].Aliases["primary"] != original {
+		t.Fatal("failed RenameAlias changed the original Alias")
+	}
+}
+
 func TestSetAliasAccountPreservesAssetAndOrganization(t *testing.T) {
 	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
 	service := Service{Store: store}

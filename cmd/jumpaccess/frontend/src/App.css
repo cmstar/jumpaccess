@@ -2626,7 +2626,8 @@ details > summary::-webkit-details-marker {
   font-size: .6rem;
 }
 
-.delete-profile-summary {
+.delete-profile-summary,
+.delete-alias-summary {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2637,7 +2638,8 @@ details > summary::-webkit-details-marker {
   background: rgb(184 78 86 / 6%);
 }
 
-.delete-profile-summary > span {
+.delete-profile-summary > span,
+.delete-alias-summary > span {
   display: grid;
   width: 34px;
   height: 34px;
@@ -2648,20 +2650,25 @@ details > summary::-webkit-details-marker {
   background: rgb(184 78 86 / 10%);
 }
 
-.delete-profile-summary svg {
+.delete-profile-summary svg,
+.delete-alias-summary svg {
   width: 16px;
 }
 
 .delete-profile-summary strong,
-.delete-profile-summary small {
+.delete-profile-summary small,
+.delete-alias-summary strong,
+.delete-alias-summary small {
   display: block;
 }
 
-.delete-profile-summary strong {
+.delete-profile-summary strong,
+.delete-alias-summary strong {
   font-size: .7rem;
 }
 
-.delete-profile-summary small {
+.delete-profile-summary small,
+.delete-alias-summary small {
   max-width: 350px;
   margin-top: 3px;
   overflow: hidden;

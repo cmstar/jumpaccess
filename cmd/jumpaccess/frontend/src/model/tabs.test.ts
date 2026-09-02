@@ -199,6 +199,26 @@ describe('reduceTabs', () => {
     expect(dropped.activeTabID).toBe('ssh-staging')
   })
 
+  it('updates matching SSH descriptors when an Alias is renamed', () => {
+    const production = reduceTabs(emptyTabWorkspace, { type: 'open-ssh', id: 'ssh-production', descriptor })
+    const staging = reduceTabs(production, {
+      type: 'open-ssh',
+      id: 'ssh-staging',
+      descriptor: { ...descriptor, profile: 'staging' },
+    })
+
+    const renamed = reduceTabs(staging, {
+      type: 'rename-alias', profile: 'production', currentName: 'production-web', newName: 'primary-web',
+    })
+
+    expect(renamed.tabs[0]).toMatchObject({
+      descriptor: { alias: 'primary-web', target: 'primary-web' },
+    })
+    expect(renamed.tabs[1]).toMatchObject({
+      descriptor: { alias: 'production-web', target: 'production-web' },
+    })
+  })
+
   it('activates an existing tab without changing tab order', () => {
     const assets = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'assets' })
     const ssh = reduceTabs(assets, { type: 'open-ssh', id: 'ssh-1', descriptor })

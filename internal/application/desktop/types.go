@@ -101,6 +101,12 @@ type CreateAliasRequest struct {
 	Account string `json:"account"`
 }
 
+type RenameAliasRequest struct {
+	Profile     string `json:"profile"`
+	CurrentName string `json:"currentName"`
+	NewName     string `json:"newName"`
+}
+
 type AliasAccountRequest struct {
 	Profile string `json:"profile"`
 	Name    string `json:"name"`

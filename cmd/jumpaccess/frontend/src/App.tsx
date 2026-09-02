@@ -266,6 +266,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
+  const [aliasEditor, setAliasEditor] = useState<{ asset: Asset; alias: Alias } | null>(null)
+  const [pendingAliasDeletion, setPendingAliasDeletion] = useState<Alias | null>(null)
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickQuery, setQuickQuery] = useState('')
@@ -710,8 +712,26 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
+  async function renameAliasForAsset(alias: Alias, newName: string) {
+    await run(async () => {
+      const renamed = await backend.renameAlias({ profile, currentName: alias.name, newName })
+      const replaceAlias = (aliases: Alias[]) => aliases
+        .map((item) => item.name === alias.name ? renamed : item)
+        .sort((left, right) => left.name.localeCompare(right.name))
+      setAssets((current) => ({
+        ...current,
+        results: current.results.map((asset) => ({ ...asset, aliases: replaceAlias(asset.aliases) })),
+      }))
+      setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, {
+        ...detail,
+        aliases: replaceAlias(detail.aliases),
+      }])))
+      dispatchTabs({ type: 'rename-alias', profile, currentName: alias.name, newName: renamed.name })
+      setAliasEditor(null)
+    })
+  }
+
   async function deleteAlias(alias: Alias) {
-    if (!window.confirm(`确定删除 Alias “${alias.name}”吗？`)) return
     await run(async () => {
       await backend.deleteAlias(profile, alias.name)
       setAssets((current) => ({
@@ -721,6 +741,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
       }))
       setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, { ...detail, aliases: detail.aliases.filter((item) => item.name !== alias.name) }])))
       adjustProfileAliasCount(-1)
+      setPendingAliasDeletion(null)
     })
   }
 
@@ -848,7 +869,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
               <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={refreshing || !organization} onClick={() => setRefreshKey((value) => value + 1)} type="button"><RefreshCcw className={refreshing ? 'spin' : ''} />{refreshing ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
                 <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
-                <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={(alias) => void deleteAlias(alias)} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
+                <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
             </section>
             {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onCopy={(value) => void navigator.clipboard?.writeText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
@@ -863,6 +884,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
       </section>
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
+      {aliasEditor ? <EditAliasDialog alias={aliasEditor.alias} asset={aliasEditor.asset} onCancel={() => setAliasEditor(null)} onSave={(name) => void renameAliasForAsset(aliasEditor.alias, name)} /> : null}
+      {pendingAliasDeletion ? <DeleteAliasDialog alias={pendingAliasDeletion} onCancel={() => setPendingAliasDeletion(null)} onConfirm={() => void deleteAlias(pendingAliasDeletion)} /> : null}
       {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.asset, pendingConnection.target, pendingConnection.alias, account.id || account.username))} /> : null}
       {quickOpen ? <QuickConnectDialog assets={displayedQuickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
@@ -1092,7 +1115,7 @@ function isAssetRowControl(target: EventTarget | null) {
   return target instanceof Element && target.closest('button, select, input, textarea, a, [role="menuitem"]') !== null
 }
 
-function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAlias, onDeleteAlias, onEnsureDetail, onSelect, selected }: {
+function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAlias, onDeleteAlias, onEditAlias, onEnsureDetail, onSelect, selected }: {
   asset: Asset
   detail?: AssetDetail
   onBind: (alias: Alias, account: string) => void
@@ -1100,6 +1123,7 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAl
   onConnectAlias: (alias: Alias) => void
   onCreateAlias: () => void
   onDeleteAlias: (alias: Alias) => void
+  onEditAlias: (alias: Alias) => void
   onEnsureDetail: () => void
   onSelect: () => void
   selected: boolean
@@ -1107,7 +1131,7 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAl
   return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={(event) => { if (!isAssetRowControl(event.target)) onSelect() }}><td><div className="asset-identity"><div className="server-glyph"><Server /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td><div className="inline-alias-stack">{asset.aliases.map((alias) => {
     const knownAccounts = detail?.accounts ?? []
     const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
-    return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select><button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
+    return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select><button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button><button className="icon-button" aria-label={`编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
   })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td><AssetRowActions asset={asset} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
 }
 
@@ -1118,7 +1142,7 @@ function AssetRowActions({ asset, onConnect, onCreateAlias }: { asset: Asset; on
     setOpen(false)
     action()
   }
-  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu"><button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button> : null}<button onClick={() => act(() => void navigator.clipboard?.writeText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
+  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu"><button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button><button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
 }
 
 function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
@@ -1400,6 +1424,17 @@ function LogoutProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () =>
 
 function DeleteProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () => void; onConfirm: () => void; profile: ProfileSummary }) {
   return <Modal title="删除 Profile" description="此操作无法撤销。" onClose={onCancel}><div className="delete-profile-summary"><span><Trash2 /></span><div><strong>{profile.name}</strong><small>{profile.url}</small></div></div><p className="delete-profile-warning">将永久删除该 Profile 的 Server URL、Organization、全部 Alias 和本地 OAuth 凭据；如果存在活动 SSH 会话，也会一并断开。JumpServer 上的资产和账号不会被删除。</p><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button aria-label={`删除 ${profile.name} Profile`} className="button destructive-confirm" onClick={onConfirm}><Trash2 />确认删除</button></div></Modal>
+}
+
+function DeleteAliasDialog({ alias, onCancel, onConfirm }: { alias: Alias; onCancel: () => void; onConfirm: () => void }) {
+  return <Modal title="删除 Alias" description="此操作无法撤销。" onClose={onCancel}><div className="delete-alias-summary"><span><Trash2 /></span><div><strong>{alias.name}</strong><small>Asset · {alias.asset}</small></div></div><p className="delete-profile-warning">只会删除当前 Profile 中的 Alias 映射；JumpServer 上的资产和账号不会被删除，已经建立的 SSH 会话也不会中断。</p><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button aria-label={`确认删除 ${alias.name}`} className="button destructive-confirm" onClick={onConfirm}><Trash2 />确认删除</button></div></Modal>
+}
+
+function EditAliasDialog({ alias, asset, onCancel, onSave }: { alias: Alias; asset: Asset; onCancel: () => void; onSave: (name: string) => void }) {
+  const [name, setName] = useState(alias.name)
+  const normalizedName = name.trim()
+  const changed = normalizedName !== alias.name
+  return <Modal title="编辑 Alias" description="重命名后仍会指向同一 Asset，并保留 Organization 和默认账号。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (normalizedName && changed) onSave(normalizedName) }}><div className="dialog-fields"><label>Alias 名称<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label><label>Asset<input disabled value={`${asset.name} · ${asset.id}`} /></label><label>默认账号<input disabled value={alias.account || '连接时询问'} /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!normalizedName || !changed} type="submit">保存 Alias</button></div></form></Modal>
 }
 
 function AliasDialog({ asset, detail, onCancel, onEnsure, onSave }: { asset: Asset; detail?: AssetDetail; onCancel: () => void; onEnsure: () => Promise<AssetDetail>; onSave: (name: string, account: string) => void }) {

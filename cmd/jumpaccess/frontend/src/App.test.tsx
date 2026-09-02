@@ -106,6 +106,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     setOrganization: vi.fn().mockResolvedValue(undefined),
     createAlias: vi.fn().mockResolvedValue(assetPage.results[0].aliases[0]),
     deleteAlias: vi.fn().mockResolvedValue(undefined),
+    renameAlias: vi.fn().mockResolvedValue(assetPage.results[0].aliases[0]),
     setAliasAccount: vi.fn().mockResolvedValue(undefined),
     savePreferences: vi.fn().mockResolvedValue(undefined),
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -493,6 +494,69 @@ test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接',
   await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledWith(expect.objectContaining({
     profile: 'production', organization: 'org-1', target: 'production-web', account: 'account-2',
   })))
+})
+
+test('已有 Alias 的资产仍可从更多操作菜单继续创建', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  const row = await screen.findByTestId('asset-row-asset-1')
+  await user.click(within(row).getByRole('button', { name: 'prod-web-01 更多操作' }))
+  const menu = screen.getByRole('menu')
+  await user.click(within(menu).getByRole('menuitem', { name: '创建 Alias' }))
+
+  expect(await screen.findByRole('dialog', { name: '创建 Alias' })).toBeInTheDocument()
+})
+
+test('删除 Alias 使用应用内确认对话框', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  const systemConfirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+  try {
+    render(<App backend={backend} />)
+    const row = await screen.findByTestId('asset-row-asset-1')
+
+    await user.click(within(row).getByRole('button', { name: '删除 production-web' }))
+    expect(systemConfirm).not.toHaveBeenCalled()
+    let dialog = await screen.findByRole('dialog', { name: '删除 Alias' })
+    expect(within(dialog).getByText('production-web')).toBeInTheDocument()
+    expect(backend.deleteAlias).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog', { name: '删除 Alias' })).not.toBeInTheDocument()
+
+    await user.click(within(row).getByRole('button', { name: '删除 production-web' }))
+    dialog = await screen.findByRole('dialog', { name: '删除 Alias' })
+    await user.click(within(dialog).getByRole('button', { name: '确认删除 production-web' }))
+    await waitFor(() => expect(backend.deleteAlias).toHaveBeenCalledWith('production', 'production-web'))
+    expect(within(row).queryByText('production-web')).not.toBeInTheDocument()
+  } finally {
+    systemConfirm.mockRestore()
+  }
+})
+
+test('编辑 Alias 名称时保留资产和默认账号', async () => {
+  const renamedAlias = { ...assetPage.results[0].aliases[0], name: 'primary-web' }
+  const backend = makeBackend({ renameAlias: vi.fn().mockResolvedValue(renamedAlias) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  const row = await screen.findByTestId('asset-row-asset-1')
+  await user.click(within(row).getByRole('button', { name: '编辑 production-web' }))
+  const dialog = await screen.findByRole('dialog', { name: '编辑 Alias' })
+  const nameInput = within(dialog).getByLabelText('Alias 名称')
+  expect(nameInput).toHaveValue('production-web')
+  await user.clear(nameInput)
+  await user.type(nameInput, 'primary-web')
+  await user.click(within(dialog).getByRole('button', { name: '保存 Alias' }))
+
+  await waitFor(() => expect(backend.renameAlias).toHaveBeenCalledWith({
+    profile: 'production', currentName: 'production-web', newName: 'primary-web',
+  }))
+  expect(within(row).getByText('primary-web')).toBeInTheDocument()
+  expect(within(row).getByLabelText('primary-web 默认账号')).toHaveDisplayValue('deploy')
+  expect(within(row).getByText('web-any')).toBeInTheDocument()
 })
 
 test('点击资产行的 Alias 区域会打开详情，但操作控件不会切换资产', async () => {

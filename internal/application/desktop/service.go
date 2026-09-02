@@ -37,6 +37,7 @@ type SettingsService interface {
 	SetProfileOrganization(string, string) error
 	SetAlias(string, string, projectconfig.Alias) error
 	DeleteAlias(string, string) error
+	RenameAlias(string, string, string) error
 	SetAliasAccount(string, string, string) error
 }
 
@@ -287,6 +288,34 @@ func (s Service) SetOrganization(profile, organization string) error {
 
 func (s Service) DeleteAlias(profile, name string) error {
 	return s.Settings.DeleteAlias(profile, name)
+}
+
+func (s Service) RenameAlias(request RenameAliasRequest) (AliasView, error) {
+	profileName, profile, _, err := s.resolveContext(request.Profile, "")
+	if err != nil {
+		return AliasView{}, err
+	}
+	currentName := strings.TrimSpace(request.CurrentName)
+	if currentName == "" || currentName != request.CurrentName {
+		return AliasView{}, fmt.Errorf("current alias name is invalid")
+	}
+	newName := strings.TrimSpace(request.NewName)
+	if newName == "" || newName != request.NewName {
+		return AliasView{}, fmt.Errorf("alias name is invalid")
+	}
+	alias, exists := profile.Aliases[currentName]
+	if !exists {
+		return AliasView{}, fmt.Errorf("alias %q does not exist in profile %q", currentName, profileName)
+	}
+	if currentName != newName {
+		if _, exists := profile.Aliases[newName]; exists {
+			return AliasView{}, fmt.Errorf("alias %q already exists in profile %q", newName, profileName)
+		}
+	}
+	if err := s.Settings.RenameAlias(profileName, currentName, newName); err != nil {
+		return AliasView{}, err
+	}
+	return AliasView{Name: newName, Asset: alias.Asset, Account: alias.Account, Organization: alias.Organization}, nil
 }
 
 func (s Service) SavePreferences(value guiconfig.Config) error {

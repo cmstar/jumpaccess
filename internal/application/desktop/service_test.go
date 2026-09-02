@@ -236,6 +236,33 @@ func TestCreateAliasDerivesOrganizationAndValidatesExistingAccount(t *testing.T)
 	}
 }
 
+func TestRenameAliasPreservesTargetAccountAndOrganization(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	configuration := projectconfig.Default()
+	configuration.CurrentProfile = "work"
+	configuration.Profiles["work"] = projectconfig.Profile{
+		URL: "https://jump.example.test",
+		Aliases: map[string]projectconfig.Alias{
+			"production": {Asset: "asset-1", Account: "account-1", Organization: "org-1"},
+		},
+	}
+	if err := store.Save(configuration); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Config: store, Settings: settingsapp.Service{Store: store}}
+
+	renamed, err := service.RenameAlias(RenameAliasRequest{CurrentName: "production", NewName: "primary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed != (AliasView{Name: "primary", Asset: "asset-1", Account: "account-1", Organization: "org-1"}) {
+		t.Fatalf("renamed Alias = %#v", renamed)
+	}
+	if _, err := service.RenameAlias(RenameAliasRequest{CurrentName: "primary", NewName: " primary "}); err == nil {
+		t.Fatal("RenameAlias accepted a name with surrounding whitespace")
+	}
+}
+
 func TestSetAliasAccountValidatesAgainstAliasesAsset(t *testing.T) {
 	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
 	configuration := projectconfig.Default()
