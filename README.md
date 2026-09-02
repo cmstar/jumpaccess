@@ -2,9 +2,13 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](LICENSE)
 
-JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含 Go 编写的命令行程序 `jumpctl`，以及基于 Wails 2、React 和 TypeScript 的桌面 GUI；两个入口复用同一套领域与连接核心。
+JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver)（参考版本 `v4.1.6`）的独立访问工具项目。旨在接入 JumpServer 的环境下，尽可能地维持 SSH CLI / 第三方终端客户端的原生使用体验。
 
-项目当前处于首个可用版本的开发阶段。CLI 的配置、Profile、Alias、OAuth Token 生命周期、JumpServer 连接准备 API、直接 SSH 和通用 ProxyCommand 已经实现；GUI 已实现 Profile/Organization 切换、分页资产与 Alias 管理、手工 OAuth 回调、运行期间自动续期、统一主题设置、浏览器式可恢复 Tab 工作区和多 xterm SSH 会话。Windows 使用自绘标题栏，macOS 保留原生 traffic lights。真实 JumpServer 已确认接受官方 `jms://auth/callback` 而拒绝未登记的 loopback Redirect URI；完整 Token 交换、SSH 链路与 macOS 原生环境仍需 smoke test。实际状态以代码、测试和发布说明为准。
+项目包含两个入口程序，复用同一套底层：
+- 纯 Golang 编写的命令行程序 `jumpctl`
+- 桌面 GUI，基于 Wails 2 + React.js
+
+本项目**由 AI Agent 编码实现**，开发者负责提需求、产品设计、确定业务逻辑与边界条件、验收测试，但通常不直接阅读和修改源码。
 
 ## 项目目标
 
@@ -16,59 +20,96 @@ JumpAccess 是一个面向 JumpServer 的独立访问工具项目。项目包含
 
 首个兼容性参考基线是 JumpServer Client `v4.1.6` 所使用的协议和接口。它是分析参考，不表示本项目依赖该桌面 Client 才能运行。
 
-## 开发环境与当前状态
+## 安装
 
-项目已经建立 Go 工程、`jumpctl` 与 `jumpaccess` 入口、TOML 配置、Profile、Alias、浏览器 OAuth 登录、文件凭据存储、并发安全的 Token 刷新、JumpServer 连接准备协议、直接 SSH 客户端、多会话桌面终端，以及基于本地 SSH server façade 的通用 ProxyCommand。
+## 安装 CLI jumpctl
 
-当前已经确定的 Go module 路径为：
+需要 Go 1.25 或更高版本。
 
-```text
-github.com/cmstar/jumpaccess
-```
-
-环境要求：Go 1.25 或更高版本。
-
-## 本地运行、测试与构建
+使用 Go 安装最新发布版本：
 
 ```powershell
-go run ./cmd/jumpctl --help
+go install github.com/cmstar/jumpaccess/cmd/jumpctl@latest
+```
+
+如果 clone 了源码，可直接从源码安装：
+
+```powershell
+go install ./cmd/jumpctl
+```
+
+若没有 Go 环境，可以从发布页直接下载，参考下面的“下载 GUI 客户端”章节。下载后，若需要全局可用，需自行添加到 `PATH` 环境变量。
+
+验证安装：
+
+```
+jumpctl version
+```
+
+## 下载 GUI 客户端 jumpaccess
+
+在 [发布页](https://github.com/cmstar/jumpaccess/releases) 下载对应版本的客户端。
+- Windows 提供 X64 版本。
+- macOS（darwin）提供 X64 和 ARM 版。
+
+## 本地开发、测试与构建
+
+GUI 额外需要：
+- Node.js 24
+- [Wails 2](https://wails.io/)
+
+安装 Wails 2 CLI：
+
+```powershell
+go install github.com/wailsapp/wails/v2/cmd/wails
+wails doctor
+```
+
+如果仅做一次性构建，也可以不安装 Wails CLI，直接使用 `go run "github.com/wailsapp/wails/v2/cmd/wails"` 代替 `wails` 命令。
+
+### 构建 CLI
+
+本地测试和运行：
+
+```
 go test ./...
 go vet ./...
-go build -trimpath ./cmd/jumpctl
+go run ./cmd/jumpctl
+```
 
+构建 CLI：
+
+```powershell
+go build -trimpath ./cmd/jumpctl
+```
+
+### 构建 GUI
+
+安装前端依赖：
+
+```powershell
 cd cmd/jumpaccess
-npm test
+npm --prefix frontend ci
+npm --prefix frontend test
+```
+
+本地运行（仍在 `cmd/jumpaccess` 目录）：
+
+```
 wails dev
+```
+
+构建：
+
+```
 wails build
 ```
 
-发布或人工验收桌面程序时应使用 `wails build`。Windows 下的 `-nopackage` 会跳过平台资源生成，产出的裸 EXE 不包含应用图标和版本资源。
+构建结果默认输出在 `cmd/jumpaccess/build/bin` 目录，单一可执行文件。
 
-当前已经实现的配置入口包括：
+## 使用 jumpctl
 
-```text
-jumpctl version
-jumpctl licenses
-jumpctl config path
-jumpctl config edit
-jumpctl config validate
-jumpctl profile add <name> --url <site>
-jumpctl profile update <name> --url <site>
-jumpctl profile delete <name>
-jumpctl profile list
-jumpctl profile use <name>
-jumpctl alias set <name> --asset <asset> [--account <account>] [--organization <org>]
-jumpctl alias list
-jumpctl auth login [--profile <name>] [--manual]
-jumpctl auth status [--profile <name>]
-jumpctl auth refresh [--profile <name>]
-jumpctl auth logout [--profile <name>]
-jumpctl organization list [--profile <name>]
-jumpctl asset list [--profile <name>] [--organization <org>] [--search <text>] [--offset <count>] [--limit <count>]
-jumpctl account list <asset> [--profile <name>] [--organization <org>]
-jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <account>]
-jumpctl proxy <target> [--profile <name>] [--organization <org>] [--account <account>]
-```
+完整命令和参数见 [CLI 命令参考](docs/cli.md)，也可以运行 `jumpctl --help` 或 `jumpctl <command> --help` 查看。
 
 通用 OpenSSH 配置示例（`web` 可以是已绑定唯一 Asset 和 Account 的 Alias）：
 
@@ -79,11 +120,32 @@ Host production-web
     ProxyCommand jumpctl proxy %h
 ```
 
-当前开发版本的 `auth login` 默认使用手工回调：浏览器完成授权后，不要点击确认页的“确认”，而是复制页面中的 `jms://` 链接或浏览器地址栏的完整确认页 URL，粘贴到等待中的终端。`--manual` 可显式固定这一行为。正式发布后计划注册 `jms` 私有协议并默认自动接收回调，但永久保留 `--manual`，供官方客户端仍占用协议或系统不允许注册协议时使用。
+`auth login` 默认使用手工回调：浏览器完成授权后，不要点击确认页的“确认”，而是复制页面中的 `jms://` 链接或浏览器地址栏的完整确认页 URL，粘贴到等待中的终端。`--manual` 可显式固定这一行为，供官方客户端仍占用协议或系统不允许注册协议时使用。
 
 桌面 GUI 只要保持运行，就会按配置周期检查所有已保存 Refresh Token 的 Profile，并在 Access Token 临近过期时自动刷新；运行期间新增登录无需重启 GUI。Refresh Token 已过期或被撤销时仍需重新登录。
 
 `proxy` 模式不打开浏览器，也不提示选择 Account。缺少登录、Refresh Token 失效、目标或 Account 不唯一、上游主机尚未信任时，进程会在 SSH banner 之前失败，只向 stderr 写入可操作错误并返回非零状态。先运行 `jumpctl auth login` 完成授权；未知上游 gateway 需要先用 `jumpctl ssh` 进行一次人工指纹确认。
+
+## 文档
+
+- [Agent 工作入口](AGENTS.md)
+- [架构说明](docs/architecture.md)
+- [业务说明](docs/domain.md)
+- [开发说明](docs/development.md)
+- [CLI 命令参考](docs/cli.md)
+
+## 自动 Release
+
+推送符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的 Git tag 会触发 [Release 工作流](.github/workflows/release.yml)。
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+工作流执行成功会自动生成一个 Release，并根据当前版本与上一版本（tag）的差异，生成发布说明。
+
+产物包括 Windows 和 macOS（amd64+arm64）的 CLI/GUI 程序，每个都可以独立下载。
 
 ## 安全说明
 
@@ -96,24 +158,3 @@ Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand faça
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 
 ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地 façade 的稳定 Ed25519 host key，该私钥保存在操作系统凭据存储；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
-
-## 文档
-
-- [Agent 工作入口](AGENTS.md)
-- [架构说明](docs/architecture.md)
-- [业务说明](docs/domain.md)
-- [开发说明](docs/development.md)
-- [CLI 命令参考](docs/cli.md)
-
-## 发布
-
-推送符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的 Git tag 会触发 [Release 工作流](.github/workflows/release.yml)。工作流先运行 Go、React 和发布脚本检查，再在 GitHub 托管的 Windows、macOS runner 上原生构建；只有全部目标成功，才会生成 Release Notes、SHA-256 校验文件并发布 GitHub Release。预发布标签会自动标记为 prerelease。
-
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-正式产物包括 Windows amd64 的 CLI/GUI ZIP、macOS amd64 与 arm64 的 CLI tar.gz，以及 macOS Universal GUI ZIP。Windows ZIP 内的程序保持稳定名称 `jumpctl.exe` 和 `jumpaccess.exe`；归档同时包含可直接阅读的 `LICENSE` 与 `THIRD-PARTY-NOTICES.txt`。`jumpctl` 和桌面 GUI 也继续内嵌这些许可材料，CLI 可通过 `jumpctl licenses` 查看，GUI 可在设置底部查看。
-
-版本标签是发布版本的唯一来源。工作流通过 Go linker 注入 CLI/GUI 显示版本，并只在临时 runner 工作副本中更新 Wails 产品元数据，不需要为每次发布提交版本文件改动。当前 Windows 可执行文件尚未进行 Authenticode 签名，macOS 可执行文件尚未进行 Developer ID 签名与 Apple notarization；首次运行时操作系统可能显示安全提示。
