@@ -130,6 +130,12 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
+	if header.Version > CurrentVersion {
+		return Config{}, fmt.Errorf("GUI config version %d is newer than supported version %d; update JumpAccess", header.Version, CurrentVersion)
+	}
+	if header.Version != CurrentVersion {
+		return Config{}, fmt.Errorf("unsupported GUI config version %d", header.Version)
+	}
 
 	result := Default()
 	metadata, err := toml.Decode(string(data), &result)

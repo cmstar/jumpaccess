@@ -18,6 +18,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 - 核心实现采用 Go，并保持单一 module。
 - 桌面入口采用 Wails 2.14，前端采用 React、TypeScript 和 Vite；Wails 仅位于表现层，不进入共享核心。
+- Wails 的 `bindings` build tag 入口只提供可反射的桌面适配器与默认窗口参数，不装配运行时服务或读取用户数据；真实桌面入口才解析应用目录并校验配置。
 - OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；Windows Credential Manager 与 macOS Keychain 只承载 ProxyCommand host key。
 - SSH、OAuth 和 JumpServer API 的具体 Go 依赖将在实现和测试时选定，本文不提前指定。
 

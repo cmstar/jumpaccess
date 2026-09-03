@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -28,6 +29,26 @@ type fakeDesktopWindow struct {
 	centered      bool
 	shown         bool
 	minimized     bool
+}
+
+func TestReportStartupErrorWritesDiagnosticAndPresentsDialog(t *testing.T) {
+	var stderr bytes.Buffer
+	var title, message string
+
+	reportStartupError(&stderr, func(gotTitle, gotMessage string) {
+		title, message = gotTitle, gotMessage
+	}, errors.New("GUI config version 4 is newer than supported version 3; update JumpAccess"))
+
+	want := "启动 JumpAccess 失败: GUI config version 4 is newer than supported version 3; update JumpAccess"
+	if got := stderr.String(); got != want+"\n" {
+		t.Fatalf("stderr = %q, want %q", got, want+"\n")
+	}
+	if title != "JumpAccess 无法启动" {
+		t.Fatalf("dialog title = %q", title)
+	}
+	if message != want {
+		t.Fatalf("dialog message = %q, want %q", message, want)
+	}
 }
 
 func (w *fakeDesktopWindow) GetPosition(context.Context) (int, int) { return w.x, w.y }

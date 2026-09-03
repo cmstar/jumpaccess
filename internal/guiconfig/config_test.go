@@ -1,6 +1,9 @@
 package guiconfig
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDefaultUsesTwelvePointTerminalFont(t *testing.T) {
 	if got := Default().Terminal.FontSize; got != 12 {
@@ -132,6 +135,19 @@ func TestDecodeRejectsUnknownField(t *testing.T) {
 		"unknown = true\n"))
 	if err == nil {
 		t.Fatal("Decode error = nil, want unknown field error")
+	}
+}
+
+func TestDecodeReportsNewerVersionBeforeUnknownFields(t *testing.T) {
+	_, err := Decode([]byte("" +
+		"version = 4\n" +
+		"[future]\n" +
+		"future = true\n"))
+	if err == nil {
+		t.Fatal("Decode error = nil, want version incompatibility")
+	}
+	if got := err.Error(); !strings.Contains(got, "GUI config version 4 is newer than supported version 3; update JumpAccess") {
+		t.Fatalf("Decode error = %q, want actionable version incompatibility", got)
 	}
 }
 

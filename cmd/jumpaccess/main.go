@@ -3,10 +3,10 @@ package main
 import (
 	"embed"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 
-	"github.com/cmstar/jumpaccess/internal/appdir"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -19,12 +19,7 @@ var frontendAssets embed.FS
 var version = "dev"
 
 func main() {
-	rootDir, err := appdir.Root()
-	if err != nil {
-		fail(err)
-		return
-	}
-	app, err := newDesktopApp(rootDir)
+	app, err := newDesktopAppForRun()
 	if err != nil {
 		fail(err)
 		return
@@ -66,6 +61,12 @@ func newWailsOptions(app *desktopApp) *options.App {
 }
 
 func fail(err error) {
-	_, _ = fmt.Fprintf(os.Stderr, "启动 JumpAccess 失败: %v\n", err)
+	reportStartupError(os.Stderr, showStartupError, err)
 	os.Exit(1)
+}
+
+func reportStartupError(writer io.Writer, present func(title, message string), err error) {
+	message := fmt.Sprintf("启动 JumpAccess 失败: %v", err)
+	_, _ = fmt.Fprintln(writer, message)
+	present("JumpAccess 无法启动", message)
 }
