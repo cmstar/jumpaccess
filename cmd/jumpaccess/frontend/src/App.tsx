@@ -4,8 +4,11 @@ import {
   Boxes,
   ChevronDown,
   Clock3,
+  ClipboardCopy,
+  ClipboardPaste,
   Copy,
   FileCode2,
+  Folder,
   KeyRound,
   Layers3,
   LogIn,
@@ -33,6 +36,7 @@ import {
 
 import './App.css'
 import appIconURL from '../../build/appicon.svg'
+import type { TerminalActions } from './components/TerminalPane'
 import {
   type Account,
   type Alias,
@@ -1056,6 +1060,7 @@ function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange,
   preferences: Preferences
   tab: SSHTab
 }) {
+  const [terminalActions, setTerminalActions] = useState<TerminalActions | null>(null)
   const descriptor = tab.descriptor
   const status: SessionState['status'] = tab.connectionStatus === 'active'
     ? 'active'
@@ -1104,12 +1109,14 @@ function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange,
         </span>
       </div>
       <div className="terminal-toolbar-actions">
-        <button aria-label="复制当前路径" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={currentDirectory || '当前目录不可用'} type="button"><Copy /></button>
+        <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
+        <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
+        <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={currentDirectory || '当前工作目录不可用'} type="button"><Folder /></button>
         <span aria-hidden="true" className="terminal-action-separator" />
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
       </div>
     </div>
-    <div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
+    <div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
     <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span></div>
   </section>
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { ClipboardPaste, Copy } from 'lucide-react'
+import { ClipboardCopy, ClipboardPaste } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import type { Backend, Preferences, SessionState } from '../lib/backend'
@@ -9,11 +9,18 @@ import { synchronizeTerminalViewportBackground } from './terminalViewport'
 
 interface TerminalPaneProps {
   backend: Backend
+  onActionsChange?: (actions: TerminalActions | null) => void
   onCurrentDirectoryChange?: (directory: string) => void
   onReconnect?: () => void
   output: string
   preferences: Preferences
   session: SessionState
+}
+
+export interface TerminalActions {
+  canCopy: boolean
+  copy: () => Promise<void>
+  paste: () => Promise<void>
 }
 
 const osc7PayloadLimit = 4096
@@ -40,7 +47,7 @@ function currentDirectoryFromOSC7(payload: string): string | undefined {
   }
 }
 
-export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, output, preferences, session }: TerminalPaneProps) {
+export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, preferences, session }: TerminalPaneProps) {
   const paneRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -49,11 +56,13 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
   const historyReplayRef = useRef(false)
   const currentDirectoryRef = useRef('')
   const currentDirectoryChangeRef = useRef(onCurrentDirectoryChange)
+  const actionsChangeRef = useRef(onActionsChange)
   const reconnectRef = useRef(onReconnect)
   const rightClickActionRef = useRef(preferences.terminalRightClickAction)
   const statusRef = useRef(session.status)
   const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null)
   currentDirectoryChangeRef.current = onCurrentDirectoryChange
+  actionsChangeRef.current = onActionsChange
   reconnectRef.current = onReconnect
   rightClickActionRef.current = preferences.terminalRightClickAction
   statusRef.current = session.status
@@ -111,6 +120,13 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     terminal.open(host)
     synchronizeTerminalViewportBackground(host, theme.background)
     terminalRef.current = terminal
+    const reportActions = () => actionsChangeRef.current?.({
+      canCopy: terminal.hasSelection(),
+      copy: copySelection,
+      paste: pasteFromClipboard,
+    })
+    const selectionChanged = terminal.onSelectionChange(reportActions)
+    reportActions()
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault()
       if (rightClickActionRef.current === 'paste') {
@@ -148,6 +164,18 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
       }
     }
     terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown' && event.key === 'Insert' && !event.altKey && !event.metaKey) {
+        if (event.ctrlKey && !event.shiftKey) {
+          event.preventDefault()
+          void copySelection()
+          return false
+        }
+        if (event.shiftKey && !event.ctrlKey) {
+          event.preventDefault()
+          void pasteFromClipboard()
+          return false
+        }
+      }
       if (statusRef.current === 'active') return true
       const disconnected = statusRef.current === 'closed' || statusRef.current === 'failed'
       if (disconnected && event.type === 'keydown' && event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
@@ -171,11 +199,13 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     return () => {
       observer.disconnect()
       host.removeEventListener('contextmenu', onContextMenu)
+      selectionChanged.dispose()
       osc7.dispose()
       input.dispose()
       resized.dispose()
       terminal.dispose()
       terminalRef.current = null
+      actionsChangeRef.current?.(null)
       historyReplayRef.current = false
     }
   }, [backend, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.theme, session.id])
@@ -238,7 +268,7 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
       role="menu"
       style={contextMenu}
     >
-      <button disabled={!hasSelection} onClick={() => void copySelection()} role="menuitem" type="button"><Copy />复制</button>
+      <button disabled={!hasSelection} onClick={() => void copySelection()} role="menuitem" type="button"><ClipboardCopy />复制</button>
       <button disabled={!canPaste} onClick={pasteFromContextMenu} role="menuitem" type="button"><ClipboardPaste />粘贴</button>
     </div> : null}
   </div>

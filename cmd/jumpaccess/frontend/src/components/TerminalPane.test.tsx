@@ -12,6 +12,7 @@ const terminalMock = vi.hoisted(() => ({
   oscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
   selection: '',
+  selectionHandler: undefined as (() => void) | undefined,
   pasted: [] as string[],
   writeCallbacks: [] as Array<() => void>,
   writeResponse: '',
@@ -46,6 +47,10 @@ vi.mock('@xterm/xterm', () => ({
     }
     onResize(handler: (size: { cols: number; rows: number }) => void) {
       terminalMock.resizeHandler = handler
+      return { dispose() {} }
+    }
+    onSelectionChange(handler: () => void) {
+      terminalMock.selectionHandler = handler
       return { dispose() {} }
     }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
@@ -90,9 +95,58 @@ beforeEach(() => {
   terminalMock.oscHandlers.clear()
   terminalMock.resizeHandler = undefined
   terminalMock.selection = ''
+  terminalMock.selectionHandler = undefined
   terminalMock.pasted = []
   terminalMock.writeCallbacks = []
   terminalMock.writeResponse = ''
+})
+
+test('终端动作随选区变化并复用复制粘贴实现', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  const readText = vi.fn().mockResolvedValue('whoami')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText } })
+  const onActionsChange = vi.fn()
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+
+  render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+  expect(onActionsChange.mock.calls.at(-1)?.[0]?.canCopy).toBe(false)
+
+  terminalMock.selection = 'selected output'
+  act(() => terminalMock.selectionHandler?.())
+  const actions = onActionsChange.mock.calls.at(-1)?.[0]
+  expect(actions.canCopy).toBe(true)
+  await actions.copy()
+  await actions.paste()
+
+  expect(writeText).toHaveBeenCalledWith('selected output')
+  expect(terminalMock.pasted).toEqual(['whoami'])
+})
+
+test('Ctrl + Insert 和 Shift + Insert 调用终端复制粘贴', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  const readText = vi.fn().mockResolvedValue('pwd')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText } })
+  terminalMock.selection = 'copy me'
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+
+  const copy = new KeyboardEvent('keydown', { key: 'Insert', ctrlKey: true, cancelable: true })
+  const paste = new KeyboardEvent('keydown', { key: 'Insert', shiftKey: true, cancelable: true })
+  act(() => {
+    terminalMock.keyHandler?.(copy)
+    terminalMock.keyHandler?.(paste)
+  })
+
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('copy me'))
+  await waitFor(() => expect(terminalMock.pasted).toEqual(['pwd']))
+  expect(copy.defaultPrevented).toBe(true)
+  expect(paste.defaultPrevented).toBe(true)
 })
 
 test('默认右键读取剪贴板并通过终端粘贴', async () => {

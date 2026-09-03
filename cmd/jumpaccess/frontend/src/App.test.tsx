@@ -5,9 +5,14 @@ import { expect, test, vi } from 'vitest'
 import App from './App'
 import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionLatency, SessionOutput, SessionState } from './lib/backend'
 
-const { terminalKeyHandlers, terminalOscHandlers, terminalWrites } = vi.hoisted(() => ({
+const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
   terminalOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
+  terminalState: {
+    pasted: [] as string[],
+    selection: '',
+    selectionHandler: undefined as (() => void) | undefined,
+  },
   terminalWrites: [] as string[],
 }))
 
@@ -26,12 +31,13 @@ vi.mock('@xterm/xterm', () => ({
     write(value: string) { terminalWrites.push(value) }
     reset() {}
     focus() {}
-    getSelection() { return '' }
-    hasSelection() { return false }
-    paste() {}
+    getSelection() { return terminalState.selection }
+    hasSelection() { return terminalState.selection.length > 0 }
+    paste(value: string) { terminalState.pasted.push(value) }
     dispose() {}
     onData() { return { dispose() {} } }
     onResize() { return { dispose() {} } }
+    onSelectionChange(handler: () => void) { terminalState.selectionHandler = handler; return { dispose() {} } }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) { terminalKeyHandlers.push(handler) }
   },
 }))
@@ -1101,6 +1107,10 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   })
   const user = userEvent.setup()
   const writeClipboard = vi.spyOn(navigator.clipboard, 'writeText')
+  const readClipboard = vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('pwd')
+  terminalState.pasted = []
+  terminalState.selection = ''
+  terminalState.selectionHandler = undefined
   terminalOscHandlers.clear()
   render(<App backend={backend} />)
 
@@ -1121,10 +1131,27 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
     expect(within(toolbar).getByText(`${milliseconds} ms`)).toBeInTheDocument()
   }
 
-  const copyDirectory = within(toolbar).getByRole('button', { name: '复制当前路径' })
+  const actions = toolbar.querySelector<HTMLElement>('.terminal-toolbar-actions')!
+  const copySelection = within(actions).getByRole('button', { name: '复制选中文本' })
+  const pasteClipboard = within(actions).getByRole('button', { name: '粘贴剪贴板文本' })
+  const copyDirectory = within(actions).getByRole('button', { name: '复制当前工作目录' })
+  expect(within(actions).getAllByRole('button')).toEqual([copySelection, pasteClipboard, copyDirectory, disconnect])
+  expect(copySelection).toHaveAttribute('title', '复制选中文本 (Ctrl + Insert)')
+  expect(pasteClipboard).toHaveAttribute('title', '粘贴剪贴板文本 (Shift + Insert)')
+  expect(copySelection).toBeDisabled()
+  await waitFor(() => expect(pasteClipboard).toBeEnabled())
   expect(copyDirectory).toBeDisabled()
   expect(copyDirectory.nextElementSibling).toHaveClass('terminal-action-separator')
   expect(copyDirectory.nextElementSibling?.nextElementSibling).toBe(disconnect)
+
+  terminalState.selection = 'selected output'
+  act(() => terminalState.selectionHandler?.())
+  expect(copySelection).toBeEnabled()
+  await user.click(copySelection)
+  expect(writeClipboard).toHaveBeenCalledWith('selected output')
+  await user.click(pasteClipboard)
+  expect(readClipboard).toHaveBeenCalled()
+  expect(terminalState.pasted).toEqual(['pwd'])
 
   await act(async () => terminalOscHandlers.get(7)?.('file://prod-web-01/srv/releases/current%20build'))
   expect(copyDirectory).toBeEnabled()
@@ -1133,6 +1160,7 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
 
   act(() => stateHandler({ ...activeSession, status: 'closed' }))
   expect(copyDirectory).toBeDisabled()
+  expect(pasteClipboard).toBeDisabled()
   expect(disconnect).toBeDisabled()
   expect(within(toolbar).getByRole('img', { name: '连接状态：未连接' })).toHaveClass('offline')
   expect(within(toolbar).queryByText('— ms')).not.toBeInTheDocument()
@@ -1178,7 +1206,7 @@ test('连接不可用时标题栏显示红灯并禁用断开和路径复制', as
   expect(disconnectedIndicator).toHaveClass('offline')
   expect(disconnectedIndicator.closest('.terminal-connection-metric')).toHaveClass('latency-hidden')
   expect(within(toolbar).queryByText(/ms$/)).not.toBeInTheDocument()
-  expect(within(toolbar).getByRole('button', { name: '复制当前路径' })).toBeDisabled()
+  expect(within(toolbar).getByRole('button', { name: '复制当前工作目录' })).toBeDisabled()
   expect(disconnect).toBeDisabled()
 })
 
