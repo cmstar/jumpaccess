@@ -32,6 +32,7 @@ test('设置页使用清晰的标题、正文和控件层级', () => {
   expect(appStyles).toMatch(/\.segmented-control button\s*{[^}]*font-size:\s*\.7rem[^}]*font-weight:\s*600/s)
   expect(appStyles).toMatch(/\.setting-row strong\s*{[^}]*font-size:\s*\.7rem[^}]*font-weight:\s*650/s)
   expect(appStyles).toMatch(/\.setting-row small\s*{[^}]*font-size:\s*\.65rem[^}]*font-weight:\s*450/s)
+  expect(appStyles).toMatch(/\.settings-card \.setting-help \+ \.setting-row\s*{[^}]*margin-top:\s*11px/s)
 })
 
 test('设置页使用左侧导航和右侧单列滚动布局', () => {

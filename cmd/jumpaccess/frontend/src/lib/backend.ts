@@ -7,6 +7,7 @@ export interface Preferences {
   terminalFontFamily: string
   terminalFontSize: number
   terminalRightClickAction: TerminalRightClickAction
+  terminalWarnOnMultiLinePaste: boolean
   confirmCloseActiveSession: boolean
   showTabCloseButtons: boolean
 }
@@ -181,7 +182,7 @@ export interface Backend {
 type GoPreferences = {
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { FontFamily: string; FontSize: number; RightClickAction: TerminalRightClickAction }
+  Terminal: { FontFamily: string; FontSize: number; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean }
 }
 
@@ -251,6 +252,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalFontFamily: value.Terminal.FontFamily,
     terminalFontSize: value.Terminal.FontSize,
     terminalRightClickAction: value.Terminal.RightClickAction,
+    terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
     confirmCloseActiveSession: value.Tabs.ConfirmCloseActiveSession,
     showTabCloseButtons: value.Tabs.ShowCloseButtons,
   }
@@ -266,6 +268,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       FontFamily: value.terminalFontFamily,
       FontSize: value.terminalFontSize,
       RightClickAction: value.terminalRightClickAction,
+      WarnOnMultiLinePaste: value.terminalWarnOnMultiLinePaste,
     },
     Tabs: {
       ConfirmCloseActiveSession: value.confirmCloseActiveSession,

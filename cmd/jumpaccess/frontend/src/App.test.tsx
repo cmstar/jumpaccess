@@ -9,6 +9,7 @@ const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites 
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
   terminalOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   terminalState: {
+    inputs: [] as string[],
     pasted: [] as string[],
     selection: '',
     selectionHandler: undefined as (() => void) | undefined,
@@ -33,6 +34,7 @@ vi.mock('@xterm/xterm', () => ({
     focus() {}
     getSelection() { return terminalState.selection }
     hasSelection() { return terminalState.selection.length > 0 }
+    input(value: string) { terminalState.inputs.push(value) }
     paste(value: string) { terminalState.pasted.push(value) }
     dispose() {}
     onData() { return { dispose() {} } }
@@ -60,11 +62,12 @@ const bootstrapState: BootstrapState = {
     auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '2026-08-29T12:00:00Z' },
   }],
   preferences: {
-    version: 3,
+    version: 4,
     theme: 'light',
     terminalFontFamily: 'JetBrains Mono',
     terminalFontSize: 13,
     terminalRightClickAction: 'paste',
+    terminalWarnOnMultiLinePaste: true,
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
   },
@@ -749,6 +752,13 @@ test('终端交互设置可把鼠标右键切换为上下文菜单', async () =>
   await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
     terminalRightClickAction: 'context_menu',
   })))
+
+  const warningSwitch = screen.getByRole('switch', { name: '多行粘贴警告' })
+  expect(warningSwitch).toHaveAttribute('aria-checked', 'true')
+  await user.click(warningSwitch)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+    terminalWarnOnMultiLinePaste: false,
+  })))
 })
 
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {
@@ -1108,6 +1118,7 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   const user = userEvent.setup()
   const writeClipboard = vi.spyOn(navigator.clipboard, 'writeText')
   const readClipboard = vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('pwd')
+  terminalState.inputs = []
   terminalState.pasted = []
   terminalState.selection = ''
   terminalState.selectionHandler = undefined
@@ -1151,7 +1162,8 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   expect(writeClipboard).toHaveBeenCalledWith('selected output')
   await user.click(pasteClipboard)
   expect(readClipboard).toHaveBeenCalled()
-  expect(terminalState.pasted).toEqual(['pwd'])
+  expect(terminalState.inputs).toEqual(['pwd'])
+  expect(terminalState.pasted).toEqual([])
 
   await act(async () => terminalOscHandlers.get(7)?.('file://prod-web-01/srv/releases/current%20build'))
   expect(copyDirectory).toBeEnabled()

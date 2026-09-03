@@ -13,6 +13,7 @@ const terminalMock = vi.hoisted(() => ({
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
   selection: '',
   selectionHandler: undefined as (() => void) | undefined,
+  inputs: [] as string[],
   pasted: [] as string[],
   writeCallbacks: [] as Array<() => void>,
   writeResponse: '',
@@ -39,6 +40,7 @@ vi.mock('@xterm/xterm', () => ({
     focus() {}
     getSelection() { return terminalMock.selection }
     hasSelection() { return terminalMock.selection.length > 0 }
+    input(data: string) { terminalMock.inputs.push(data); terminalMock.dataHandler?.(data) }
     paste(data: string) { terminalMock.pasted.push(data) }
     dispose() {}
     onData(handler: (data: string) => void) {
@@ -66,11 +68,12 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 const preferences: Preferences = {
-  version: 3,
+  version: 4,
   theme: 'light',
   terminalFontFamily: 'JetBrains Mono',
   terminalFontSize: 12,
   terminalRightClickAction: 'paste',
+  terminalWarnOnMultiLinePaste: true,
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
 }
@@ -96,6 +99,7 @@ beforeEach(() => {
   terminalMock.resizeHandler = undefined
   terminalMock.selection = ''
   terminalMock.selectionHandler = undefined
+  terminalMock.inputs = []
   terminalMock.pasted = []
   terminalMock.writeCallbacks = []
   terminalMock.writeResponse = ''
@@ -122,7 +126,8 @@ test('终端动作随选区变化并复用复制粘贴实现', async () => {
   await actions.paste()
 
   expect(writeText).toHaveBeenCalledWith('selected output')
-  expect(terminalMock.pasted).toEqual(['whoami'])
+  expect(terminalMock.inputs).toEqual(['whoami'])
+  expect(terminalMock.pasted).toEqual([])
 })
 
 test('Ctrl + Insert 和 Shift + Insert 调用终端复制粘贴', async () => {
@@ -144,7 +149,8 @@ test('Ctrl + Insert 和 Shift + Insert 调用终端复制粘贴', async () => {
   })
 
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('copy me'))
-  await waitFor(() => expect(terminalMock.pasted).toEqual(['pwd']))
+  await waitFor(() => expect(terminalMock.inputs).toEqual(['pwd']))
+  expect(terminalMock.pasted).toEqual([])
   expect(copy.defaultPrevented).toBe(true)
   expect(paste.defaultPrevented).toBe(true)
 })
@@ -160,8 +166,88 @@ test('默认右键读取剪贴板并通过终端粘贴', async () => {
   render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
   fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
 
-  await waitFor(() => expect(terminalMock.pasted).toEqual(['printf hello']))
+  await waitFor(() => expect(terminalMock.inputs).toEqual(['printf hello']))
+  expect(terminalMock.pasted).toEqual([])
   expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+})
+
+test('多行或末尾换行的粘贴默认显示预览，确认后才按普通输入发送', async () => {
+  const readText = vi.fn().mockResolvedValue('echo first\r\necho second\n')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText: vi.fn() } })
+  const onActionsChange = vi.fn()
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+
+  render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+  await onActionsChange.mock.calls.at(-1)?.[0].paste()
+
+  const dialog = await screen.findByRole('dialog', { name: '多行粘贴警告' })
+  expect(screen.getByLabelText('剪贴板内容预览')).toHaveTextContent('echo first echo second')
+  expect(dialog).toHaveTextContent('3 行')
+  expect(dialog).toHaveTextContent('末尾包含换行')
+  expect(terminalMock.inputs).toEqual([])
+  expect(terminalMock.pasted).toEqual([])
+
+  fireEvent.click(screen.getByRole('button', { name: '仍然粘贴' }))
+  await waitFor(() => expect(terminalMock.inputs).toEqual(['echo first\recho second\r']))
+  expect(screen.queryByRole('dialog', { name: '多行粘贴警告' })).not.toBeInTheDocument()
+  expect(terminalMock.pasted).toEqual([])
+})
+
+test('取消多行粘贴不会写入终端，关闭警告后则直接发送', async () => {
+  const readText = vi.fn().mockResolvedValue('echo first\necho second')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText: vi.fn() } })
+  const onActionsChange = vi.fn()
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  const { rerender } = render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+
+  await onActionsChange.mock.calls.at(-1)?.[0].paste()
+  fireEvent.click(await screen.findByRole('button', { name: '取消' }))
+  expect(terminalMock.inputs).toEqual([])
+
+  rerender(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={{ ...preferences, terminalWarnOnMultiLinePaste: false }} session={activeSession} />)
+  await onActionsChange.mock.calls.at(-1)?.[0].paste()
+  await waitFor(() => expect(terminalMock.inputs).toEqual(['echo first\recho second']))
+  expect(screen.queryByRole('dialog', { name: '多行粘贴警告' })).not.toBeInTheDocument()
+})
+
+test('终端原生 paste 事件也经过多行警告', async () => {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: vi.fn(), writeText: vi.fn() } })
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+
+  fireEvent.paste(screen.getByLabelText('production-web SSH 终端'), {
+    clipboardData: { getData: () => 'first\nsecond' },
+  })
+
+  expect(await screen.findByRole('dialog', { name: '多行粘贴警告' })).toBeInTheDocument()
+  expect(terminalMock.inputs).toEqual([])
+})
+
+test('等待确认时断开 Session 会取消粘贴', async () => {
+  const readText = vi.fn().mockResolvedValue('first\nsecond')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText: vi.fn() } })
+  const onActionsChange = vi.fn()
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  const { rerender } = render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+
+  await onActionsChange.mock.calls.at(-1)?.[0].paste()
+  expect(await screen.findByRole('dialog', { name: '多行粘贴警告' })).toBeInTheDocument()
+  rerender(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={disconnectedSession} />)
+
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '多行粘贴警告' })).not.toBeInTheDocument())
+  expect(terminalMock.inputs).toEqual([])
 })
 
 test('上下文菜单按选区和连接状态提供复制、粘贴', async () => {

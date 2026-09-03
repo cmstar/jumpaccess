@@ -80,6 +80,7 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	want.Terminal.FontFamily = "Cascadia Mono"
 	want.Terminal.FontSize = 16
 	want.Terminal.RightClickAction = TerminalRightClickContextMenu
+	want.Terminal.WarnOnMultiLinePaste = false
 	want.Tabs.ConfirmCloseActiveSession = false
 	want.Workspace = Workspace{
 		ActiveTabID: "ssh-1",
@@ -105,8 +106,8 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded := string(data)
-	if !strings.Contains(encoded, "[terminal]") || !strings.Contains(encoded, "right_click_action = \"context_menu\"") || !strings.Contains(encoded, "[tabs]") {
-		t.Fatalf("encoded GUI config does not use v3 preference groups:\n%s", encoded)
+	if !strings.Contains(encoded, "[terminal]") || !strings.Contains(encoded, "right_click_action = \"context_menu\"") || !strings.Contains(encoded, "warn_on_multi_line_paste = false") || !strings.Contains(encoded, "[tabs]") {
+		t.Fatalf("encoded GUI config does not use v4 preference groups:\n%s", encoded)
 	}
 	if strings.Contains(encoded, "[behavior]") || strings.Contains(encoded, "terminal_font_family") {
 		t.Fatalf("encoded GUI config still contains legacy preference groups:\n%s", encoded)

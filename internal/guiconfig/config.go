@@ -8,7 +8,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 3
+const CurrentVersion = 4
 
 const (
 	TerminalRightClickPaste       = "paste"
@@ -36,9 +36,10 @@ type Appearance struct {
 }
 
 type Terminal struct {
-	FontFamily       string `toml:"font_family"`
-	FontSize         int    `toml:"font_size"`
-	RightClickAction string `toml:"right_click_action"`
+	FontFamily           string `toml:"font_family"`
+	FontSize             int    `toml:"font_size"`
+	RightClickAction     string `toml:"right_click_action"`
+	WarnOnMultiLinePaste bool   `toml:"warn_on_multi_line_paste"`
 }
 
 type Tabs struct {
@@ -104,9 +105,10 @@ func Default() Config {
 			Theme: "system",
 		},
 		Terminal: Terminal{
-			FontFamily:       "monospace",
-			FontSize:         12,
-			RightClickAction: TerminalRightClickPaste,
+			FontFamily:           "monospace",
+			FontSize:             12,
+			RightClickAction:     TerminalRightClickPaste,
+			WarnOnMultiLinePaste: true,
 		},
 		Tabs: Tabs{
 			ConfirmCloseActiveSession: true,
@@ -130,6 +132,9 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
+	if header.Version == 3 {
+		return decodeVersionThree(data)
+	}
 	if header.Version > CurrentVersion {
 		return Config{}, fmt.Errorf("GUI config version %d is newer than supported version %d; update JumpAccess", header.Version, CurrentVersion)
 	}
@@ -145,6 +150,22 @@ func Decode(data []byte) (Config, error) {
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
 	}
+	if err := result.Validate(); err != nil {
+		return Config{}, err
+	}
+	return result, nil
+}
+
+func decodeVersionThree(data []byte) (Config, error) {
+	result := Default()
+	metadata, err := toml.Decode(string(data), &result)
+	if err != nil {
+		return Config{}, fmt.Errorf("decode GUI TOML: %w", err)
+	}
+	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
+		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
+	}
+	result.Version = CurrentVersion
 	if err := result.Validate(); err != nil {
 		return Config{}, err
 	}

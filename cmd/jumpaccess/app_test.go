@@ -37,9 +37,9 @@ func TestReportStartupErrorWritesDiagnosticAndPresentsDialog(t *testing.T) {
 
 	reportStartupError(&stderr, func(gotTitle, gotMessage string) {
 		title, message = gotTitle, gotMessage
-	}, errors.New("GUI config version 4 is newer than supported version 3; update JumpAccess"))
+	}, errors.New("GUI config version 5 is newer than supported version 4; update JumpAccess"))
 
-	want := "启动 JumpAccess 失败: GUI config version 4 is newer than supported version 3; update JumpAccess"
+	want := "启动 JumpAccess 失败: GUI config version 5 is newer than supported version 4; update JumpAccess"
 	if got := stderr.String(); got != want+"\n" {
 		t.Fatalf("stderr = %q, want %q", got, want+"\n")
 	}

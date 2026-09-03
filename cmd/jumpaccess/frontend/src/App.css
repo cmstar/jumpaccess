@@ -2083,6 +2083,10 @@ details > summary::-webkit-details-marker {
   line-height: 1.45;
 }
 
+.settings-card .setting-help + .setting-row {
+  margin-top: 11px;
+}
+
 .setting-row {
   display: flex;
   align-items: center;
@@ -2570,6 +2574,77 @@ details > summary::-webkit-details-marker {
   color: var(--muted);
   font-size: .65rem;
   line-height: 1.6;
+}
+
+.terminal-paste-warning {
+  width: min(620px, 100%);
+}
+
+.terminal-paste-warning-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  color: #845f24;
+  border: 1px solid #ead5a9;
+  border-radius: 9px;
+  background: #fff8e9;
+}
+
+.dark .terminal-paste-warning-summary {
+  color: #ebc57e;
+  border-color: #57472c;
+  background: #332c20;
+}
+
+.terminal-paste-warning-summary > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.terminal-paste-warning-summary strong,
+.terminal-paste-warning-summary small {
+  display: block;
+}
+
+.terminal-paste-warning-summary strong {
+  font-size: .68rem;
+}
+
+.terminal-paste-warning-summary small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: .6rem;
+}
+
+.terminal-paste-preview {
+  margin-top: 14px;
+}
+
+.terminal-paste-preview > span {
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 600;
+}
+
+.terminal-paste-preview pre {
+  min-height: 88px;
+  max-height: min(300px, 42vh);
+  margin: 7px 0 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font-family: var(--terminal-font, monospace);
+  font-size: .68rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .dialog-fields {

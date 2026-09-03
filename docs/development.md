@@ -64,7 +64,7 @@ docs/               # 长期项目知识
 - Wails 生成 bindings 时会编译并执行带 `bindings` build tag 的临时程序；该模式只构造用于类型反射的桌面适配器，不得解析应用目录、读取用户配置或凭据、创建外部客户端。严格配置校验只属于真实应用启动流程，构建结果不能依赖构建机上的 JumpAccess 用户数据。
 - 桌面程序在 Wails 窗口初始化前发生启动错误时，必须同时写入 `stderr` 并通过 Windows/macOS 原生错误对话框告知用户；bindings 临时程序不得显示该业务对话框。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `3`：`[appearance]` 只保存应用主题，`[terminal]` 保存终端字体、字号和右键行为，`[tabs]` 保存 Tab 关闭按钮显示和关闭活动会话确认，此外还包含窗口最大化/普通边界、Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。读取 schema v1/v2 时保留原有主题、终端字体、字号、Tab 偏好、工作区和窗口位置并迁移为 v3；v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标，读取时仍保留原值，由窗口恢复逻辑按平台解释。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `4`：`[appearance]` 只保存应用主题，`[terminal]` 保存终端字体、字号、右键行为和多行粘贴警告，`[tabs]` 保存 Tab 关闭按钮显示和关闭活动会话确认，此外还包含窗口最大化/普通边界、Tab 顺序、活动项和 SSH 重连描述符；CLI 不读取该文件。读取 schema v1/v2 时保留原有主题、终端字体、字号、Tab 偏好、工作区和窗口位置，读取 schema v3 时额外保留原有分组偏好，均迁移为 v4 且默认开启多行粘贴警告；v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标，读取时仍保留原值，由窗口恢复逻辑按平台解释。终端输出、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。
 
 默认每 30 秒检查一次 Token，并在过期前 1 分钟刷新；凭据更新使用同目录临时文件和原子替换。`jumpctl ssh`、`jumpctl proxy` 和桌面 GUI 使用独立的刷新监督器；GUI 监督器覆盖所有保存了 Refresh Token 的 Profile，每轮重新读取配置和凭据以发现运行期间的变化，并在桌面程序退出时取消。刷新失败会报告告警，但监督器不拥有也不取消活动 SSH Session。SSH gateway 信任记录位于同一应用根目录的 `known_hosts`。
 

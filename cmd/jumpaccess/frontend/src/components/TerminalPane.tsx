@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { ClipboardCopy, ClipboardPaste } from 'lucide-react'
+import { ClipboardCopy, ClipboardPaste, TriangleAlert, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import type { Backend, Preferences, SessionState } from '../lib/backend'
@@ -32,6 +32,23 @@ interface ContextMenuPosition {
   top: number
 }
 
+interface PendingPaste {
+  sessionID: string
+  text: string
+}
+
+function textForTerminalInput(text: string): string {
+  return text.replace(/\r?\n/g, '\r')
+}
+
+function pastedLineCount(text: string): number {
+  return text.split(/\r\n|\r|\n/).length
+}
+
+function hasTrailingLineBreak(text: string): boolean {
+  return /[\r\n]$/.test(text)
+}
+
 function currentDirectoryFromOSC7(payload: string): string | undefined {
   if (payload.length === 0 || payload.length > osc7PayloadLimit || !payload.startsWith('file://')) return undefined
   const pathStart = payload.indexOf('/', 'file://'.length)
@@ -59,25 +76,63 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const actionsChangeRef = useRef(onActionsChange)
   const reconnectRef = useRef(onReconnect)
   const rightClickActionRef = useRef(preferences.terminalRightClickAction)
+  const warnOnMultiLinePasteRef = useRef(preferences.terminalWarnOnMultiLinePaste)
   const statusRef = useRef(session.status)
   const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null)
+  const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null)
+  const pendingPasteRef = useRef<PendingPaste | null>(null)
+  const clipboardReadInFlightRef = useRef(false)
   currentDirectoryChangeRef.current = onCurrentDirectoryChange
   actionsChangeRef.current = onActionsChange
   reconnectRef.current = onReconnect
   rightClickActionRef.current = preferences.terminalRightClickAction
+  warnOnMultiLinePasteRef.current = preferences.terminalWarnOnMultiLinePaste
   statusRef.current = session.status
 
-  async function pasteFromClipboard() {
+  function closePasteWarning(refocus: boolean) {
+    pendingPasteRef.current = null
+    setPendingPaste(null)
+    if (refocus) requestAnimationFrame(() => terminalRef.current?.focus())
+  }
+
+  function sendPastedText(text: string, expectedSessionID: string) {
     const terminal = terminalRef.current
-    if (!terminal || statusRef.current !== 'active') return
+    if (!terminal || statusRef.current !== 'active' || session.id !== expectedSessionID) return
+    terminal.input(textForTerminalInput(text), true)
+    terminal.focus()
+  }
+
+  async function requestPaste(providedText?: string) {
+    const terminal = terminalRef.current
+    const readsClipboard = providedText === undefined
+    if (!terminal || statusRef.current !== 'active' || pendingPasteRef.current || (readsClipboard && clipboardReadInFlightRef.current)) return
+    if (readsClipboard) clipboardReadInFlightRef.current = true
+    let refocus = true
     try {
-      const text = await navigator.clipboard?.readText()
-      if (text && terminalRef.current === terminal && statusRef.current === 'active') terminal.paste(text)
+      const text = providedText ?? await navigator.clipboard?.readText()
+      if (!text || terminalRef.current !== terminal || statusRef.current !== 'active') return
+      if (warnOnMultiLinePasteRef.current && /[\r\n]/.test(text)) {
+        const pending = { sessionID: session.id, text }
+        pendingPasteRef.current = pending
+        setPendingPaste(pending)
+        refocus = false
+        return
+      }
+      sendPastedText(text, session.id)
     } catch {
       // Clipboard access can be denied by the host WebView; leave the terminal unchanged.
     } finally {
-      terminal.focus()
+      if (readsClipboard) clipboardReadInFlightRef.current = false
+      if (refocus) terminal.focus()
     }
+  }
+
+  function confirmPendingPaste() {
+    const pending = pendingPasteRef.current
+    if (!pending) return
+    pendingPasteRef.current = null
+    setPendingPaste(null)
+    sendPastedText(pending.text, pending.sessionID)
   }
 
   async function copySelection() {
@@ -96,7 +151,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
 
   function pasteFromContextMenu() {
     setContextMenu(null)
-    void pasteFromClipboard()
+    void requestPaste()
   }
 
   useEffect(() => {
@@ -123,7 +178,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     const reportActions = () => actionsChangeRef.current?.({
       canCopy: terminal.hasSelection(),
       copy: copySelection,
-      paste: pasteFromClipboard,
+      paste: requestPaste,
     })
     const selectionChanged = terminal.onSelectionChange(reportActions)
     reportActions()
@@ -131,7 +186,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       event.preventDefault()
       if (rightClickActionRef.current === 'paste') {
         setContextMenu(null)
-        void pasteFromClipboard()
+        void requestPaste()
         return
       }
       const bounds = paneRef.current?.getBoundingClientRect()
@@ -140,6 +195,14 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       setContextMenu({ left, top })
     }
     host.addEventListener('contextmenu', onContextMenu)
+    const onPaste = (event: ClipboardEvent) => {
+      const text = event.clipboardData?.getData('text/plain')
+      if (!text) return
+      event.preventDefault()
+      event.stopPropagation()
+      void requestPaste(text)
+    }
+    host.addEventListener('paste', onPaste, true)
     writtenRef.current = 0
     historyReplayRef.current = true
     currentDirectoryRef.current = ''
@@ -172,7 +235,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
         }
         if (event.shiftKey && !event.ctrlKey) {
           event.preventDefault()
-          void pasteFromClipboard()
+          void requestPaste()
           return false
         }
       }
@@ -199,6 +262,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     return () => {
       observer.disconnect()
       host.removeEventListener('contextmenu', onContextMenu)
+      host.removeEventListener('paste', onPaste, true)
       selectionChanged.dispose()
       osc7.dispose()
       input.dispose()
@@ -206,6 +270,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       terminal.dispose()
       terminalRef.current = null
       actionsChangeRef.current?.(null)
+      pendingPasteRef.current = null
       historyReplayRef.current = false
     }
   }, [backend, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.theme, session.id])
@@ -213,6 +278,10 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   useEffect(() => {
     setContextMenu(null)
   }, [preferences.terminalRightClickAction, session.id])
+
+  useEffect(() => {
+    if (session.status !== 'active' && pendingPasteRef.current) closePasteWarning(false)
+  }, [session.status])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -270,6 +339,25 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     >
       <button disabled={!hasSelection} onClick={() => void copySelection()} role="menuitem" type="button"><ClipboardCopy />复制</button>
       <button disabled={!canPaste} onClick={pasteFromContextMenu} role="menuitem" type="button"><ClipboardPaste />粘贴</button>
+    </div> : null}
+    {pendingPaste ? <div
+      className="modal-backdrop"
+      onKeyDown={(event) => { if (event.key === 'Escape') closePasteWarning(true) }}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) closePasteWarning(true) }}
+    >
+      <section aria-labelledby="terminal-paste-warning-title" aria-modal="true" className="modal terminal-paste-warning" role="dialog">
+        <button aria-label="关闭" className="modal-close icon-button" onClick={() => closePasteWarning(true)} type="button"><X /></button>
+        <header>
+          <h2 id="terminal-paste-warning-title">多行粘贴警告</h2>
+          <p>剪贴板内容包含换行，粘贴到 SSH 终端后，其中的命令可能立即执行。</p>
+        </header>
+        <div className="terminal-paste-warning-summary"><TriangleAlert /><span><strong>{pastedLineCount(pendingPaste.text)} 行</strong><small>{pendingPaste.text.length} 个字符{hasTrailingLineBreak(pendingPaste.text) ? ' · 末尾包含换行' : ''}</small></span></div>
+        <div className="terminal-paste-preview">
+          <span>剪贴板内容预览</span>
+          <pre aria-label="剪贴板内容预览">{pendingPaste.text}</pre>
+        </div>
+        <div className="dialog-actions"><button autoFocus className="button secondary" onClick={() => closePasteWarning(true)} type="button">取消</button><button className="button primary" onClick={confirmPendingPaste} type="button"><ClipboardPaste />仍然粘贴</button></div>
+      </section>
     </div> : null}
   </div>
 }

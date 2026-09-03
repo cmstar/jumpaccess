@@ -23,6 +23,35 @@ func TestDefaultPastesOnTerminalRightClick(t *testing.T) {
 	}
 }
 
+func TestDefaultWarnsBeforeMultiLineTerminalPaste(t *testing.T) {
+	if !Default().Terminal.WarnOnMultiLinePaste {
+		t.Fatal("Default terminal multi-line paste warning = false, want true")
+	}
+}
+
+func TestDecodeMigratesVersionThreeMultiLinePasteWarning(t *testing.T) {
+	got, err := Decode([]byte("" +
+		"version = 3\n" +
+		"[appearance]\n" +
+		"theme = \"dark\"\n" +
+		"[terminal]\n" +
+		"font_family = \"Cascadia Mono\"\n" +
+		"font_size = 14\n" +
+		"right_click_action = \"context_menu\"\n" +
+		"[tabs]\n" +
+		"confirm_close_active_session = false\n" +
+		"show_close_buttons = false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != CurrentVersion || !got.Terminal.WarnOnMultiLinePaste {
+		t.Fatalf("migrated terminal preferences = %#v", got.Terminal)
+	}
+	if got.Terminal.FontFamily != "Cascadia Mono" || got.Terminal.FontSize != 14 || got.Terminal.RightClickAction != "context_menu" {
+		t.Fatalf("migrated terminal preferences = %#v", got.Terminal)
+	}
+}
+
 func TestDecodeMigratesVersionTwoPreferenceGroups(t *testing.T) {
 	got, err := Decode([]byte("" +
 		"version = 2\n" +
@@ -140,13 +169,13 @@ func TestDecodeRejectsUnknownField(t *testing.T) {
 
 func TestDecodeReportsNewerVersionBeforeUnknownFields(t *testing.T) {
 	_, err := Decode([]byte("" +
-		"version = 4\n" +
+		"version = 5\n" +
 		"[future]\n" +
 		"future = true\n"))
 	if err == nil {
 		t.Fatal("Decode error = nil, want version incompatibility")
 	}
-	if got := err.Error(); !strings.Contains(got, "GUI config version 4 is newer than supported version 3; update JumpAccess") {
+	if got := err.Error(); !strings.Contains(got, "GUI config version 5 is newer than supported version 4; update JumpAccess") {
 		t.Fatalf("Decode error = %q, want actionable version incompatibility", got)
 	}
 }

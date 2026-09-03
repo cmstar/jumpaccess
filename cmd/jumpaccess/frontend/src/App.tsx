@@ -1405,6 +1405,7 @@ function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferenc
               <h3>交互</h3>
               <label>鼠标右键<select aria-label="鼠标右键" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select></label>
               <small className="setting-help">打开上下文菜单后，右键提供复制和粘贴操作。</small>
+              <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
             </div>
           </section>
           <section className="settings-card" id="settings-tabs">
