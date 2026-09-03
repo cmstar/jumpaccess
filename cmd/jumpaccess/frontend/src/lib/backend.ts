@@ -1,10 +1,12 @@
 export type ThemeMode = 'system' | 'light' | 'dark'
+export type TerminalRightClickAction = 'paste' | 'context_menu'
 
 export interface Preferences {
   version: number
   theme: ThemeMode
   terminalFontFamily: string
   terminalFontSize: number
+  terminalRightClickAction: TerminalRightClickAction
   confirmCloseActiveSession: boolean
   showTabCloseButtons: boolean
 }
@@ -178,8 +180,9 @@ export interface Backend {
 
 type GoPreferences = {
   Version: number
-  Appearance: { Theme: ThemeMode; TerminalFontFamily: string; TerminalFontSize: number }
-  Behavior: { ConfirmCloseActiveSession: boolean; ShowTabCloseButtons: boolean }
+  Appearance: { Theme: ThemeMode }
+  Terminal: { FontFamily: string; FontSize: number; RightClickAction: TerminalRightClickAction }
+  Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean }
 }
 
 type DesktopBinding = {
@@ -245,10 +248,11 @@ function toPreferences(value: GoPreferences): Preferences {
   return {
     version: value.Version,
     theme: value.Appearance.Theme,
-    terminalFontFamily: value.Appearance.TerminalFontFamily,
-    terminalFontSize: value.Appearance.TerminalFontSize,
-    confirmCloseActiveSession: value.Behavior.ConfirmCloseActiveSession,
-    showTabCloseButtons: value.Behavior.ShowTabCloseButtons,
+    terminalFontFamily: value.Terminal.FontFamily,
+    terminalFontSize: value.Terminal.FontSize,
+    terminalRightClickAction: value.Terminal.RightClickAction,
+    confirmCloseActiveSession: value.Tabs.ConfirmCloseActiveSession,
+    showTabCloseButtons: value.Tabs.ShowCloseButtons,
   }
 }
 
@@ -257,12 +261,15 @@ function fromPreferences(value: Preferences): GoPreferences {
     Version: value.version,
     Appearance: {
       Theme: value.theme,
-      TerminalFontFamily: value.terminalFontFamily,
-      TerminalFontSize: value.terminalFontSize,
     },
-    Behavior: {
+    Terminal: {
+      FontFamily: value.terminalFontFamily,
+      FontSize: value.terminalFontSize,
+      RightClickAction: value.terminalRightClickAction,
+    },
+    Tabs: {
       ConfirmCloseActiveSession: value.confirmCloseActiveSession,
-      ShowTabCloseButtons: value.showTabCloseButtons,
+      ShowCloseButtons: value.showTabCloseButtons,
     },
   }
 }

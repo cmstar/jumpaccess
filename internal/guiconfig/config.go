@@ -8,7 +8,12 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 2
+const CurrentVersion = 3
+
+const (
+	TerminalRightClickPaste       = "paste"
+	TerminalRightClickContextMenu = "context_menu"
+)
 
 const (
 	DefaultWindowWidth  = 1280
@@ -20,18 +25,42 @@ const (
 type Config struct {
 	Version    int             `toml:"version"`
 	Appearance Appearance      `toml:"appearance"`
-	Behavior   Behavior        `toml:"behavior"`
+	Terminal   Terminal        `toml:"terminal"`
+	Tabs       Tabs            `toml:"tabs"`
 	Workspace  Workspace       `toml:"workspace" json:"-"`
 	Window     WindowPlacement `toml:"window" json:"-"`
 }
 
 type Appearance struct {
+	Theme string `toml:"theme"`
+}
+
+type Terminal struct {
+	FontFamily       string `toml:"font_family"`
+	FontSize         int    `toml:"font_size"`
+	RightClickAction string `toml:"right_click_action"`
+}
+
+type Tabs struct {
+	ConfirmCloseActiveSession bool `toml:"confirm_close_active_session"`
+	ShowCloseButtons          bool `toml:"show_close_buttons"`
+}
+
+type legacyConfig struct {
+	Version    int              `toml:"version"`
+	Appearance legacyAppearance `toml:"appearance"`
+	Behavior   legacyBehavior   `toml:"behavior"`
+	Workspace  Workspace        `toml:"workspace"`
+	Window     WindowPlacement  `toml:"window"`
+}
+
+type legacyAppearance struct {
 	Theme              string `toml:"theme"`
 	TerminalFontFamily string `toml:"terminal_font_family"`
 	TerminalFontSize   int    `toml:"terminal_font_size"`
 }
 
-type Behavior struct {
+type legacyBehavior struct {
 	ConfirmCloseActiveSession bool `toml:"confirm_close_active_session"`
 	ShowTabCloseButtons       bool `toml:"show_tab_close_buttons"`
 }
@@ -72,13 +101,16 @@ func Default() Config {
 	return Config{
 		Version: CurrentVersion,
 		Appearance: Appearance{
-			Theme:              "system",
-			TerminalFontFamily: "monospace",
-			TerminalFontSize:   12,
+			Theme: "system",
 		},
-		Behavior: Behavior{
+		Terminal: Terminal{
+			FontFamily:       "monospace",
+			FontSize:         12,
+			RightClickAction: TerminalRightClickPaste,
+		},
+		Tabs: Tabs{
 			ConfirmCloseActiveSession: true,
-			ShowTabCloseButtons:       true,
+			ShowCloseButtons:          true,
 		},
 		Workspace: Workspace{Tabs: []WorkspaceTab{}},
 		Window: WindowPlacement{
@@ -89,6 +121,16 @@ func Default() Config {
 }
 
 func Decode(data []byte) (Config, error) {
+	header := struct {
+		Version int `toml:"version"`
+	}{Version: CurrentVersion}
+	if _, err := toml.Decode(string(data), &header); err != nil {
+		return Config{}, fmt.Errorf("decode GUI TOML: %w", err)
+	}
+	if header.Version == 1 || header.Version == 2 {
+		return decodeLegacy(data, header.Version)
+	}
+
 	result := Default()
 	metadata, err := toml.Decode(string(data), &result)
 	if err != nil {
@@ -97,11 +139,45 @@ func Decode(data []byte) (Config, error) {
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
 	}
-	if result.Version == 1 {
-		// Version 1 没有保存显示器标识；X/Y 在 Windows 是虚拟桌面绝对坐标，
-		// 在 macOS 是当前显示器相对坐标。保留原值并由窗口恢复逻辑完成一次性解释。
-		result.Version = CurrentVersion
+	if err := result.Validate(); err != nil {
+		return Config{}, err
 	}
+	return result, nil
+}
+
+func decodeLegacy(data []byte, version int) (Config, error) {
+	defaults := Default()
+	legacy := legacyConfig{
+		Version: version,
+		Appearance: legacyAppearance{
+			Theme:              defaults.Appearance.Theme,
+			TerminalFontFamily: defaults.Terminal.FontFamily,
+			TerminalFontSize:   defaults.Terminal.FontSize,
+		},
+		Behavior: legacyBehavior{
+			ConfirmCloseActiveSession: defaults.Tabs.ConfirmCloseActiveSession,
+			ShowTabCloseButtons:       defaults.Tabs.ShowCloseButtons,
+		},
+		Workspace: defaults.Workspace,
+		Window:    defaults.Window,
+	}
+	metadata, err := toml.Decode(string(data), &legacy)
+	if err != nil {
+		return Config{}, fmt.Errorf("decode GUI TOML: %w", err)
+	}
+	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
+		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
+	}
+	result := defaults
+	result.Appearance.Theme = legacy.Appearance.Theme
+	result.Terminal.FontFamily = legacy.Appearance.TerminalFontFamily
+	result.Terminal.FontSize = legacy.Appearance.TerminalFontSize
+	result.Tabs.ConfirmCloseActiveSession = legacy.Behavior.ConfirmCloseActiveSession
+	result.Tabs.ShowCloseButtons = legacy.Behavior.ShowTabCloseButtons
+	result.Workspace = legacy.Workspace
+	result.Window = legacy.Window
+	// Version 1 没有保存显示器标识；X/Y 在 Windows 是虚拟桌面绝对坐标，
+	// 在 macOS 是当前显示器相对坐标。保留原值并由窗口恢复逻辑完成一次性解释。
 	if err := result.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -117,17 +193,22 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("appearance.theme must be system, light, or dark")
 	}
-	font := strings.TrimSpace(c.Appearance.TerminalFontFamily)
-	if font == "" || font != c.Appearance.TerminalFontFamily {
-		return fmt.Errorf("appearance.terminal_font_family is invalid")
+	font := strings.TrimSpace(c.Terminal.FontFamily)
+	if font == "" || font != c.Terminal.FontFamily {
+		return fmt.Errorf("terminal.font_family is invalid")
 	}
 	for _, character := range font {
 		if unicode.IsControl(character) {
-			return fmt.Errorf("appearance.terminal_font_family is invalid")
+			return fmt.Errorf("terminal.font_family is invalid")
 		}
 	}
-	if c.Appearance.TerminalFontSize < 9 || c.Appearance.TerminalFontSize > 32 {
-		return fmt.Errorf("appearance.terminal_font_size must be between 9 and 32")
+	if c.Terminal.FontSize < 9 || c.Terminal.FontSize > 32 {
+		return fmt.Errorf("terminal.font_size must be between 9 and 32")
+	}
+	switch c.Terminal.RightClickAction {
+	case TerminalRightClickPaste, TerminalRightClickContextMenu:
+	default:
+		return fmt.Errorf("terminal.right_click_action must be paste or context_menu")
 	}
 	if c.Window.Width < MinimumWindowWidth || c.Window.Height < MinimumWindowHeight {
 		return fmt.Errorf("window size must be at least %dx%d", MinimumWindowWidth, MinimumWindowHeight)

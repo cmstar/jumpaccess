@@ -2,8 +2,10 @@ package guiconfig
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,9 +77,10 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	store := Store{Path: filepath.Join(t.TempDir(), "nested", "gui.toml")}
 	want := Default()
 	want.Appearance.Theme = "dark"
-	want.Appearance.TerminalFontFamily = "Cascadia Mono"
-	want.Appearance.TerminalFontSize = 16
-	want.Behavior.ConfirmCloseActiveSession = false
+	want.Terminal.FontFamily = "Cascadia Mono"
+	want.Terminal.FontSize = 16
+	want.Terminal.RightClickAction = TerminalRightClickContextMenu
+	want.Tabs.ConfirmCloseActiveSession = false
 	want.Workspace = Workspace{
 		ActiveTabID: "ssh-1",
 		Tabs: []WorkspaceTab{
@@ -96,5 +99,16 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load = %#v, want %#v", got, want)
+	}
+	data, err := os.ReadFile(store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(data)
+	if !strings.Contains(encoded, "[terminal]") || !strings.Contains(encoded, "right_click_action = \"context_menu\"") || !strings.Contains(encoded, "[tabs]") {
+		t.Fatalf("encoded GUI config does not use v3 preference groups:\n%s", encoded)
+	}
+	if strings.Contains(encoded, "[behavior]") || strings.Contains(encoded, "terminal_font_family") {
+		t.Fatalf("encoded GUI config still contains legacy preference groups:\n%s", encoded)
 	}
 }

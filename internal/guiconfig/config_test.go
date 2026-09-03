@@ -3,19 +3,49 @@ package guiconfig
 import "testing"
 
 func TestDefaultUsesTwelvePointTerminalFont(t *testing.T) {
-	if got := Default().Appearance.TerminalFontSize; got != 12 {
+	if got := Default().Terminal.FontSize; got != 12 {
 		t.Fatalf("Default terminal font size = %d, want 12", got)
 	}
 }
 
 func TestDefaultUsesSystemMonospaceFont(t *testing.T) {
-	if got := Default().Appearance.TerminalFontFamily; got != "monospace" {
+	if got := Default().Terminal.FontFamily; got != "monospace" {
 		t.Fatalf("Default terminal font family = %q, want monospace", got)
 	}
 }
 
+func TestDefaultPastesOnTerminalRightClick(t *testing.T) {
+	if got := Default().Terminal.RightClickAction; got != "paste" {
+		t.Fatalf("Default terminal right-click action = %q, want paste", got)
+	}
+}
+
+func TestDecodeMigratesVersionTwoPreferenceGroups(t *testing.T) {
+	got, err := Decode([]byte("" +
+		"version = 2\n" +
+		"[appearance]\n" +
+		"theme = \"dark\"\n" +
+		"terminal_font_family = \"Cascadia Mono\"\n" +
+		"terminal_font_size = 14\n" +
+		"[behavior]\n" +
+		"confirm_close_active_session = false\n" +
+		"show_tab_close_buttons = false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != CurrentVersion || got.Appearance.Theme != "dark" {
+		t.Fatalf("migrated application appearance = %#v", got.Appearance)
+	}
+	if got.Terminal.FontFamily != "Cascadia Mono" || got.Terminal.FontSize != 14 || got.Terminal.RightClickAction != "paste" {
+		t.Fatalf("migrated terminal preferences = %#v", got.Terminal)
+	}
+	if got.Tabs.ConfirmCloseActiveSession || got.Tabs.ShowCloseButtons {
+		t.Fatalf("migrated Tab preferences = %#v", got.Tabs)
+	}
+}
+
 func TestDefaultShowsTabCloseButtons(t *testing.T) {
-	if !Default().Behavior.ShowTabCloseButtons {
+	if !Default().Tabs.ShowCloseButtons {
 		t.Fatal("Default ShowTabCloseButtons = false, want true")
 	}
 }
@@ -51,7 +81,7 @@ func TestDecodeOldGUIConfigUsesDefaultWindowPlacement(t *testing.T) {
 	if got.Version != CurrentVersion {
 		t.Fatalf("Version = %d, want migrated current version %d", got.Version, CurrentVersion)
 	}
-	if !got.Behavior.ShowTabCloseButtons {
+	if !got.Tabs.ShowCloseButtons {
 		t.Fatal("ShowTabCloseButtons = false, want true for old GUI config")
 	}
 }
@@ -110,8 +140,9 @@ func TestConfigRejectsInvalidAppearance(t *testing.T) {
 		name  string
 		value Config
 	}{
-		{name: "theme", value: Config{Version: CurrentVersion, Appearance: Appearance{Theme: "sepia", TerminalFontFamily: "JetBrains Mono", TerminalFontSize: 13}}},
-		{name: "font size", value: Config{Version: CurrentVersion, Appearance: Appearance{Theme: "system", TerminalFontFamily: "JetBrains Mono", TerminalFontSize: 7}}},
+		{name: "theme", value: Config{Version: CurrentVersion, Appearance: Appearance{Theme: "sepia"}, Terminal: Terminal{FontFamily: "JetBrains Mono", FontSize: 13, RightClickAction: TerminalRightClickPaste}}},
+		{name: "font size", value: Config{Version: CurrentVersion, Appearance: Appearance{Theme: "system"}, Terminal: Terminal{FontFamily: "JetBrains Mono", FontSize: 7, RightClickAction: TerminalRightClickPaste}}},
+		{name: "right click", value: Config{Version: CurrentVersion, Appearance: Appearance{Theme: "system"}, Terminal: Terminal{FontFamily: "JetBrains Mono", FontSize: 13, RightClickAction: "execute"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

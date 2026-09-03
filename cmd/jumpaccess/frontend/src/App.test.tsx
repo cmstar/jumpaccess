@@ -26,6 +26,9 @@ vi.mock('@xterm/xterm', () => ({
     write(value: string) { terminalWrites.push(value) }
     reset() {}
     focus() {}
+    getSelection() { return '' }
+    hasSelection() { return false }
+    paste() {}
     dispose() {}
     onData() { return { dispose() {} } }
     onResize() { return { dispose() {} } }
@@ -51,10 +54,11 @@ const bootstrapState: BootstrapState = {
     auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '2026-08-29T12:00:00Z' },
   }],
   preferences: {
-    version: 1,
+    version: 3,
     theme: 'light',
     terminalFontFamily: 'JetBrains Mono',
     terminalFontSize: 13,
+    terminalRightClickAction: 'paste',
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
   },
@@ -722,6 +726,23 @@ test('Tab 行为设置可隐藏关闭按钮且保留鼠标中键关闭', async (
   expect(assetsTab).not.toBeNull()
   fireEvent(assetsTab!, new MouseEvent('auxclick', { bubbles: true, button: 1 }))
   expect(screen.queryByRole('tab', { name: '资产' })).not.toBeInTheDocument()
+})
+
+test('终端交互设置可把鼠标右键切换为上下文菜单', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(screen.getByRole('heading', { name: '字体与配色' })).toBeVisible()
+  expect(screen.getByRole('heading', { name: '交互' })).toBeVisible()
+
+  await user.selectOptions(screen.getByLabelText('鼠标右键'), 'context_menu')
+
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+    terminalRightClickAction: 'context_menu',
+  })))
 })
 
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {

@@ -325,7 +325,8 @@ func (s Service) SavePreferences(value guiconfig.Config) error {
 	return s.Preferences.Update(context.Background(), func(stored *guiconfig.Config) error {
 		stored.Version = value.Version
 		stored.Appearance = value.Appearance
-		stored.Behavior = value.Behavior
+		stored.Terminal = value.Terminal
+		stored.Tabs = value.Tabs
 		return nil
 	})
 }

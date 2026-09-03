@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { TerminalPane } from './TerminalPane'
@@ -7,9 +7,12 @@ import type { Backend, Preferences, SessionState } from '../lib/backend'
 const terminalMock = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   keyHandler: undefined as ((event: KeyboardEvent) => boolean) | undefined,
+  instances: 0,
   options: undefined as { fontFamily?: string; fontSize?: number } | undefined,
   oscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
+  selection: '',
+  pasted: [] as string[],
   writeCallbacks: [] as Array<() => void>,
   writeResponse: '',
 }))
@@ -24,7 +27,7 @@ vi.mock('@xterm/xterm', () => ({
         return { dispose: () => terminalMock.oscHandlers.delete(ident) }
       },
     }
-    constructor(options: { fontFamily?: string; fontSize?: number }) { terminalMock.options = options }
+    constructor(options: { fontFamily?: string; fontSize?: number }) { terminalMock.instances += 1; terminalMock.options = options }
     loadAddon() {}
     open() {}
     write(_data: string, callback?: () => void) {
@@ -33,6 +36,9 @@ vi.mock('@xterm/xterm', () => ({
     }
     reset() {}
     focus() {}
+    getSelection() { return terminalMock.selection }
+    hasSelection() { return terminalMock.selection.length > 0 }
+    paste(data: string) { terminalMock.pasted.push(data) }
     dispose() {}
     onData(handler: (data: string) => void) {
       terminalMock.dataHandler = handler
@@ -55,10 +61,11 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 const preferences: Preferences = {
-  version: 1,
+  version: 3,
   theme: 'light',
   terminalFontFamily: 'JetBrains Mono',
   terminalFontSize: 12,
+  terminalRightClickAction: 'paste',
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
 }
@@ -79,10 +86,66 @@ const activeSession: SessionState = { ...disconnectedSession, status: 'active' }
 beforeEach(() => {
   terminalMock.dataHandler = undefined
   terminalMock.keyHandler = undefined
+  terminalMock.instances = 0
   terminalMock.oscHandlers.clear()
   terminalMock.resizeHandler = undefined
+  terminalMock.selection = ''
+  terminalMock.pasted = []
   terminalMock.writeCallbacks = []
   terminalMock.writeResponse = ''
+})
+
+test('默认右键读取剪贴板并通过终端粘贴', async () => {
+  const readText = vi.fn().mockResolvedValue('printf hello')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText: vi.fn() } })
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+
+  render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+  fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
+
+  await waitFor(() => expect(terminalMock.pasted).toEqual(['printf hello']))
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+})
+
+test('上下文菜单按选区和连接状态提供复制、粘贴', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  const readText = vi.fn().mockResolvedValue('pwd')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText } })
+  terminalMock.selection = 'selected output'
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  const menuPreferences = { ...preferences, terminalRightClickAction: 'context_menu' as const }
+
+  const { rerender } = render(<TerminalPane backend={backend} output="" preferences={menuPreferences} session={activeSession} />)
+  fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
+  expect(screen.getByRole('menuitem', { name: '复制' })).toBeEnabled()
+  expect(screen.getByRole('menuitem', { name: '粘贴' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('selected output'))
+
+  rerender(<TerminalPane backend={backend} output="" preferences={menuPreferences} session={disconnectedSession} />)
+  fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
+  expect(screen.getByRole('menuitem', { name: '复制' })).toBeEnabled()
+  expect(screen.getByRole('menuitem', { name: '粘贴' })).toBeDisabled()
+})
+
+test('切换右键行为即时生效且不重建终端', () => {
+  const backend = {
+    writeSSHSession: vi.fn().mockResolvedValue(undefined),
+    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Backend
+  const { rerender } = render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+
+  rerender(<TerminalPane backend={backend} output="" preferences={{ ...preferences, terminalRightClickAction: 'context_menu' }} session={activeSession} />)
+  fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
+
+  expect(screen.getByRole('menuitem', { name: '复制' })).toBeDisabled()
+  expect(terminalMock.instances).toBe(1)
 })
 
 test('终端字号保持设置值，不跟随应用 UI 字体缩放', () => {

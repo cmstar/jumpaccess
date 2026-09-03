@@ -382,7 +382,7 @@ func TestSaveWorkspacePreservesPreferencesAndWindowPlacement(t *testing.T) {
 	preferenceStore := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
 	stored := guiconfig.Default()
 	stored.Appearance.Theme = "dark"
-	stored.Behavior.ConfirmCloseActiveSession = false
+	stored.Tabs.ConfirmCloseActiveSession = false
 	stored.Window = guiconfig.WindowPlacement{HasBounds: true, X: 120, Y: 90, Width: 1440, Height: 900}
 	if err := preferenceStore.Save(stored); err != nil {
 		t.Fatal(err)
@@ -402,7 +402,7 @@ func TestSaveWorkspacePreservesPreferencesAndWindowPlacement(t *testing.T) {
 	if !reflect.DeepEqual(got.Workspace, want) {
 		t.Fatalf("workspace = %#v, want %#v", got.Workspace, want)
 	}
-	if got.Appearance != stored.Appearance || got.Behavior != stored.Behavior || got.Window != stored.Window {
+	if got.Appearance != stored.Appearance || got.Terminal != stored.Terminal || got.Tabs != stored.Tabs || got.Window != stored.Window {
 		t.Fatalf("unrelated preferences changed: got %#v, want %#v", got, stored)
 	}
 }

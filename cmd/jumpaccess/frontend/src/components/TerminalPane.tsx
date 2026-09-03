@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { ClipboardPaste, Copy } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import type { Backend, Preferences, SessionState } from '../lib/backend'
@@ -16,6 +17,13 @@ interface TerminalPaneProps {
 }
 
 const osc7PayloadLimit = 4096
+const contextMenuWidth = 168
+const contextMenuHeight = 84
+
+interface ContextMenuPosition {
+  left: number
+  top: number
+}
 
 function currentDirectoryFromOSC7(payload: string): string | undefined {
   if (payload.length === 0 || payload.length > osc7PayloadLimit || !payload.startsWith('file://')) return undefined
@@ -33,17 +41,54 @@ function currentDirectoryFromOSC7(payload: string): string | undefined {
 }
 
 export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, output, preferences, session }: TerminalPaneProps) {
+  const paneRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const writtenRef = useRef(0)
   const historyReplayRef = useRef(false)
   const currentDirectoryRef = useRef('')
   const currentDirectoryChangeRef = useRef(onCurrentDirectoryChange)
   const reconnectRef = useRef(onReconnect)
+  const rightClickActionRef = useRef(preferences.terminalRightClickAction)
   const statusRef = useRef(session.status)
+  const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null)
   currentDirectoryChangeRef.current = onCurrentDirectoryChange
   reconnectRef.current = onReconnect
+  rightClickActionRef.current = preferences.terminalRightClickAction
   statusRef.current = session.status
+
+  async function pasteFromClipboard() {
+    const terminal = terminalRef.current
+    if (!terminal || statusRef.current !== 'active') return
+    try {
+      const text = await navigator.clipboard?.readText()
+      if (text && terminalRef.current === terminal && statusRef.current === 'active') terminal.paste(text)
+    } catch {
+      // Clipboard access can be denied by the host WebView; leave the terminal unchanged.
+    } finally {
+      terminal.focus()
+    }
+  }
+
+  async function copySelection() {
+    const terminal = terminalRef.current
+    const selection = terminal?.getSelection() ?? ''
+    setContextMenu(null)
+    if (!terminal || !selection) return
+    try {
+      await navigator.clipboard?.writeText(selection)
+    } catch {
+      // Clipboard access can be denied by the host WebView; leave the selection intact.
+    } finally {
+      terminal.focus()
+    }
+  }
+
+  function pasteFromContextMenu() {
+    setContextMenu(null)
+    void pasteFromClipboard()
+  }
 
   useEffect(() => {
     const host = hostRef.current
@@ -66,6 +111,19 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     terminal.open(host)
     synchronizeTerminalViewportBackground(host, theme.background)
     terminalRef.current = terminal
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+      if (rightClickActionRef.current === 'paste') {
+        setContextMenu(null)
+        void pasteFromClipboard()
+        return
+      }
+      const bounds = paneRef.current?.getBoundingClientRect()
+      const left = Math.max(4, Math.min(event.clientX - (bounds?.left ?? 0), (bounds?.width ?? contextMenuWidth + 8) - contextMenuWidth - 4))
+      const top = Math.max(4, Math.min(event.clientY - (bounds?.top ?? 0), (bounds?.height ?? contextMenuHeight + 8) - contextMenuHeight - 4))
+      setContextMenu({ left, top })
+    }
+    host.addEventListener('contextmenu', onContextMenu)
     writtenRef.current = 0
     historyReplayRef.current = true
     currentDirectoryRef.current = ''
@@ -112,6 +170,7 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     })
     return () => {
       observer.disconnect()
+      host.removeEventListener('contextmenu', onContextMenu)
       osc7.dispose()
       input.dispose()
       resized.dispose()
@@ -120,6 +179,33 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
       historyReplayRef.current = false
     }
   }, [backend, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.theme, session.id])
+
+  useEffect(() => {
+    setContextMenu(null)
+  }, [preferences.terminalRightClickAction, session.id])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    const dismiss = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setContextMenu(null)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null)
+        terminalRef.current?.focus()
+      }
+    }
+    const dismissOnBlur = () => setContextMenu(null)
+    document.addEventListener('pointerdown', dismiss, true)
+    document.addEventListener('keydown', dismissOnEscape)
+    window.addEventListener('blur', dismissOnBlur)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true)
+      document.removeEventListener('keydown', dismissOnEscape)
+      window.removeEventListener('blur', dismissOnBlur)
+    }
+  }, [contextMenu])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -140,5 +226,20 @@ export function TerminalPane({ backend, onCurrentDirectoryChange, onReconnect, o
     writtenRef.current = output.length
   }, [output])
 
-  return <div className="terminal-host" ref={hostRef} aria-label={`${session.title} SSH 终端`} />
+  const hasSelection = terminalRef.current?.hasSelection() ?? false
+  const canPaste = session.status === 'active'
+  return <div className="terminal-pane" ref={paneRef}>
+    <div className="terminal-host" ref={hostRef} aria-label={`${session.title} SSH 终端`} />
+    {contextMenu ? <div
+      aria-label="终端上下文菜单"
+      className="terminal-context-menu"
+      onContextMenu={(event) => event.preventDefault()}
+      ref={menuRef}
+      role="menu"
+      style={contextMenu}
+    >
+      <button disabled={!hasSelection} onClick={() => void copySelection()} role="menuitem" type="button"><Copy />复制</button>
+      <button disabled={!canPaste} onClick={pasteFromContextMenu} role="menuitem" type="button"><ClipboardPaste />粘贴</button>
+    </div> : null}
+  </div>
 }

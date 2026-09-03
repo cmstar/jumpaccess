@@ -49,6 +49,7 @@ import {
   type ProfileSummary,
   type SessionLatency,
   type SessionState,
+  type TerminalRightClickAction,
   type ThemeMode,
   type Workspace,
   wailsBackend,
@@ -1387,9 +1388,17 @@ function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferenc
             </div>
           </section>
           <section className="settings-card" id="settings-terminal">
-            <div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>应用于新建及重新打开的终端视图。</p></div></div>
-            <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
-            <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
+            <div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>分别控制 SSH 终端的显示和交互方式。</p></div></div>
+            <div className="settings-group">
+              <h3>字体与配色</h3>
+              <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
+              <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
+            </div>
+            <div className="settings-group">
+              <h3>交互</h3>
+              <label>鼠标右键<select aria-label="鼠标右键" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select></label>
+              <small className="setting-help">打开上下文菜单后，右键提供复制和粘贴操作。</small>
+            </div>
           </section>
           <section className="settings-card" id="settings-tabs">
             <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的关闭入口和确认方式。</p></div></div>
