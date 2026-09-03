@@ -8,7 +8,7 @@ import {
   ClipboardPaste,
   Copy,
   FileCode2,
-  Folder,
+  FolderOutput,
   KeyRound,
   Layers3,
   LogIn,
@@ -1111,7 +1111,7 @@ function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange,
       <div className="terminal-toolbar-actions">
         <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
         <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
-        <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={currentDirectory || '当前工作目录不可用'} type="button"><Folder /></button>
+        <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
         <span aria-hidden="true" className="terminal-action-separator" />
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
       </div>

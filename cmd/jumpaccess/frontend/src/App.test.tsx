@@ -1147,11 +1147,15 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   const pasteClipboard = within(actions).getByRole('button', { name: '粘贴剪贴板文本' })
   const copyDirectory = within(actions).getByRole('button', { name: '复制当前工作目录' })
   expect(within(actions).getAllByRole('button')).toEqual([copySelection, pasteClipboard, copyDirectory, disconnect])
+  expect(copySelection.querySelector('.lucide-clipboard-copy')).toBeInTheDocument()
+  expect(pasteClipboard.querySelector('.lucide-clipboard-paste')).toBeInTheDocument()
+  expect(copyDirectory.querySelector('.lucide-folder-output')).toBeInTheDocument()
   expect(copySelection).toHaveAttribute('title', '复制选中文本 (Ctrl + Insert)')
   expect(pasteClipboard).toHaveAttribute('title', '粘贴剪贴板文本 (Shift + Insert)')
   expect(copySelection).toBeDisabled()
   await waitFor(() => expect(pasteClipboard).toBeEnabled())
   expect(copyDirectory).toBeDisabled()
+  expect(copyDirectory).toHaveAttribute('title', '复制当前路径\n当前路径不可用')
   expect(copyDirectory.nextElementSibling).toHaveClass('terminal-action-separator')
   expect(copyDirectory.nextElementSibling?.nextElementSibling).toBe(disconnect)
 
@@ -1167,6 +1171,7 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
 
   await act(async () => terminalOscHandlers.get(7)?.('file://prod-web-01/srv/releases/current%20build'))
   expect(copyDirectory).toBeEnabled()
+  expect(copyDirectory).toHaveAttribute('title', '复制当前路径\n/srv/releases/current build')
   await user.click(copyDirectory)
   expect(writeClipboard).toHaveBeenCalledWith('/srv/releases/current build')
 
