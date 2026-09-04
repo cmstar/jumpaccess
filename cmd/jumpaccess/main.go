@@ -52,6 +52,7 @@ func newWailsOptions(app *desktopApp) *options.App {
 		OnShutdown:       app.shutdown,
 		WindowStartState: windowStartState,
 		StartHidden:      true,
+		DragAndDrop:      &options.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		Bind: []interface{}{
 			app,
 		},

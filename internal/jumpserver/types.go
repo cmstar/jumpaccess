@@ -38,15 +38,22 @@ type Asset struct {
 }
 
 type Account struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Alias    string `json:"alias"`
-	Username string `json:"username"`
+	ID       string       `json:"id"`
+	Name     string       `json:"name"`
+	Alias    string       `json:"alias"`
+	Username string       `json:"username"`
+	Actions  []LabelValue `json:"actions"`
 }
 
 type Protocol struct {
-	Name string `json:"name"`
-	Port int    `json:"port"`
+	Name     string           `json:"name"`
+	Port     int              `json:"port"`
+	Settings ProtocolSettings `json:"setting"`
+}
+
+type ProtocolSettings struct {
+	// nil 表示服务端未提供映射；空字符串由 KoKo 解释为账号 home。
+	SFTPHome *string `json:"sftp_home,omitempty"`
 }
 
 type AssetDetail struct {

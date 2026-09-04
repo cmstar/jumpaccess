@@ -24,7 +24,7 @@ func DecodeClientURL(raw string) (ClientConnection, error) {
 	if err := json.Unmarshal(data, &connection); err != nil {
 		return ClientConnection{}, fmt.Errorf("decode connection client URL: invalid JSON")
 	}
-	if connection.Protocol != "ssh" {
+	if connection.Protocol != "ssh" && connection.Protocol != "sftp" {
 		return ClientConnection{}, fmt.Errorf("connection protocol %q is not supported", connection.Protocol)
 	}
 	if strings.TrimSpace(connection.Endpoint.Host) == "" {

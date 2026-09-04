@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -93,8 +93,8 @@ type legacyBehavior struct {
 	ShowTabCloseButtons       bool `toml:"show_tab_close_buttons"`
 }
 
-// Workspace 保存桌面工作区的稳定 Tab 描述。SSH Tab 只保存重连所需的目标信息，
-// 不保存进程内 Session ID、终端输出或连接状态。
+// Workspace 保存桌面工作区的稳定 Tab 描述。SSH/SFTP Tab 只保存重连所需的目标信息，
+// 不保存进程内 Session ID、终端输出、文件内容或连接状态。
 type Workspace struct {
 	ActiveTabID string         `toml:"active_tab_id" json:"activeTabId"`
 	Tabs        []WorkspaceTab `toml:"tabs" json:"tabs"`
@@ -163,7 +163,7 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
-	if header.Version == 3 || header.Version == 4 || header.Version == 5 {
+	if header.Version >= 3 && header.Version <= 6 {
 		return decodeGroupedPreferences(data)
 	}
 	if header.Version > CurrentVersion {
@@ -323,7 +323,7 @@ func validateWorkspace(workspace Workspace) error {
 				return fmt.Errorf("workspace tab type %q is duplicated", tab.Type)
 			}
 			singletons[tab.Type] = struct{}{}
-		case "ssh":
+		case "ssh", "sftp":
 			if tab.Profile == "" || tab.Organization == "" || tab.Target == "" || tab.Account == "" || tab.AssetID == "" || tab.AssetName == "" {
 				return fmt.Errorf("workspace SSH tab %q has an incomplete connection descriptor", tab.ID)
 			}

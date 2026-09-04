@@ -18,6 +18,8 @@ func TestLicensesContainProjectAndDependencyTerms(t *testing.T) {
 		"github.com/wailsapp/wails/v2 v2.14.0",
 		"github.com/wailsapp/go-webview2 v1.0.22",
 		"github.com/pkg/errors v0.9.1",
+		"github.com/pkg/sftp v1.13.10",
+		"github.com/kr/fs v0.1.0",
 		"golang.org/x/crypto v0.53.0",
 		"golang.org/x/sys v0.46.0",
 		"golang.org/x/term v0.44.0",

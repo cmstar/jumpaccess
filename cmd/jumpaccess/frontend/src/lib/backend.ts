@@ -17,7 +17,7 @@ export interface Preferences {
   showTabCloseButtons: boolean
 }
 
-export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh'
+export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh' | 'sftp'
 
 export interface WorkspaceTab {
   id: string
@@ -126,6 +126,59 @@ export interface SessionOutput {
   data: string
 }
 
+export interface SFTPStartRequest {
+  profile: string
+  organization: string
+  target: string
+  account: string
+  directory?: string
+  sourceSSHSessionId?: string
+}
+
+export interface SFTPState extends SessionState {
+  directory: string
+  permissions?: { upload?: boolean; download?: boolean; delete?: boolean }
+}
+
+export interface SFTPEntry {
+  name: string
+  path: string
+  type: 'file' | 'directory' | 'symlink'
+  size: number
+  modifiedAt: string
+  permissions: string
+}
+
+export interface SFTPDirectory {
+  path: string
+  entries: SFTPEntry[]
+}
+
+export type SFTPConflictChoice = 'skip' | 'overwrite' | 'keep-both'
+export type SFTPTransferStatus = 'queued' | 'running' | 'conflict' | 'completed' | 'failed' | 'cancelled' | 'skipped'
+
+export interface SFTPTransferRequest {
+  sessionId: string
+  direction: 'upload' | 'download'
+  sources: string[]
+  destination: string
+}
+
+export interface SFTPTransfer {
+  id: string
+  batchId: string
+  sessionId: string
+  direction: 'upload' | 'download'
+  name: string
+  source: string
+  destination: string
+  status: SFTPTransferStatus
+  transferred: number
+  total: number
+  error: string
+  conflict?: { source: string; destination: string }
+}
+
 export interface SessionLatency {
   id: string
   milliseconds: number
@@ -182,6 +235,27 @@ export interface Backend {
   onSessionOutput(handler: (event: SessionOutput) => void): () => void
   onSessionLatency(handler: (event: SessionLatency) => void): () => void
   onHostKeyPrompt(handler: (event: HostKeyPrompt) => void): () => void
+  startSFTPSession(request: SFTPStartRequest): Promise<SFTPState>
+  listSFTPSessions(): Promise<SFTPState[]>
+  closeSFTPSession(id: string): Promise<void>
+  readSFTPDirectory(id: string, path: string): Promise<SFTPDirectory>
+  homeSFTPDirectory(id: string): Promise<SFTPDirectory>
+  makeSFTPDirectory(id: string, path: string): Promise<void>
+  renameSFTPEntry(id: string, path: string, newName: string): Promise<void>
+  removeSFTPEntries(id: string, paths: string[]): Promise<void>
+  chooseSFTPUploadFiles(): Promise<string[]>
+  chooseSFTPUploadDirectory(): Promise<string>
+  chooseSFTPDownloadDirectory(): Promise<string>
+  startSFTPTransfer(request: SFTPTransferRequest): Promise<SFTPTransfer[]>
+  listSFTPTransfers(sessionId: string): Promise<SFTPTransfer[]>
+  cancelSFTPTransfer(id: string): Promise<void>
+  retrySFTPTransfer(id: string): Promise<SFTPTransfer>
+  resolveSFTPConflict(id: string, choice: SFTPConflictChoice, applyToBatch: boolean): Promise<void>
+  clearCompletedSFTPTransfers(sessionId: string): Promise<void>
+  onSFTPState(handler: (event: SFTPState) => void): () => void
+  onSFTPTransfer(handler: (event: SFTPTransfer) => void): () => void
+  onQuitRequested(handler: () => void): () => void
+  confirmQuit(): Promise<void>
 }
 
 type GoPreferences = {
@@ -225,6 +299,24 @@ type DesktopBinding = {
   ResizeSSHSession(id: string, columns: number, rows: number): Promise<void>
   CloseSSHSession(id: string): Promise<void>
   ResolveSSHHostKey(id: string, accepted: boolean): Promise<void>
+  StartSFTPSession(request: SFTPStartRequest): Promise<SFTPState>
+  ListSFTPSessions(): Promise<SFTPState[]>
+  CloseSFTPSession(id: string): Promise<void>
+  ReadSFTPDirectory(id: string, path: string): Promise<SFTPDirectory>
+  HomeSFTPDirectory(id: string): Promise<SFTPDirectory>
+  MakeSFTPDirectory(id: string, path: string): Promise<void>
+  RenameSFTPEntry(id: string, path: string, newName: string): Promise<void>
+  RemoveSFTPEntries(id: string, paths: string[]): Promise<void>
+  ChooseSFTPUploadFiles(): Promise<string[]>
+  ChooseSFTPUploadDirectory(): Promise<string>
+  ChooseSFTPDownloadDirectory(): Promise<string>
+  StartSFTPTransfer(request: SFTPTransferRequest): Promise<SFTPTransfer[]>
+  ListSFTPTransfers(sessionId: string): Promise<SFTPTransfer[]>
+  CancelSFTPTransfer(id: string): Promise<void>
+  RetrySFTPTransfer(id: string): Promise<SFTPTransfer>
+  ResolveSFTPConflict(id: string, choice: SFTPConflictChoice, applyToBatch: boolean): Promise<void>
+  ClearCompletedSFTPTransfers(sessionId: string): Promise<void>
+  ConfirmQuit(): Promise<void>
 }
 
 declare global {
@@ -235,6 +327,8 @@ declare global {
       Quit?(): void
       WindowMinimise?(): void
       WindowToggleMaximise?(): void
+      OnFileDrop?(callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean): void
+      OnFileDropOff?(): void
     }
   }
 }
@@ -331,4 +425,25 @@ export const wailsBackend: Backend = {
   onSessionOutput: (handler) => subscribe('ssh:output', handler),
   onSessionLatency: (handler) => subscribe('ssh:latency', handler),
   onHostKeyPrompt: (handler) => subscribe('ssh:host-key', handler),
+  startSFTPSession: (request) => binding().StartSFTPSession(request),
+  listSFTPSessions: () => binding().ListSFTPSessions(),
+  closeSFTPSession: (id) => binding().CloseSFTPSession(id),
+  readSFTPDirectory: (id, path) => binding().ReadSFTPDirectory(id, path),
+  homeSFTPDirectory: (id) => binding().HomeSFTPDirectory(id),
+  makeSFTPDirectory: (id, path) => binding().MakeSFTPDirectory(id, path),
+  renameSFTPEntry: (id, path, newName) => binding().RenameSFTPEntry(id, path, newName),
+  removeSFTPEntries: (id, paths) => binding().RemoveSFTPEntries(id, paths),
+  chooseSFTPUploadFiles: () => binding().ChooseSFTPUploadFiles(),
+  chooseSFTPUploadDirectory: () => binding().ChooseSFTPUploadDirectory(),
+  chooseSFTPDownloadDirectory: () => binding().ChooseSFTPDownloadDirectory(),
+  startSFTPTransfer: (request) => binding().StartSFTPTransfer(request),
+  listSFTPTransfers: (id) => binding().ListSFTPTransfers(id),
+  cancelSFTPTransfer: (id) => binding().CancelSFTPTransfer(id),
+  retrySFTPTransfer: (id) => binding().RetrySFTPTransfer(id),
+  resolveSFTPConflict: (id, choice, applyToBatch) => binding().ResolveSFTPConflict(id, choice, applyToBatch),
+  clearCompletedSFTPTransfers: (id) => binding().ClearCompletedSFTPTransfers(id),
+  onSFTPState: (handler) => subscribe('sftp:state', handler),
+  onSFTPTransfer: (handler) => subscribe('sftp:transfer', handler),
+  onQuitRequested: (handler) => subscribe('app:quit-requested', handler),
+  confirmQuit: () => binding().ConfirmQuit(),
 }

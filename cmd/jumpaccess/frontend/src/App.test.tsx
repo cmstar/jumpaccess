@@ -145,6 +145,13 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
     closeSSHSession: vi.fn().mockResolvedValue(undefined),
+    startSFTPSession: vi.fn().mockResolvedValue({ id: 'sftp-1', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', assetId: 'asset-1', assetName: 'prod-web-01', account: 'account-1', directory: '/home/deploy', error: '' }),
+    listSFTPSessions: vi.fn().mockResolvedValue([]), closeSFTPSession: vi.fn().mockResolvedValue(undefined),
+    readSFTPDirectory: vi.fn().mockResolvedValue({ path: '/home/deploy', entries: [] }), homeSFTPDirectory: vi.fn().mockResolvedValue({ path: '/home/deploy', entries: [] }),
+    makeSFTPDirectory: vi.fn().mockResolvedValue(undefined), renameSFTPEntry: vi.fn().mockResolvedValue(undefined), removeSFTPEntries: vi.fn().mockResolvedValue(undefined),
+    chooseSFTPUploadFiles: vi.fn().mockResolvedValue([]), chooseSFTPUploadDirectory: vi.fn().mockResolvedValue(''), chooseSFTPDownloadDirectory: vi.fn().mockResolvedValue(''),
+    startSFTPTransfer: vi.fn().mockResolvedValue([]), listSFTPTransfers: vi.fn().mockResolvedValue([]), cancelSFTPTransfer: vi.fn().mockResolvedValue(undefined), retrySFTPTransfer: vi.fn().mockResolvedValue(undefined), resolveSFTPConflict: vi.fn().mockResolvedValue(undefined), clearCompletedSFTPTransfers: vi.fn().mockResolvedValue(undefined),
+    onSFTPState: vi.fn().mockReturnValue(() => undefined), onSFTPTransfer: vi.fn().mockReturnValue(() => undefined), onQuitRequested: vi.fn().mockReturnValue(() => undefined), confirmQuit: vi.fn().mockResolvedValue(undefined),
     resolveSSHHostKey: vi.fn().mockResolvedValue(undefined),
     onSessionState: vi.fn().mockReturnValue(() => undefined),
     onSessionOutput: vi.fn().mockReturnValue(() => undefined),
@@ -1672,4 +1679,164 @@ test('删除 Profile 时由后端统一关闭活动 Session，前端不重复关
   await waitFor(() => expect(backend.deleteProfile).toHaveBeenCalledWith('production'))
   await waitFor(() => expect(screen.queryByRole('tab', { name: /production-web/ })).not.toBeInTheDocument())
   expect(closeSSHSession).not.toHaveBeenCalled()
+})
+
+test('资产详情按授权协议显示连接入口，不把 SSH 当作默认协议', async () => {
+  const backend = makeBackend({ getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }) })
+  render(<App backend={backend} />)
+  await screen.findByText('SFTP : 22')
+  expect(screen.queryByRole('button', { name: '连接 prod-web-01' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '使用 SFTP 连接 prod-web-01' })).toBeInTheDocument()
+})
+
+test('从资产选择账号后建立独立 SFTP Tab，Tab 名称不附加协议', async () => {
+  const backend = makeBackend({
+    getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }),
+    startSFTPSession: vi.fn().mockResolvedValue({ id: 'sftp-1', status: 'active', title: 'prod-web-01', profile: 'production', organization: 'org-1', asset: 'asset-1', assetId: 'asset-1', assetName: 'prod-web-01', target: 'asset-1', account: 'account-2', directory: '/home/ops', error: '' }),
+    readSFTPDirectory: vi.fn().mockResolvedValue({ path: '/home/ops', entries: [] }),
+  } as Partial<Backend>)
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 SFTP 连接 prod-web-01' }))
+  await userEvent.click(await screen.findByRole('button', { name: /ops/ }))
+  expect(await screen.findByRole('tab', { name: 'prod-web-01' })).toBeInTheDocument()
+  expect(await screen.findByRole('textbox', { name: '远程路径' })).toHaveValue('/home/ops')
+  expect(backend.startSFTPSession).toHaveBeenCalledWith({ profile: 'production', organization: 'org-1', target: 'asset-1', account: 'account-2', directory: '' })
+})
+
+test('资产与别名的连接菜单只展示各自授权协议', async () => {
+  const backend = makeBackend({ getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }) })
+  render(<App backend={backend} />)
+  await screen.findByText('SFTP : 22')
+  expect(screen.queryByRole('button', { name: '使用 production-web 连接' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '使用 production-web 连接 SFTP' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'prod-web-01 更多操作' }))
+  expect(screen.queryByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).not.toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: '从操作菜单使用 SFTP 连接 prod-web-01' })).toBeInTheDocument()
+})
+
+test('SSH 发起 SFTP 固定原会话身份并只读取一次工作目录', async () => {
+  const backend = makeBackend({
+    getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'ssh', port: 22 }, { name: 'sftp', port: 22 }] }),
+    startSSHSession: vi.fn().mockResolvedValue({ id: 'live-ssh', status: 'active', profile: 'production', organization: 'org-1', asset: 'asset-1', assetId: 'asset-1', assetName: 'prod-web-01', account: 'account-1', error: '' }),
+    startSFTPSession: vi.fn().mockResolvedValue({ id: 'live-sftp', status: 'active', profile: 'production', organization: 'org-1', asset: 'asset-1', assetId: 'asset-1', assetName: 'prod-web-01', account: 'account-1', directory: '/srv/site', error: '' }),
+    readSFTPDirectory: vi.fn().mockResolvedValue({ path: '/srv/site', entries: [] }),
+  })
+  terminalOscHandlers.clear()
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(terminalOscHandlers.has(7)).toBe(true))
+  await act(async () => terminalOscHandlers.get(7)?.('file://prod-web-01/srv/site'))
+  const connect = screen.getByRole('button', { name: '从 SSH 连接 SFTP' })
+  expect(connect.nextElementSibling).toHaveClass('terminal-action-separator')
+  await userEvent.click(connect)
+  expect(await screen.findByRole('textbox', { name: '远程路径' })).toHaveValue('/srv/site')
+  expect(backend.startSFTPSession).toHaveBeenCalledWith({ profile: 'production', organization: 'org-1', target: 'asset-1', account: 'account-1', directory: '/srv/site', sourceSSHSessionId: 'live-ssh' })
+})
+
+test('有传输的 SFTP Tab 关闭需要确认，取消保留 Tab 和传输', async () => {
+  const backend = makeBackend({
+    getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }),
+    listSFTPTransfers: vi.fn().mockResolvedValue([{ id: 'transfer-1', batchId: 'batch-1', sessionId: 'sftp-1', direction: 'upload', name: 'site', source: 'C:\\site', destination: '/home/deploy/site', status: 'running', transferred: 0, total: 4096, error: '' }]),
+  })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  await screen.findByRole('region', { name: '传输队列' })
+  await userEvent.click(screen.getByRole('button', { name: '关闭 production-web Tab' }))
+  expect(screen.getByRole('dialog', { name: '停止传输并关闭？' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '取消' }))
+  expect(screen.getByRole('tab', { name: 'production-web' })).toBeInTheDocument()
+  expect(backend.closeSFTPSession).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: '关闭 production-web Tab' }))
+  await userEvent.click(await screen.findByRole('button', { name: '停止并关闭' }))
+  await waitFor(() => expect(screen.queryByRole('tab', { name: 'production-web' })).not.toBeInTheDocument())
+  expect(backend.closeSFTPSession).toHaveBeenCalledWith('sftp-1')
+  expect(backend.closeSSHSession).not.toHaveBeenCalled()
+})
+
+test('SFTP 异步状态可先于 Start 返回，断开后保留 Tab 并用解析后的资产账号重连', async () => {
+  let emit: (event: any) => void = () => undefined
+  let resolveStart: (value: any) => void = () => undefined
+  const connected = { id: 'sftp-canonical', status: 'active', profile: 'production', organization: 'org-1', asset: 'asset-resolved', assetId: 'asset-resolved', assetName: 'resolved-server', account: 'canonical-account', directory: '/home/canonical', error: '' }
+  const backend = makeBackend({
+    getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }),
+    onSFTPState: vi.fn((handler) => { emit = handler; return () => undefined }),
+    startSFTPSession: vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveStart = resolve })).mockResolvedValue(connected),
+    readSFTPDirectory: vi.fn().mockResolvedValue({ path: '/home/canonical', entries: [] }),
+  })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  await act(async () => { emit(connected); resolveStart({ ...connected, status: 'connecting', directory: '' }) })
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '远程路径' })).toHaveValue('/home/canonical'))
+  await act(async () => emit({ ...connected, status: 'closed' }))
+  expect(screen.getByRole('tab', { name: 'production-web' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '重新连接' }))
+  expect(backend.startSFTPSession).toHaveBeenLastCalledWith({ profile: 'production', organization: 'org-1', target: 'asset-resolved', account: 'canonical-account', directory: '' })
+})
+
+test('SFTP 连接中重复点击复用待连接 Tab，关闭后回收迟到会话', async () => {
+  let finish: (value: any) => void = () => undefined
+  const backend = makeBackend({ getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }), startSFTPSession: vi.fn(() => new Promise<any>((resolve) => { finish = resolve })) })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  await userEvent.click(screen.getByRole('tab', { name: '资产' }))
+  await userEvent.click(screen.getByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  expect(screen.getAllByRole('tab', { name: 'production-web' })).toHaveLength(1)
+  expect(backend.startSFTPSession).toHaveBeenCalledTimes(1)
+  await userEvent.click(screen.getByRole('button', { name: '关闭 production-web Tab' }))
+  await act(async () => finish({ id: 'late-sftp', status: 'active', profile: 'production', organization: 'org-1', assetId: 'asset-1', assetName: 'prod-web-01', account: 'account-1', directory: '/home/deploy', error: '' }))
+  expect(backend.closeSFTPSession).toHaveBeenCalledWith('late-sftp')
+  expect(screen.queryByRole('tab', { name: 'production-web' })).not.toBeInTheDocument()
+})
+
+test('原生退出请求提示停止传输，用户确认后才授权退出', async () => {
+  let requestQuit = () => undefined
+  const backend = makeBackend({ onQuitRequested: vi.fn((handler) => { requestQuit = handler; return () => undefined }) })
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  act(() => requestQuit())
+  expect(screen.getByRole('dialog', { name: '停止传输并退出？' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '取消' }))
+  expect(backend.confirmQuit).not.toHaveBeenCalled()
+  act(() => requestQuit())
+  await userEvent.click(screen.getByRole('button', { name: '停止并退出' }))
+  expect(backend.confirmQuit).toHaveBeenCalledTimes(1)
+})
+
+test('可见的未选中资产也加载协议，从无 SSH 权限资产的快速入口不能创建 SSH', async () => {
+  const second = { ...assetPage.results[0], id: 'asset-2', name: 'files-only', aliases: [{ name: 'files', asset: 'asset-2', account: 'account-1', organization: 'org-1' }] }
+  const backend = makeBackend({ listAssets: vi.fn().mockResolvedValue({ ...assetPage, count: 2, results: [assetPage.results[0], second] }), getAsset: vi.fn(async ({ asset }) => asset === 'asset-2' ? { ...second, accounts: assetDetail.accounts, protocols: [{ name: 'sftp', port: 22 }] } : assetDetail) })
+  render(<App backend={backend} />)
+  expect(await screen.findByRole('button', { name: '使用 files 连接 SFTP' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '使用 files 连接' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '新建连接' }))
+  expect(within(screen.getByRole('dialog', { name: '快速连接' })).queryByText('files-only')).not.toBeInTheDocument()
+})
+
+test('Alias 首次连接保留所属 Organization，后续重连使用服务端解析后的身份', async () => {
+  let emit: (event: any) => void = () => undefined
+  const state = { id: 'alias-sftp', status: 'active', profile: 'production', organization: 'org-resolved', asset: 'asset-1', assetId: 'asset-1', assetName: 'prod-web-01', account: 'account-1', directory: '/home/deploy', error: '' }
+  const backend = makeBackend({ bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, currentOrganization: 'all' }), getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }), startSFTPSession: vi.fn().mockResolvedValue(state), onSFTPState: vi.fn((handler) => { emit = handler; return () => undefined }) })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  expect(backend.startSFTPSession).toHaveBeenLastCalledWith({ profile: 'production', organization: 'org-1', target: 'production-web', account: 'account-1', directory: '' })
+  await act(async () => emit({ ...state, status: 'closed' }))
+  await userEvent.click(screen.getByRole('button', { name: '重新连接' }))
+  expect(backend.startSFTPSession).toHaveBeenLastCalledWith({ profile: 'production', organization: 'org-resolved', target: 'asset-1', account: 'account-1', directory: '' })
+})
+
+test('已知 SFTP 权限拒绝禁用对应操作和拖入，未知权限允许尝试', async () => {
+  let emit: (event: any) => void = () => undefined
+  const onDrop = vi.fn()
+  window.runtime = { EventsOnMultiple: vi.fn(() => () => undefined), OnFileDrop: onDrop, OnFileDropOff: vi.fn() }
+  const state = { id: 'permission-sftp', status: 'active', profile: 'production', organization: 'org-1', asset: 'asset-1', assetId: 'asset-1', assetName: 'prod-web-01', account: 'account-1', directory: '/home/deploy', error: '', permissions: { upload: false, download: false, delete: false } }
+  const backend = makeBackend({ getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }), startSFTPSession: vi.fn().mockResolvedValue(state), onSFTPState: vi.fn((handler) => { emit = handler; return () => undefined }), readSFTPDirectory: vi.fn().mockResolvedValue({ path: '/home/deploy', entries: [{ name: 'test.txt', path: '/home/deploy/test.txt', type: 'file', size: 5, modifiedAt: '2026-09-01T01:00:00Z', permissions: '-rw-r--r--' }] }) })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  await userEvent.click(await screen.findByRole('checkbox', { name: '选择 test.txt' }))
+  for (const name of ['上传文件', '上传文件夹', '新建文件夹', '重命名', '下载', '删除']) expect(screen.getByRole('button', { name })).toBeDisabled()
+  expect(onDrop).not.toHaveBeenCalled()
+  await act(async () => emit({ ...state, permissions: undefined }))
+  for (const name of ['上传文件', '上传文件夹', '新建文件夹', '重命名', '下载', '删除']) expect(screen.getByRole('button', { name })).toBeEnabled()
+  expect(onDrop).toHaveBeenCalled()
+  delete window.runtime
 })

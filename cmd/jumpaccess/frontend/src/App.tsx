@@ -9,6 +9,7 @@ import {
   Copy,
   FileCode2,
   FolderOutput,
+  FolderOpen,
   KeyRound,
   Layers3,
   LogIn,
@@ -37,6 +38,7 @@ import {
 import './App.css'
 import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
+import { SFTPPane } from './components/SFTPPane'
 import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
 import { terminalScheme } from './model/terminalTheme'
 import {
@@ -55,6 +57,7 @@ import {
   type ProfileSummary,
   type SessionLatency,
   type SessionState,
+  type SFTPState,
   type TerminalRightClickAction,
   type TerminalCursorStyle,
   type ThemeMode,
@@ -63,10 +66,13 @@ import {
 } from './lib/backend'
 import {
   type AppTab,
+  type ConnectionTab,
   emptyTabWorkspace,
   reduceTabs,
   type SSHDescriptor,
   type SSHTab,
+  type SFTPTab,
+  isConnectionTab,
   type SingletonTabKind,
   type TabAction,
   type TabWorkspace,
@@ -76,6 +82,7 @@ type AliasFilter = 'all' | 'with-alias' | 'without-alias'
 const TerminalPreview = lazy(() => import('./components/TerminalPreview').then((module) => ({ default: module.TerminalPreview })))
 
 interface PendingConnection {
+  protocol: 'ssh' | 'sftp'
   asset: Asset
   target: string
   alias: string
@@ -96,9 +103,9 @@ function hydrateWorkspace(workspace: Workspace): TabWorkspace {
     workspace: {
       activeTabID: workspace.activeTabId,
       tabs: (workspace.tabs ?? []).map((tab): AppTab => {
-        if (tab.type === 'ssh') return {
+        if (tab.type === 'ssh' || tab.type === 'sftp') return {
           id: tab.id,
-          kind: 'ssh',
+          kind: tab.type,
           connectionStatus: 'disconnected',
           descriptor: {
             profile: tab.profile ?? '',
@@ -128,9 +135,9 @@ function startupWorkspace(state: BootstrapState): TabWorkspace {
 function persistableWorkspace(workspace: TabWorkspace): Workspace {
   return {
     activeTabId: workspace.activeTabID,
-    tabs: workspace.tabs.map((tab) => tab.kind === 'ssh' ? {
+    tabs: workspace.tabs.map((tab) => isConnectionTab(tab) ? {
       id: tab.id,
-      type: 'ssh',
+      type: tab.kind,
       profile: tab.descriptor.profile,
       organization: tab.descriptor.organization,
       target: tab.descriptor.target,
@@ -147,11 +154,11 @@ function newSSHTabID(): string {
 }
 
 function tabTitle(tab: AppTab): string {
-  if (tab.kind === 'ssh') return tab.descriptor.alias || tab.descriptor.assetName || tab.descriptor.target
+  if (isConnectionTab(tab)) return tab.descriptor.alias || tab.descriptor.assetName || tab.descriptor.target
   return { assets: '资产', profiles: 'Profile', settings: '设置' }[tab.kind]
 }
 
-function tabTooltip(tab: SSHTab): string {
+function tabTooltip(tab: SSHTab | SFTPTab): string {
   const descriptor = tab.descriptor
   return [
     descriptor.alias ? `Alias: ${descriptor.alias}` : '',
@@ -172,6 +179,10 @@ function errorMessage(error: unknown): string {
   return message.startsWith('login required')
     ? '当前 Profile 需要登录，请在 Profile 页面完成认证。'
     : message
+}
+
+function supportsProtocol(detail: AssetDetail | undefined, protocol: 'ssh' | 'sftp'): boolean {
+  return detail?.protocols.some((item) => item.name.toLowerCase() === protocol) === true
 }
 
 function accountLabel(account: Account): string {
@@ -259,6 +270,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const confirmedPreferences = useRef<Preferences | null>(null)
   const preferenceRevision = useRef(0)
   const connectionAttempts = useRef(new Map<string, symbol>())
+  const pendingSFTPStates = useRef(new Map<string, SFTPState>())
   const pendingSessionStates = useRef(new Map<string, SessionState>())
   const [profile, setProfile] = useState('')
   const [organization, setOrganization] = useState('')
@@ -273,6 +285,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [refreshing, setRefreshing] = useState(false)
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
   const [aliasFilter, setAliasFilter] = useState<AliasFilter>('all')
+  const [sshSFTPSupport, setSSHSFTPSupport] = useState<Record<string, boolean>>({})
   const [sessionDirectories, setSessionDirectories] = useState<Record<string, string>>({})
   const [sessionLatencies, setSessionLatencies] = useState<Record<string, SessionLatency>>({})
   const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
@@ -290,6 +303,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [licenseOpen, setLicenseOpen] = useState(false)
   const [licenseText, setLicenseText] = useState('')
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
+  const [pendingQuit, setPendingQuit] = useState(false)
+  const [pendingSFTPClose, setPendingSFTPClose] = useState<{ tab: SFTPTab; disconnectOnly: boolean } | null>(null)
   const [pendingDisconnect, setPendingDisconnect] = useState<SSHTab | null>(null)
   const [pendingProfileLogout, setPendingProfileLogout] = useState<ProfileSummary | null>(null)
   const [pendingProfileDeletion, setPendingProfileDeletion] = useState<ProfileSummary | null>(null)
@@ -406,10 +421,21 @@ export default function App({ backend = wailsBackend }: AppProps) {
     const offLatency = backend.onSessionLatency((event) => {
       setSessionLatencies((current) => ({ ...current, [event.id]: event }))
     })
+    const offQuit = backend.onQuitRequested(() => setPendingQuit(true))
+    const offSFTP = backend.onSFTPState((event) => {
+      const tab = workspaceRef.current.tabs.find((item) => item.kind === 'sftp' && item.sessionID === event.id)
+      if (tab) applySFTPState(event)
+      else {
+        pendingSFTPStates.current.set(event.id, event)
+        if (pendingSFTPStates.current.size > 64) pendingSFTPStates.current.delete(pendingSFTPStates.current.keys().next().value!)
+      }
+    })
     const offHostKey = backend.onHostKeyPrompt(setHostKeyPrompt)
     return () => {
       cancelled = true
       offState()
+      offSFTP()
+      offQuit()
       offOutput()
       offLatency()
       offHostKey()
@@ -470,13 +496,23 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }, [backend, currentProfileLoggedIn, debouncedSearch, offset, organization, profile, refreshKey])
 
   useEffect(() => {
-    if (!selectedAsset || details[selectedAsset.id] || !profile || !organization || !currentProfileLoggedIn) return
+    if (!profile || !organization || !currentProfileLoggedIn) return
+    const wanted = [...new Map([...assets.results, ...(quickOpen ? quickResults : [])].map((asset) => [asset.id, asset])).values()].filter((asset) => !details[asset.id])
+    if (!wanted.length) return
     let cancelled = false
-    backend.getAsset({ profile, organization, asset: selectedAsset.id })
-      .then((detail) => !cancelled && setDetails((current) => ({ ...current, [detail.id]: detail })))
-      .catch((reason) => !cancelled && setError(errorMessage(reason)))
+    void Promise.allSettled(wanted.map((asset) => backend.getAsset({ profile, organization, asset: asset.id })))
+      .then((results) => {
+        if (cancelled) return
+        setDetails((current) => {
+          const next = { ...current }
+          results.forEach((result) => { if (result.status === 'fulfilled') next[result.value.id] = result.value })
+          return next
+        })
+        const failure = results.find((result) => result.status === 'rejected')
+        if (failure?.status === 'rejected') setError(errorMessage(failure.reason))
+      })
     return () => { cancelled = true }
-  }, [backend, currentProfileLoggedIn, details, organization, profile, selectedAsset])
+  }, [backend, currentProfileLoggedIn, assets.results, organization, profile, quickOpen, quickResults, refreshKey])
 
   useEffect(() => {
     const theme = preferences?.theme ?? 'system'
@@ -595,50 +631,101 @@ export default function App({ backend = wailsBackend }: AppProps) {
     return detail
   }
 
-  async function connectAsset(asset: Asset) {
+  async function connectAsset(asset: Asset, protocol: 'ssh' | 'sftp' = 'ssh') {
     await run(async () => {
       const detail = await ensureDetail(asset)
-      if (detail.accounts.length === 0) throw new Error('该资产没有可用于 SSH 的账号。')
+      if (!supportsProtocol(detail, protocol)) throw new Error(`该资产未授权 ${protocol.toUpperCase()} 协议。`)
+      if (detail.accounts.length === 0) throw new Error(`该资产没有可用于 ${protocol.toUpperCase()} 的账号。`)
       if (detail.accounts.length === 1) {
-        await startConnection(asset, asset.id, '', detail.accounts[0].id || detail.accounts[0].username)
+        await startConnection(asset, asset.id, '', detail.accounts[0].id || detail.accounts[0].username, protocol)
         return
       }
-      setPendingConnection({ asset, target: asset.id, alias: '' })
+      setPendingConnection({ asset, target: asset.id, alias: '', protocol })
     })
   }
 
-  async function connectAlias(asset: Asset, alias: Alias) {
+  async function connectAlias(asset: Asset, alias: Alias, protocol: 'ssh' | 'sftp' = 'ssh') {
     await run(async () => {
+      const detail = await ensureDetail(asset)
+      if (!supportsProtocol(detail, protocol)) throw new Error(`该资产未授权 ${protocol.toUpperCase()} 协议。`)
       if (alias.account) {
-        await startConnection(asset, alias.name, alias.name, alias.account)
+        await startConnection(asset, alias.name, alias.name, alias.account, protocol)
         return
       }
-      const detail = await ensureDetail(asset)
-      if (detail.accounts.length === 0) throw new Error('该资产没有可用于 SSH 的账号。')
+      if (detail.accounts.length === 0) throw new Error(`该资产没有可用于 ${protocol.toUpperCase()} 的账号。`)
       if (detail.accounts.length === 1) {
-        await startConnection(asset, alias.name, alias.name, detail.accounts[0].id || detail.accounts[0].username)
+        await startConnection(asset, alias.name, alias.name, detail.accounts[0].id || detail.accounts[0].username, protocol)
         return
       }
-      setPendingConnection({ asset, target: alias.name, alias: alias.name })
+      setPendingConnection({ asset, target: alias.name, alias: alias.name, protocol })
     })
   }
 
-  async function startConnection(asset: Asset, target: string, alias: string, account: string, existingTabID?: string) {
+  async function startConnection(asset: Asset, target: string, alias: string, account: string, protocol: 'ssh' | 'sftp' = 'ssh') {
     const descriptor: SSHDescriptor = {
       profile,
-      organization,
+      organization: protocol === 'sftp' && alias ? asset.aliases.find((item) => item.name === alias)?.organization || organization : organization,
       target,
       alias,
       assetID: asset.id,
       assetName: asset.name,
       account,
     }
-    const tabID = existingTabID ?? newSSHTabID()
-    if (!existingTabID) dispatchTabs({ type: 'open-ssh', id: tabID, descriptor })
-    await beginSSHConnection(tabID, descriptor, false)
+    if (protocol === 'sftp' && focusPendingSFTP(descriptor)) return
+    const tabID = newSSHTabID()
+    dispatchTabs({ type: protocol === 'ssh' ? 'open-ssh' : 'open-sftp', id: tabID, descriptor })
+    if (protocol === 'ssh') await beginSSHConnection(tabID, descriptor, false)
+    else await beginSFTPConnection(tabID, descriptor)
     void syncProfileAuth(profile).catch((reason) => setError(errorMessage(reason)))
     setPendingConnection(null)
     setQuickOpen(false)
+  }
+
+  function focusPendingSFTP(descriptor: SSHDescriptor): boolean {
+    const pending = workspaceRef.current.tabs.find((tab) => tab.kind === 'sftp' && ['connecting', 'reconnecting'].includes(tab.connectionStatus) && tab.descriptor.profile === descriptor.profile && tab.descriptor.organization === descriptor.organization && (tab.descriptor.assetID || tab.descriptor.target) === (descriptor.assetID || descriptor.target) && tab.descriptor.account === descriptor.account)
+    if (!pending) return false
+    dispatchTabs({ type: 'activate', id: pending.id })
+    return true
+  }
+
+  async function connectSFTPFromSSH(tab: SSHTab) {
+    if (!tab.sessionID || tab.connectionStatus !== 'active') return
+    const directory = sessionDirectories[tab.id] || ''
+    const descriptor = { ...tab.descriptor, target: tab.descriptor.assetID || tab.descriptor.target }
+    if (focusPendingSFTP(descriptor)) return
+    const tabID = newSSHTabID()
+    dispatchTabs({ type: 'open-sftp', id: tabID, descriptor })
+    await beginSFTPConnection(tabID, descriptor, directory, tab.sessionID)
+  }
+
+  async function beginSFTPConnection(tabID: string, descriptor: SSHDescriptor, directory = '', sourceSSHSessionId?: string) {
+    if (connectionAttempts.current.has(tabID)) return
+    const attempt = Symbol(tabID)
+    connectionAttempts.current.set(tabID, attempt)
+    dispatchTabs({ type: 'begin-connection', tabID, reconnecting: false })
+    try {
+      const session = await backend.startSFTPSession({ profile: descriptor.profile, organization: descriptor.organization, target: descriptor.target, account: descriptor.account, directory, ...(sourceSSHSessionId ? { sourceSSHSessionId } : {}) })
+      if (connectionAttempts.current.get(tabID) !== attempt || !workspaceRef.current.tabs.some((tab) => tab.id === tabID && tab.kind === 'sftp')) {
+        pendingSFTPStates.current.delete(session.id)
+        await backend.closeSFTPSession(session.id)
+        return
+      }
+      dispatchTabs({ type: 'attach-session', tabID, sessionID: session.id })
+      const latest = pendingSFTPStates.current.get(session.id) ?? session
+      pendingSFTPStates.current.delete(session.id)
+      applySFTPState(latest)
+    } catch (reason) {
+      if (connectionAttempts.current.get(tabID) === attempt) dispatchTabs({ type: 'connection-error', tabID, error: errorMessage(reason) })
+    } finally {
+      if (connectionAttempts.current.get(tabID) === attempt) connectionAttempts.current.delete(tabID)
+    }
+  }
+
+  function applySFTPState(event: SFTPState) {
+    dispatchTabs({ type: 'connection-resolved', sessionID: event.id, descriptor: { ...(event.profile ? { profile: event.profile } : {}), ...(event.organization ? { organization: event.organization } : {}), ...(event.assetId ? { assetID: event.assetId, target: event.assetId } : {}), ...(event.assetName ? { assetName: event.assetName } : {}), ...(event.account ? { account: event.account } : {}) } })
+    if (event.status === 'connecting') return
+    dispatchTabs({ type: 'session-state', sessionID: event.id, status: event.status, error: event.error })
+    if (event.status === 'active') dispatchTabs({ type: 'sftp-directory', sessionID: event.id, directory: event.directory, permissions: event.permissions })
   }
 
   async function reconnectTab(tab: SSHTab) {
@@ -650,6 +737,9 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }
 
   async function beginSSHConnection(tabID: string, descriptor: SSHDescriptor, reconnecting: boolean) {
+    void backend.getAsset({ profile: descriptor.profile, organization: descriptor.organization, asset: descriptor.assetID || descriptor.target })
+      .then((detail) => setSSHSFTPSupport((current) => ({ ...current, [tabID]: supportsProtocol(detail, 'sftp') })))
+      .catch(() => setSSHSFTPSupport((current) => ({ ...current, [tabID]: false })))
     const attempt = Symbol(tabID)
     connectionAttempts.current.set(tabID, attempt)
     dispatchTabs({ type: 'begin-connection', tabID, reconnecting })
@@ -765,7 +855,30 @@ export default function App({ backend = wailsBackend }: AppProps) {
     })
   }
 
+  async function requestSFTPClose(tab: SFTPTab, disconnectOnly = false) {
+    await run(async () => {
+      const tasks = tab.sessionID ? await backend.listSFTPTransfers(tab.sessionID) : []
+      if (tasks.some((task) => ['queued', 'running', 'conflict'].includes(task.status))) {
+        setPendingSFTPClose({ tab, disconnectOnly })
+        return
+      }
+      if (disconnectOnly && tab.sessionID) await backend.closeSFTPSession(tab.sessionID)
+      else await closeTab(tab)
+    })
+  }
+
+  async function confirmSFTPClose() {
+    if (!pendingSFTPClose) return
+    const { tab, disconnectOnly } = pendingSFTPClose
+    await run(async () => {
+      if (disconnectOnly && tab.sessionID) await backend.closeSFTPSession(tab.sessionID)
+      else await closeTab(tab)
+      setPendingSFTPClose(null)
+    })
+  }
+
   function requestCloseTab(tab: AppTab) {
+    if (tab.kind === 'sftp') { void requestSFTPClose(tab); return }
     if (tab.kind === 'ssh' && preferences?.confirmCloseActiveSession && (tab.connectionStatus === 'active' || tab.connectionStatus === 'connecting' || tab.connectionStatus === 'reconnecting')) {
       setPendingDisconnect(tab)
       return
@@ -791,6 +904,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         return
       }
       if (currentTab.kind === 'ssh' && currentTab.sessionID) await backend.closeSSHSession(currentTab.sessionID)
+      if (currentTab.kind === 'sftp' && currentTab.sessionID) await backend.closeSFTPSession(currentTab.sessionID)
       if (currentTab.kind === 'ssh' && currentTab.sessionID) clearSessionLatency(currentTab.sessionID)
       dispatchTabs({ type: 'close', id: currentTab.id })
       if (currentTab.kind === 'ssh') setSessionOutput((current) => {
@@ -806,7 +920,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   async function deleteProfile(item: ProfileSummary) {
     await run(async () => {
       await backend.deleteProfile(item.name)
-      const removedTabs = workspaceRef.current.tabs.filter((tab): tab is SSHTab => tab.kind === 'ssh' && tab.descriptor.profile === item.name)
+      const removedTabs = workspaceRef.current.tabs.filter((tab): tab is ConnectionTab => isConnectionTab(tab) && tab.descriptor.profile === item.name)
       removedTabs.forEach((tab) => connectionAttempts.current.delete(tab.id))
       const removedTabIDs = new Set(removedTabs.map((tab) => tab.id))
       dispatchTabs({ type: 'drop-profile', profile: item.name })
@@ -900,14 +1014,15 @@ export default function App({ backend = wailsBackend }: AppProps) {
               <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={refreshing || !organization} onClick={() => setRefreshKey((value) => value + 1)} type="button"><RefreshCcw className={refreshing ? 'spin' : ''} />{refreshing ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
                 <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
-                <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
+                <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onConnectSFTP={() => void connectAsset(asset, 'sftp')} onConnectAliasSFTP={(alias) => void connectAlias(asset, alias, 'sftp')} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
             </section>
-            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onCopy={(value) => void navigator.clipboard?.writeText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
+            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onConnectSFTP={() => void connectAsset(selectedAsset, 'sftp')} onCopy={(value) => void navigator.clipboard?.writeText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
           </div>
         ) : null}
 
-        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
+        {workspace.tabs.filter((tab): tab is SFTPTab => tab.kind === 'sftp').map((tab) => <div className="sftp-tab-content" hidden={tab.id !== workspace.activeTabID} key={tab.id}><SFTPPane active={tab.id === workspace.activeTabID} backend={backend} tab={tab} onReconnect={() => void beginSFTPConnection(tab.id, tab.descriptor)} onDisconnect={() => void requestSFTPClose(tab, true)} /></div>)}
+        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -917,13 +1032,15 @@ export default function App({ backend = wailsBackend }: AppProps) {
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
       {aliasEditor ? <EditAliasDialog alias={aliasEditor.alias} asset={aliasEditor.asset} onCancel={() => setAliasEditor(null)} onSave={(name) => void renameAliasForAsset(aliasEditor.alias, name)} /> : null}
       {pendingAliasDeletion ? <DeleteAliasDialog alias={pendingAliasDeletion} onCancel={() => setPendingAliasDeletion(null)} onConfirm={() => void deleteAlias(pendingAliasDeletion)} /> : null}
-      {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.asset, pendingConnection.target, pendingConnection.alias, account.id || account.username))} /> : null}
-      {quickOpen ? <QuickConnectDialog assets={displayedQuickResults} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
+      {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.asset, pendingConnection.target, pendingConnection.alias, account.id || account.username, pendingConnection.protocol))} /> : null}
+      {quickOpen ? <QuickConnectDialog assets={displayedQuickResults.filter((asset) => supportsProtocol(details[asset.id], 'ssh'))} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
       {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
       {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
+      {pendingQuit ? <Modal title="停止传输并退出？" description="仍有未完成的 SFTP 传输。退出会停止这些任务。" onClose={() => setPendingQuit(false)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingQuit(false)}>取消</button><button className="button primary danger" onClick={() => void run(async () => { await workspaceSaveQueue.current; await preferenceSaveQueue.current; await backend.confirmQuit(); setPendingQuit(false) })}>停止并退出</button></div></Modal> : null}
+      {pendingSFTPClose ? <Modal title={pendingSFTPClose.disconnectOnly ? "停止传输并断开？" : "停止传输并关闭？"} description="此连接仍有未完成的传输。继续会停止这些任务。" onClose={() => setPendingSFTPClose(null)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingSFTPClose(null)}>取消</button><button className="button primary danger" onClick={() => void confirmSFTPClose()}>{pendingSFTPClose.disconnectOnly ? '停止并断开' : '停止并关闭'}</button></div></Modal> : null}
       {pendingDisconnect ? <DisconnectSessionDialog tab={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void closeTab(pendingDisconnect)} /> : null}
       {pendingProfileLogout ? <LogoutProfileDialog profile={pendingProfileLogout} onCancel={() => setPendingProfileLogout(null)} onConfirm={() => logoutProfile(pendingProfileLogout)} /> : null}
       {pendingProfileDeletion ? <DeleteProfileDialog profile={pendingProfileDeletion} onCancel={() => setPendingProfileDeletion(null)} onConfirm={() => void deleteProfile(pendingProfileDeletion)} /> : null}
@@ -935,6 +1052,7 @@ function tabIcon(tab: AppTab) {
   if (tab.kind === 'assets') return <Boxes />
   if (tab.kind === 'profiles') return <Layers3 />
   if (tab.kind === 'settings') return <Settings />
+  if (tab.kind === 'sftp') return <FolderOpen />
   return <TerminalSquare />
 }
 
@@ -1019,7 +1137,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, 
           onKeyDown={(event) => activateFromKeyboard(event, index)}
           role="tab"
           tabIndex={tab.id === activeTabID ? 0 : -1}
-          title={tab.kind === 'ssh' ? tabTooltip(tab) : tabTitle(tab)}
+          title={isConnectionTab(tab) ? tabTooltip(tab) : tabTitle(tab)}
           type="button"
         >
           {tabIcon(tab)}<span className="tab-primary">{tabTitle(tab)}</span>
@@ -1066,9 +1184,11 @@ function StartPage({ onAction }: { onAction: (action: SingletonTabKind | 'quick'
   </section>
 }
 
-function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onReconnect, output, preferences, tab }: {
+function SSHView({ backend, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onReconnect, output, preferences, tab }: {
   backend: Backend
   currentDirectory: string
+  canConnectSFTP: boolean
+  onConnectSFTP: () => void
   latency?: SessionLatency
   onCurrentDirectoryChange: (directory: string) => void
   onDisconnect: () => void
@@ -1130,6 +1250,7 @@ function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange,
         <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
         <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
         <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
+        {canConnectSFTP ? <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={status !== 'active'} onClick={onConnectSFTP} title="连接 SFTP" type="button"><FolderOpen /></button> : null}
         <span aria-hidden="true" className="terminal-action-separator" />
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
       </div>
@@ -1151,12 +1272,14 @@ function isAssetRowControl(target: EventTarget | null) {
   return target instanceof Element && target.closest('button, select, input, textarea, a, [role="menuitem"]') !== null
 }
 
-function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAlias, onDeleteAlias, onEditAlias, onEnsureDetail, onSelect, selected }: {
+function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onConnectSFTP, onConnectAliasSFTP, onCreateAlias, onDeleteAlias, onEditAlias, onEnsureDetail, onSelect, selected }: {
   asset: Asset
   detail?: AssetDetail
   onBind: (alias: Alias, account: string) => void
   onConnect: () => void
   onConnectAlias: (alias: Alias) => void
+  onConnectSFTP: () => void
+  onConnectAliasSFTP: (alias: Alias) => void
   onCreateAlias: () => void
   onDeleteAlias: (alias: Alias) => void
   onEditAlias: (alias: Alias) => void
@@ -1167,22 +1290,22 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onCreateAl
   return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={(event) => { if (!isAssetRowControl(event.target)) onSelect() }}><td><div className="asset-identity"><div className="server-glyph"><Server /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td><div className="inline-alias-stack">{asset.aliases.map((alias) => {
     const knownAccounts = detail?.accounts ?? []
     const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
-    return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select><button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button><button className="icon-button" aria-label={`编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
-  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td><AssetRowActions asset={asset} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
+    return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select>{supportsProtocol(detail, 'ssh') ? <button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button> : null}{supportsProtocol(detail, 'sftp') ? <button className="icon-button" aria-label={`使用 ${alias.name} 连接 SFTP`} title="连接 SFTP" onClick={() => onConnectAliasSFTP(alias)}><FolderOpen /></button> : null}<button className="icon-button" aria-label={`编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
+  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td><AssetRowActions asset={asset} detail={detail} onConnectSFTP={onConnectSFTP} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
 }
 
-function AssetRowActions({ asset, onConnect, onCreateAlias }: { asset: Asset; onConnect: () => void; onCreateAlias: () => void }) {
+function AssetRowActions({ asset, detail, onConnect, onConnectSFTP, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCreateAlias: () => void }) {
   const [open, setOpen] = useState(false)
   const root = useDismissiblePopover(open, () => setOpen(false))
   const act = (action: () => void) => {
     setOpen(false)
     action()
   }
-  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu"><button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button><button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
+  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu">{supportsProtocol(detail, 'ssh') ? <button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button> : null}{supportsProtocol(detail, 'sftp') ? <button aria-label={`从操作菜单使用 SFTP 连接 ${asset.name}`} onClick={() => act(onConnectSFTP)} role="menuitem"><FolderOpen />连接 SFTP</button> : null}<button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
 }
 
-function AssetDetailPane({ asset, detail, onConnect, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
-  return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono asset-id-value"><span className="asset-id-text" title={asset.id}>{asset.id}</span><button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions"><button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button>{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div></aside>
+function AssetDetailPane({ asset, detail, onConnect, onConnectSFTP, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
+  return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono asset-id-value"><span className="asset-id-text" title={asset.id}>{asset.id}</span><button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions">{detail?.protocols.some((protocol) => protocol.name.toLowerCase() === 'ssh') ? <button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button> : null}{detail?.protocols.some((protocol) => protocol.name.toLowerCase() === 'sftp') ? <button className="button primary large" aria-label={`使用 SFTP 连接 ${asset.name}`} onClick={onConnectSFTP}><FolderOpen />连接 SFTP</button> : null}{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div></aside>
 }
 
 function TerminalFontInput({ families, onChange, value }: { families: string[]; onChange: (value: string) => void; value: string }) {
@@ -1490,7 +1613,7 @@ function LogoutProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () =>
 }
 
 function DeleteProfileDialog({ onCancel, onConfirm, profile }: { onCancel: () => void; onConfirm: () => void; profile: ProfileSummary }) {
-  return <Modal title="删除 Profile" description="此操作无法撤销。" onClose={onCancel}><div className="delete-profile-summary"><span><Trash2 /></span><div><strong>{profile.name}</strong><small>{profile.url}</small></div></div><p className="delete-profile-warning">将永久删除该 Profile 的 Server URL、Organization、全部 Alias 和本地 OAuth 凭据；如果存在活动 SSH 会话，也会一并断开。JumpServer 上的资产和账号不会被删除。</p><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button aria-label={`删除 ${profile.name} Profile`} className="button destructive-confirm" onClick={onConfirm}><Trash2 />确认删除</button></div></Modal>
+  return <Modal title="删除 Profile" description="此操作无法撤销。" onClose={onCancel}><div className="delete-profile-summary"><span><Trash2 /></span><div><strong>{profile.name}</strong><small>{profile.url}</small></div></div><p className="delete-profile-warning">将永久删除该 Profile 的 Server URL、Organization、全部 Alias 和本地 OAuth 凭据；如果存在活动 SSH 会话、SFTP 会话或传输，也会关闭连接并停止传输。JumpServer 上的资产和账号不会被删除。</p><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button><button aria-label={`删除 ${profile.name} Profile`} className="button destructive-confirm" onClick={onConfirm}><Trash2 />确认删除</button></div></Modal>
 }
 
 function DeleteAliasDialog({ alias, onCancel, onConfirm }: { alias: Alias; onCancel: () => void; onConfirm: () => void }) {

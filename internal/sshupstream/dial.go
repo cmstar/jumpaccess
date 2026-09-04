@@ -16,7 +16,7 @@ type Dialer struct {
 }
 
 func (d Dialer) Dial(ctx context.Context, connection jumpserver.ClientConnection) (*ssh.Client, error) {
-	if connection.Protocol != "ssh" {
+	if connection.Protocol != "ssh" && connection.Protocol != "sftp" {
 		return nil, fmt.Errorf("SSH client received protocol %q", connection.Protocol)
 	}
 	if d.HostKeyCallback == nil {
@@ -28,6 +28,8 @@ func (d Dialer) Dial(ctx context.Context, connection jumpserver.ClientConnection
 	if err != nil {
 		return nil, fmt.Errorf("connect to JumpServer SSH gateway: %w", err)
 	}
+	stopCancellation := context.AfterFunc(ctx, func() { _ = rawConnection.Close() })
+	defer stopCancellation()
 	if d.Timeout > 0 {
 		_ = rawConnection.SetDeadline(time.Now().Add(d.Timeout))
 	}
@@ -38,6 +40,10 @@ func (d Dialer) Dial(ctx context.Context, connection jumpserver.ClientConnection
 		Timeout:         d.Timeout,
 	}
 	clientConnection, channels, requests, err := ssh.NewClientConn(rawConnection, address, configuration)
+	if ctx.Err() != nil {
+		_ = rawConnection.Close()
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		_ = rawConnection.Close()
 		return nil, fmt.Errorf("establish JumpServer SSH connection: %w", err)

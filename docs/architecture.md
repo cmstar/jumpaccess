@@ -2,14 +2,14 @@
 
 ## 当前状态
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
 JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享能力，并允许多个可执行入口复用这些能力：
 
 - `jumpctl` 既可以作为独立 SSH 客户端运行，也可以作为通用 SSH `ProxyCommand` 被外部客户端调用。
-- `jumpaccess` 是基于 Wails 2 的桌面入口，负责认证、资源管理和直接 SSH，不提供 ProxyCommand 或其他代理能力。
+- `jumpaccess` 是基于 Wails 2 的桌面入口，负责认证、资源管理、直接 SSH 和 SFTP 文件传输，不提供 ProxyCommand 或其他代理能力。
 - OAuth、配置、JumpServer API、目标解析、Token 管理和 SSH 能力应位于可复用核心中，不能依赖具体 CLI 或未来 GUI 的表现层。
 
 本项目不安装 Windows Service，也不依赖 JumpServer 桌面 Client 才能完成认证或连接。JumpServer Client `v4.1.6` 仅作为首个协议与行为分析基线。
@@ -34,12 +34,13 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
-| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键与多行粘贴警告等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式与终端行为拆为同级面板，但持久化仍共用 `[terminal]`。SSH Tab 只保存重连所需描述符，不保存终端输出、live session ID 或秘密；该文件不进入 CLI 配置 schema |
+| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键与多行粘贴警告等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式与终端行为拆为同级面板，但持久化仍共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
 | SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
-| 桌面前端 | `cmd/jumpaccess/frontend` 使用 React 和 xterm.js 表现浏览器式 Tab 栏、Profile、Organization、分页 Asset、行内 Alias、GUI 偏好及多会话终端；纯 reducer 管理单例页和可重复 SSH Tab，生产环境只通过 Wails 绑定访问应用服务，Vite 开发服务器使用独立的内存预览适配器 |
+| SFTP | `internal/sftpclient` 在独立 SSH transport 上打开 SFTP subsystem，复用 gateway 主机信任；`internal/application/sftpsession` 管理目录、文件操作和进程内传输队列，流式 I/O 留在 Go，前端只接收元数据与进度 |
+| 桌面前端 | `cmd/jumpaccess/frontend` 使用 React 和 xterm.js 表现浏览器式 Tab 栏、Profile、Organization、分页 Asset、行内 Alias、GUI 偏好及多会话终端；纯 reducer 管理单例页和可重复 SSH/SFTP Tab，生产环境只通过 Wails 绑定访问应用服务，Vite 开发服务器使用独立的内存预览适配器 |
 
 ## 关键数据流
 
@@ -68,6 +69,14 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
+### 桌面 SFTP
+
+SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校验资产授权协议。连接到 client-url 返回的 gateway，使用短期 Connection Token 请求 `sftp` subsystem，不启动 Shell，也不复用 SSH Tab 的连接。两种连接共享 `known_hosts` 和主机密钥确认。
+
+从 SSH 打开 SFTP 时，桌面适配器用原 Session 的 Profile、Organization、Asset ID 和 Account 固定连接身份。目录仅取打开时的 OSC 7 快照。KoKo 的 `/` 是平台配置的 SFTP 根目录；只有已知 `sftp_home` 的物理映射时，才把 SSH 目录换算为 SFTP 路径。无法映射或访问时静默尝试 home／起始目录，不假设 `/home/<username>`。文件浏览与终端此后独立。
+
+上传和下载使用原生文件选择器及 Wails 文件拖入；Go 逐文件流式传输，冲突等待、取消和重试由会话队列负责。文件内容不跨 Wails 事件桥。传输临时文件在成功后发布为目标文件；递归操作跳过已识别的符号链接；针对 KoKo 的文件类型兼容行为，通过 READLINK 补充识别。关闭连接会取消其任务，切换 Tab 不影响任务；退出前有未完成任务时先请求前端确认。
+
 ### 通用 ProxyCommand
 
 兼容客户端通过 stdin/stdout 启动 `jumpctl proxy`。该模式的目标契约是：
@@ -91,7 +100,7 @@ ProxyCommand 有两层独立主机信任：
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
 
-共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
+共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH/SFTP Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
 
 `credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 

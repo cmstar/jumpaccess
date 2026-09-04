@@ -229,3 +229,24 @@ describe('reduceTabs', () => {
     expect(activated.activeTabID).toBe('system:assets')
   })
 })
+
+it('SFTP 可以为同一目标打开多个独立 Tab 并在恢复时保持断连', () => {
+  const first = reduceTabs(emptyTabWorkspace, { type: 'open-sftp', id: 'sftp-1', descriptor } as any)
+  const second = reduceTabs(first, { type: 'open-sftp', id: 'sftp-2', descriptor } as any)
+  expect(second.tabs.map((tab) => [tab.id, tab.kind])).toEqual([['sftp-1', 'sftp'], ['sftp-2', 'sftp']])
+  const attached = reduceTabs(second, { type: 'attach-session', tabID: 'sftp-2', sessionID: 'live-sftp' })
+  const active = reduceTabs(attached, { type: 'session-state', sessionID: 'live-sftp', status: 'active', error: '' })
+  expect(active.tabs[1]).toMatchObject({ connectionStatus: 'active', sessionID: 'live-sftp' })
+  const restored = reduceTabs(emptyTabWorkspace, { type: 'hydrate', workspace: active })
+  expect(restored.tabs[1]).toEqual({ id: 'sftp-2', kind: 'sftp', descriptor, connectionStatus: 'disconnected' })
+  expect(restored.activeTabID).toBe('sftp-2')
+})
+
+it('重命名 Alias 保留 SFTP 的固定资产目标，删除 Profile 清理其 SFTP Tab', () => {
+  const opened = reduceTabs(emptyTabWorkspace, { type: 'open-sftp', id: 'sftp-1', descriptor: { ...descriptor, target: 'asset-1' } })
+  const other = reduceTabs(opened, { type: 'open-sftp', id: 'sftp-2', descriptor: { ...descriptor, profile: 'staging' } })
+  const renamed = reduceTabs(other, { type: 'rename-alias', profile: 'production', currentName: 'production-web', newName: 'prod-web' })
+  expect(renamed.tabs[0]).toMatchObject({ descriptor: { alias: 'prod-web', target: 'asset-1' } })
+  const removed = reduceTabs(renamed, { type: 'drop-profile', profile: 'production' })
+  expect(removed.tabs.map((tab) => tab.id)).toEqual(['sftp-2'])
+})

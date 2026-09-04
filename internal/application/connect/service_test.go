@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
@@ -193,4 +194,44 @@ func testService() (Service, *fakeAPI) {
 		NewAPI: func(string, string, string) (API, error) { return api, nil },
 	}
 	return service, api
+}
+
+func TestPrepareSFTPUsesItsOwnProtocolPermissionAndToken(t *testing.T) {
+	service, api := testService()
+	api.detail.Protocols = []jumpserver.Protocol{{Name: "sftp", Port: 22}}
+	api.connection.Protocol = "sftp"
+	prepared, err := service.Prepare(context.Background(), Options{Target: target.Input{Target: "asset-1"}, Protocol: "sftp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Connection.Protocol != "sftp" || api.connectionRequest.Protocol != "sftp" || api.connectionRequest.ConnectMethod != "sftp_client" {
+		t.Fatal("SFTP preparation did not use SFTP token")
+	}
+}
+
+func TestPrepareRejectsUnknownProtocolBeforeResolvingResources(t *testing.T) {
+	service, api := testService()
+	api.detail.Protocols = []jumpserver.Protocol{{Name: "rdp"}}
+	api.connection.Protocol = "rdp"
+	_, err := service.Prepare(context.Background(), Options{Target: target.Input{Target: "asset-1"}, Protocol: "rdp"})
+	if err == nil || !strings.Contains(err.Error(), "not supported") || len(api.listQueries) != 0 {
+		t.Fatalf("error=%v resource requests=%d", err, len(api.listQueries))
+	}
+}
+
+func TestPrepareRejectsConnectionProtocolMismatch(t *testing.T) {
+	service, api := testService()
+	api.detail.Protocols = []jumpserver.Protocol{{Name: "sftp"}}
+	_, err := service.Prepare(context.Background(), Options{Target: target.Input{Target: "asset-1"}, Protocol: "sftp"})
+	if err == nil {
+		t.Fatal("accepted SSH credentials for an SFTP request")
+	}
+}
+
+func TestPrepareSFTPDoesNotInferPermissionFromSSH(t *testing.T) {
+	service, api := testService()
+	_, err := service.Prepare(context.Background(), Options{Target: target.Input{Target: "asset-1"}, Protocol: "sftp"})
+	if err == nil || api.connectionRequest.Asset != "" {
+		t.Fatalf("error=%v; unauthorized SFTP token issued", err)
+	}
 }

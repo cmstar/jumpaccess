@@ -6,13 +6,16 @@ import (
 	"path/filepath"
 	stdruntime "runtime"
 	"sync"
+	"sync/atomic"
 
 	jumpaccess "github.com/cmstar/jumpaccess"
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
+	sftpsessionapp "github.com/cmstar/jumpaccess/internal/application/sftpsession"
 	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
+	"github.com/cmstar/jumpaccess/internal/sftpclient"
 	"github.com/cmstar/jumpaccess/internal/sshclient"
 	"github.com/cmstar/jumpaccess/internal/sshhostkey"
 	"github.com/cmstar/jumpaccess/internal/systemopen"
@@ -29,6 +32,10 @@ type desktopApp struct {
 	window               desktopWindow
 	api                  desktopapp.Service
 	sessions             *sshsessionapp.Manager
+	sftp                 *sftpsessionapp.Manager
+	emitEvent            func(context.Context, string, ...interface{})
+	quit                 func(context.Context)
+	quitConfirmed        atomic.Bool
 	hostKeys             *desktopapp.HostKeyCoordinator
 	superviseAuth        func(context.Context)
 	stopAuthSupervision  context.CancelFunc
@@ -113,6 +120,8 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 		window:             wailsDesktopWindow{},
 		goos:               stdruntime.GOOS,
 		displayAreas:       nativeDisplayAreas,
+		emitEvent:          runtime.EventsEmit,
+		quit:               runtime.Quit,
 		api: desktopapp.Service{
 			Version:     version,
 			Licenses:    jumpaccess.Licenses(),
@@ -171,6 +180,23 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 			runtime.EventsEmit(app.context(), "ssh:latency", event)
 		},
 	}
+	app.sftp = &sftpsessionapp.Manager{
+		Prepare:         core.Connect,
+		HostKeyCallback: app.sessions.HostKeyCallback,
+		Timeout:         core.Configuration.Behavior.ConnectTimeout.Duration,
+		Open: func(ctx context.Context, options sftpsessionapp.OpenOptions) (sftpsessionapp.RemoteClient, error) {
+			var root *string
+			for _, protocol := range options.Asset.Protocols {
+				if protocol.Name == "sftp" {
+					root = protocol.Settings.SFTPHome
+					break
+				}
+			}
+			return sftpclient.Open(ctx, sftpclient.OpenOptions{Connection: options.Connection, HostKeyCallback: options.HostKeyCallback, Timeout: options.Timeout, RootPath: root, AccountUsername: options.Account.Username})
+		},
+		EmitState:    func(event sftpsessionapp.StateEvent) { app.emitEvent(app.context(), "sftp:state", event) },
+		EmitTransfer: func(event sftpsessionapp.TransferEvent) { app.emitEvent(app.context(), "sftp:transfer", event) },
+	}
 	return app, nil
 }
 
@@ -215,6 +241,9 @@ func (a *desktopApp) restoreInitialWindow(ctx context.Context) {
 }
 
 func (a *desktopApp) beforeClose(ctx context.Context) bool {
+	if a.sftp != nil && a.requestQuit(a.sftp.HasActiveTransfers()) {
+		return true
+	}
 	if err := a.saveWindowPlacement(ctx); err != nil {
 		runtime.LogErrorf(ctx, "保存窗口状态失败: %v", err)
 	}
@@ -363,5 +392,10 @@ func (a *desktopApp) shutdown(context.Context) {
 	if a.stopAuthSupervision != nil {
 		a.stopAuthSupervision()
 	}
-	_ = a.sessions.CloseAll()
+	if a.sessions != nil {
+		_ = a.sessions.CloseAll()
+	}
+	if a.sftp != nil {
+		_ = a.sftp.CloseAll()
+	}
 }

@@ -360,9 +360,10 @@ func TestDesktopAppDeleteProfileRemovesConfigurationAndCredential(t *testing.T) 
 	if err := app.core.Tokens.Save("work", credential.Token{AccessToken: "test-access-token"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.SaveWorkspace(guiconfig.Workspace{ActiveTabID: "ssh-work", Tabs: []guiconfig.WorkspaceTab{
+	if err := app.SaveWorkspace(guiconfig.Workspace{ActiveTabID: "sftp-work", Tabs: []guiconfig.WorkspaceTab{
 		{ID: "assets", Type: "assets"},
 		{ID: "ssh-work", Type: "ssh", Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", AssetID: "asset-1", AssetName: "web-01"},
+		{ID: "sftp-work", Type: "sftp", Profile: "work", Organization: "org-1", Target: "asset-1", Account: "account-1", AssetID: "asset-1", AssetName: "web-01"},
 	}}); err != nil {
 		t.Fatal(err)
 	}

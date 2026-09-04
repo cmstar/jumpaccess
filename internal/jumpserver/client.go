@@ -109,8 +109,13 @@ func (c *Client) CreateConnectionToken(ctx context.Context, request ConnectionRe
 	if request.Asset == "" {
 		return "", fmt.Errorf("asset ID is required")
 	}
-	request.Protocol = "ssh"
-	request.ConnectMethod = "ssh_client"
+	if request.Protocol == "" {
+		request.Protocol = "ssh"
+	}
+	if request.Protocol != "ssh" && request.Protocol != "sftp" {
+		return "", fmt.Errorf("connection protocol %q is not supported", request.Protocol)
+	}
+	request.ConnectMethod = request.Protocol + "_client"
 	request.ConnectOptions = ConnectionOptions{TokenReusable: false, DisableAutoHash: false}
 	var response json.RawMessage
 	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/authentication/connection-token/", request, http.StatusCreated, &response); err != nil {

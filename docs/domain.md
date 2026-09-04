@@ -58,8 +58,9 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 - GUI 的资产搜索同时匹配远端 Asset 与本地 Alias；合并结果按 Asset ID 去重。远端 Asset API 使用 offset/limit 分页，GUI 保留对应分页语义。
 - “All organizations” 是聚合上下文：选择它时显示各具体 Organization 中与当前资产匹配的 Alias；在该聚合上下文创建的 Alias 切换到具体 Organization 后，只要对应 Asset 可见，也继续显示。
 - GUI 在资产行内纵向展示该 Asset 的全部 Alias；资产行的更多操作始终提供创建入口，因此同一 Asset 可以拥有多个 Alias。Alias 可重命名或删除：重命名必须原子保留 Asset、Organization 和 Account 映射，并同步更新匹配的已打开 SSH Tab 重连描述符，但不中断活动 Session；删除必须使用应用内确认对话框，不依赖系统或浏览器原生确认框。资产数和当前 Organization 的 Alias 总数显示在对应表头，Alias 总数不受当前分页影响。
+- 资产、Alias 和资产详情按授权协议独立显示 SSH/SFTP 入口；支持 SSH 不代表支持 SFTP。
 - GUI 从 Asset 发起连接且存在多个 Account 时必须让用户选择；从 Alias 发起连接时优先使用已绑定 Account，未绑定时同样询问，不能隐式挑选第一个 Account。
-- GUI 使用顶部 Tab 工作区：资产、Profile 和设置分别只能打开一个 Tab，SSH Tab 可以并行打开多个；任意 Tab（包括最后一个）都允许关闭，工作区为空时显示包含新建连接、资产、Profile 和设置入口的起始页。Tab 默认显示关闭按钮，用户可以在设置中隐藏；按钮隐藏后鼠标中键关闭仍然可用。
+- GUI 使用顶部 Tab 工作区：资产、Profile 和设置分别只能打开一个 Tab，SSH/SFTP Tab 可以并行打开多个，以终端／文件夹图标区分协议，标题不追加协议后缀；任意 Tab（包括最后一个）都允许关闭，工作区为空时显示包含新建连接、资产、Profile 和设置入口的起始页。Tab 默认显示关闭按钮，用户可以在设置中隐藏；按钮隐藏后鼠标中键关闭仍然可用。
 - GUI 启动并恢复工作区后，如果没有可用 Profile，或当前 Profile 尚未登录，则自动打开并激活 Profile 页面；当前 Profile 已登录时保持原活动 Tab。
 - GUI 顶部 Profile 图标右下角的认证状态点以绿色表示已认证，以红色表示未登录或尚未配置 Profile。未登录时不请求 Organization、Asset 等远端资源；请求期间认证失效时，引导用户在 GUI 的 Profile 页面重新认证，不显示 CLI 操作提示。
 - GUI 优先使用平台原生 UI 字体，资产、Profile、设置和弹窗等应用界面采用 125% 基准及清晰的标题、正文、说明文字层级；顶部工作区 Tab 保持紧凑的原始字号，SSH 终端内容严格使用终端设置中的原始字号，二者都不随应用界面字体放大。
@@ -73,17 +74,20 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 - Profile 与 Organization 选择只影响资产过滤，因此只显示在资产页；新建连接直接打开快速连接窗口，也可以由全局快捷键触发。快速连接优先复用资产页已有数据并在本地筛选，只有资产页没有数据时才请求远端。顶部右侧按资产、包含认证状态的 Profile、设置顺序提供图标入口，认证详情通过 Profile 图标的悬停提示展示。
 - GUI 记住普通窗口关闭时所在的显示器、工作区内位置和尺寸，并在下次启动恢复到同一显示器。目标显示器已断开时回退到主显示器居中；显示器分辨率、缩放或任务栏工作区变化时必须保证整个窗口仍位于可见区域。最大化状态单独恢复，最小化后重新显示不得改变原显示器。
 - SSH Tab 标题保持单行：有 Alias 时先显示 Alias，再以弱化文字显示原始 Asset 名；没有 Alias 时只显示 Asset 名。悬停提示补充 Alias、Asset、ID、Profile、Organization 和 Account。
-- SSH 页面标题栏依次显示 Alias（没有时使用原始 Asset 名）、原始 Asset 名、Asset ID，以及连接状态灯和到 JumpServer SSH 网关的当前往返延迟。活动连接首次探测前显示灰灯与 `— ms`；延迟小于 `100 ms` 显示绿灯，`100–200 ms`（含边界）显示黄灯，大于 `200 ms` 显示橙灯；断开或失败只显示红灯，不显示延迟文字。标题栏右侧依次提供复制选中文本、粘贴剪贴板文本、复制当前工作目录和断开连接按钮；前两个按钮与终端上下文菜单共用动作，悬停分别提示 `复制选中文本 (Ctrl + Insert)` 和 `粘贴剪贴板文本 (Shift + Insert)`。没有选区时复制禁用，只有活动 Session 可以粘贴；断开按钮只终止可用的 live Session 并保留 Tab，不可用时禁用；关闭 Tab 仍由顶部 Tab 的关闭按钮负责。
+- SSH 页面标题栏依次显示 Alias（没有时使用原始 Asset 名）、原始 Asset 名、Asset ID，以及连接状态灯和到 JumpServer SSH 网关的当前往返延迟。活动连接首次探测前显示灰灯与 `— ms`；延迟小于 `100 ms` 显示绿灯，`100–200 ms`（含边界）显示黄灯，大于 `200 ms` 显示橙灯；断开或失败只显示红灯，不显示延迟文字。标题栏右侧依次提供复制选中文本、粘贴剪贴板文本、复制当前工作目录、连接 SFTP（资产授权 SFTP 时显示）、分隔线和断开连接按钮；前两个按钮与终端上下文菜单共用动作，悬停分别提示 `复制选中文本 (Ctrl + Insert)` 和 `粘贴剪贴板文本 (Shift + Insert)`。没有选区时复制禁用，只有活动 Session 可以粘贴；断开按钮只终止可用的 live Session 并保留 Tab，不可用时禁用；关闭 Tab 仍由顶部 Tab 的关闭按钮负责。
 - GUI 被动接收远端 Shell 通过 OSC 7 `file://host/path` 上报的绝对当前目录，只在 live Session 内保留最后一次有效值。复制当前工作目录使用目录图标，与复制选中文本按钮区分；收到目录前按钮保持禁用，有效目录变化时才更新，断开、失败或重连时清空，不轮询远端也不自动向 Shell 注入命令。
 - SSH Tab 重新挂载时可以向新终端重放已有输出，但重放过程中由终端查询触发的协议响应不得写回 live Session；历史重放完成后才恢复正常输入和实时协议响应转发。
 - 远端断开或连接失败不得自动关闭 SSH Tab。终端保留已有输出并追加英文提示 `Connection closed.`、空行和 `Press Enter to reconnect ...`；只有终端获得焦点时的无修饰键 Enter 才能触发重连。
-- GUI 保存 Tab 顺序、活动项及 SSH 重连描述符，重启后恢复同样的工作区；恢复的 SSH Tab 一律保持断连且不得自动连接。终端输出、live session ID、运行状态和秘密不得持久化。
+- GUI 保存 Tab 顺序、活动项及 SSH/SFTP 重连描述符，重启后恢复同样的工作区；恢复的连接 Tab 一律保持断连且不得自动连接。终端输出、SFTP 目录与传输队列、live session ID、运行状态和秘密不得持久化。
+- SFTP 每次明确连接打开独立 Tab，连接请求未完成时抑制重复点击。SSH 入口使用原连接身份和当前目录快照；资产或 Alias 入口尝试 home，无法获取或访问时静默回退到服务器起始目录。后续浏览不跟随终端。
+- SFTP 支持路径输入、隐藏文件、多选、递归上传下载、新建文件夹、重命名与确认删除。同名文件由用户选择跳过、覆盖或保留两者，可应用到本批次；失败保留原因，重试从头开始。递归操作跳过已识别的符号链接，不进行断点续传、在线编辑、chmod 或目录同步。
+- SFTP 切换 Tab 继续传输；断开保留 Tab，关闭移除 Tab，有未完成传输时必须确认停止。应用退出也先确认未完成传输；取消确认后继续原任务。
 - Profile 名是用户可见的精确标识，不为适配文件系统进行替换或规范化；拒绝空名称、首尾空白、控制字符以及 `.`、`..`，其余名称通过稳定摘要映射到凭据文件。
 - 创建第一个 Profile 时自动将其设为当前 Profile；已经存在当前项时，后续新建和登录其他 Profile 都不得切换当前项，用户必须显式执行“设为当前”或对应的 `profile use` 操作后才会启用。
 - 修改 Profile 的 Server URL 时保留 Profile 名称、Organization 和全部 Alias，但必须清除旧站点的 OAuth 凭据并要求用户重新登录，避免向新地址发送旧站点 Token；已经建立的 SSH Session 不受影响。
 - GUI 退出 Profile 登录前必须要求确认；退出会撤销并清除该 Profile 的 OAuth 凭据，但保留 Profile 配置、Organization、Alias 和已经建立的 SSH Session。
 - CLI 删除 Profile 时必须在 stderr 明确列出删除范围，并且只有从 stdin 收到精确的 `yes` 后才能执行；其他输入、空输入或 EOF 均取消删除。
-- GUI 删除 Profile 会一并清除其 Server URL、Organization、全部 Alias 和本地 OAuth 凭据，并断开该 Profile 的活动 SSH Session；不会删除 JumpServer 上的 Asset 或 Account。删除当前 Profile 后按名称选择下一个 Profile，没有剩余项时回到未配置状态。
+- GUI 删除 Profile 会一并清除其 Server URL、Organization、全部 Alias 和本地 OAuth 凭据，并断开该 Profile 的 SSH/SFTP Session 并取消其传输；不会删除 JumpServer 上的 Asset 或 Account。删除当前 Profile 后按名称选择下一个 Profile，没有剩余项时回到未配置状态。
 - Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。
 - Proxy 模式保持非交互：不打开浏览器、不在 stdout 输出提示、不在目标歧义时要求用户选择。

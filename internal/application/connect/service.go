@@ -41,6 +41,7 @@ type API interface {
 
 type Options struct {
 	Target         target.Input
+	Protocol       string
 	NonInteractive bool
 	SelectAccount  func([]jumpserver.Account) (jumpserver.Account, error)
 }
@@ -59,6 +60,13 @@ type Service struct {
 }
 
 func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error) {
+	protocol := options.Protocol
+	if protocol == "" {
+		protocol = "ssh"
+	}
+	if protocol != "ssh" && protocol != "sftp" {
+		return Prepared{}, fmt.Errorf("connection protocol %q is not supported", protocol)
+	}
 	configuration, err := s.Config.Load()
 	if err != nil {
 		return Prepared{}, err
@@ -83,8 +91,8 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 	if err != nil {
 		return Prepared{}, err
 	}
-	if !supportsSSH(asset.Protocols) {
-		return Prepared{}, fmt.Errorf("asset %q does not permit SSH", asset.Name)
+	if !supportsProtocol(asset.Protocols, protocol) {
+		return Prepared{}, fmt.Errorf("asset %q does not permit %s", asset.Name, strings.ToUpper(protocol))
 	}
 	account, err := resolveAccount(asset.Accounts, selection.Account, options)
 	if err != nil {
@@ -97,13 +105,16 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 	if requiresInputCredential(account) {
 		return Prepared{}, fmt.Errorf("%w for account %q; choose a managed account", ErrInteractiveCredentialRequired, accountID)
 	}
-	connectionTokenID, err := api.CreateConnectionToken(ctx, jumpserver.ConnectionRequest{Asset: asset.ID, Account: accountID})
+	connectionTokenID, err := api.CreateConnectionToken(ctx, jumpserver.ConnectionRequest{Asset: asset.ID, Account: accountID, Protocol: protocol, ConnectMethod: protocol + "_client"})
 	if err != nil {
 		return Prepared{}, err
 	}
 	connection, err := api.GetClientConnection(ctx, connectionTokenID)
 	if err != nil {
 		return Prepared{}, err
+	}
+	if connection.Protocol != protocol {
+		return Prepared{}, fmt.Errorf("connection protocol %q does not match requested %q", connection.Protocol, protocol)
 	}
 	return Prepared{Selection: selection, Asset: asset, Account: account, Connection: connection}, nil
 }
@@ -184,9 +195,9 @@ func resolveAccount(accounts []jumpserver.Account, reference string, options Opt
 	return options.SelectAccount(accounts)
 }
 
-func supportsSSH(protocols []jumpserver.Protocol) bool {
+func supportsProtocol(protocols []jumpserver.Protocol, expected string) bool {
 	for _, protocol := range protocols {
-		if strings.EqualFold(protocol.Name, "ssh") {
+		if strings.EqualFold(protocol.Name, expected) {
 			return true
 		}
 	}

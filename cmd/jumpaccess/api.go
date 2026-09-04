@@ -46,6 +46,13 @@ func (a *desktopApp) DeleteProfile(name string) error {
 			closeErr = errors.Join(closeErr, a.sessions.Close(session.ID))
 		}
 	}
+	if a.sftp != nil {
+		for _, session := range a.sftp.List() {
+			if session.Profile == name {
+				closeErr = errors.Join(closeErr, a.sftp.Close(session.ID))
+			}
+		}
+	}
 	if closeErr != nil {
 		return closeErr
 	}
@@ -56,7 +63,7 @@ func (a *desktopApp) DeleteProfile(name string) error {
 		remaining := make([]guiconfig.WorkspaceTab, 0, len(value.Workspace.Tabs))
 		activeRemoved := false
 		for _, tab := range value.Workspace.Tabs {
-			if tab.Type == "ssh" && tab.Profile == name {
+			if (tab.Type == "ssh" || tab.Type == "sftp") && tab.Profile == name {
 				activeRemoved = activeRemoved || tab.ID == value.Workspace.ActiveTabID
 				continue
 			}

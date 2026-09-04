@@ -26,7 +26,18 @@ export interface SSHTab {
   error?: string
 }
 
-export type AppTab = SingletonTab | SSHTab
+export interface SFTPTab extends Omit<SSHTab, 'kind'> {
+  kind: 'sftp'
+  directory?: string
+  permissions?: { upload?: boolean; download?: boolean; delete?: boolean }
+}
+
+export type ConnectionTab = SSHTab | SFTPTab
+export type AppTab = SingletonTab | ConnectionTab
+
+export function isConnectionTab(tab: AppTab): tab is ConnectionTab {
+  return tab.kind === 'ssh' || tab.kind === 'sftp'
+}
 
 export interface TabWorkspace {
   tabs: AppTab[]
@@ -34,10 +45,23 @@ export interface TabWorkspace {
 }
 
 export type TabAction = {
+  type: 'connection-resolved'
+  sessionID: string
+  descriptor: Partial<SSHDescriptor>
+} | {
+  type: 'sftp-directory'
+  sessionID: string
+  directory: string
+  permissions?: SFTPTab['permissions']
+} | {
   type: 'open-singleton'
   kind: SingletonTabKind
 } | {
   type: 'open-ssh'
+  id: string
+  descriptor: SSHDescriptor
+} | {
+  type: 'open-sftp'
   id: string
   descriptor: SSHDescriptor
 } | {
@@ -83,17 +107,19 @@ export type TabAction = {
 export const emptyTabWorkspace: TabWorkspace = { tabs: [], activeTabID: '' }
 
 export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace {
+  if (action.type === 'connection-resolved') return { ...state, tabs: state.tabs.map((tab) => isConnectionTab(tab) && tab.sessionID === action.sessionID ? { ...tab, descriptor: { ...tab.descriptor, ...action.descriptor } } : tab) }
+  if (action.type === 'sftp-directory') return { ...state, tabs: state.tabs.map((tab) => tab.kind === 'sftp' && tab.sessionID === action.sessionID ? { ...tab, directory: action.directory, permissions: action.permissions } : tab) }
   if (action.type === 'rename-alias') {
     return {
       ...state,
       tabs: state.tabs.map((tab) => {
-        if (tab.kind !== 'ssh' || tab.descriptor.profile !== action.profile || tab.descriptor.alias !== action.currentName) return tab
+        if (!isConnectionTab(tab) || tab.descriptor.profile !== action.profile || tab.descriptor.alias !== action.currentName) return tab
         return {
           ...tab,
           descriptor: {
             ...tab.descriptor,
             alias: action.newName,
-            target: action.newName,
+            target: tab.kind === 'sftp' ? tab.descriptor.target : action.newName,
           },
         }
       }),
@@ -102,15 +128,15 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
   if (action.type === 'begin-connection') {
     return {
       ...state,
-      tabs: state.tabs.map((tab) => tab.id === action.tabID && tab.kind === 'ssh'
-        ? { ...tab, connectionStatus: action.reconnecting ? 'reconnecting' : 'connecting', error: undefined }
+      tabs: state.tabs.map((tab) => tab.id === action.tabID && isConnectionTab(tab)
+        ? { ...tab, ...(tab.kind === 'sftp' ? { permissions: undefined } : {}), connectionStatus: action.reconnecting ? 'reconnecting' : 'connecting', error: undefined }
         : tab),
     }
   }
   if (action.type === 'connection-error') {
     return {
       ...state,
-      tabs: state.tabs.map((tab) => tab.id === action.tabID && tab.kind === 'ssh'
+      tabs: state.tabs.map((tab) => tab.id === action.tabID && isConnectionTab(tab)
         ? { ...tab, connectionStatus: 'failed', error: action.error, sessionID: undefined }
         : tab),
     }
@@ -119,7 +145,7 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
     return state.tabs.some((tab) => tab.id === action.id) ? { ...state, activeTabID: action.id } : state
   }
   if (action.type === 'drop-profile') {
-    const belongsToProfile = (tab: AppTab) => tab.kind === 'ssh' && tab.descriptor.profile === action.profile
+    const belongsToProfile = (tab: AppTab) => isConnectionTab(tab) && tab.descriptor.profile === action.profile
     const tabs = state.tabs.filter((tab) => !belongsToProfile(tab))
     const activeIndex = state.tabs.findIndex((tab) => tab.id === state.activeTabID)
     if (activeIndex < 0 || !belongsToProfile(state.tabs[activeIndex])) return { ...state, tabs }
@@ -131,9 +157,9 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
     return {
       ...state,
       tabs: state.tabs.map((tab) => {
-        if (tab.kind !== 'ssh' || tab.sessionID !== action.sessionID) return tab
+        if (!isConnectionTab(tab) || tab.sessionID !== action.sessionID) return tab
         if (action.status === 'active') return { ...tab, connectionStatus: 'active', error: undefined }
-        const { error: _error, sessionID: _sessionID, ...disconnected } = tab
+        const { error: _error, sessionID: _sessionID, ...disconnected } = tab.kind === 'sftp' ? { ...tab, permissions: undefined, directory: undefined } : tab
         if (action.status === 'failed') {
           return { ...disconnected, connectionStatus: 'failed', error: action.error }
         }
@@ -144,7 +170,7 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
   if (action.type === 'attach-session') {
     return {
       ...state,
-      tabs: state.tabs.map((tab) => tab.id === action.tabID && tab.kind === 'ssh'
+      tabs: state.tabs.map((tab) => tab.id === action.tabID && isConnectionTab(tab)
         ? { ...tab, connectionStatus: 'connecting', sessionID: action.sessionID }
         : tab),
     }
@@ -153,10 +179,10 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
     const singletonKinds = new Set<SingletonTabKind>()
     const tabs: AppTab[] = []
     for (const tab of action.workspace.tabs) {
-      if (tab.kind === 'ssh') {
+      if (isConnectionTab(tab)) {
         tabs.push({
           id: tab.id,
-          kind: 'ssh',
+          kind: tab.kind,
           descriptor: tab.descriptor,
           connectionStatus: 'disconnected',
         })
@@ -189,10 +215,10 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
         : state.activeTabID,
     }
   }
-  if (action.type === 'open-ssh') {
-    const tab: SSHTab = {
+  if (action.type === 'open-ssh' || action.type === 'open-sftp') {
+    const tab: ConnectionTab = {
       id: action.id,
-      kind: 'ssh',
+      kind: action.type === 'open-ssh' ? 'ssh' : 'sftp',
       descriptor: action.descriptor,
       connectionStatus: 'disconnected',
     }
