@@ -80,6 +80,9 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	want.Terminal.FontFamily = "Cascadia Mono"
 	want.Terminal.FontSize = 16
 	want.Terminal.ColorScheme = "catppuccin-latte"
+	want.Terminal.LineHeight = 1.25
+	want.Terminal.CursorStyle = "quarter_block"
+	want.Terminal.CursorBlink = false
 	want.Terminal.RightClickAction = TerminalRightClickContextMenu
 	want.Terminal.WarnOnMultiLinePaste = false
 	want.Tabs.ConfirmCloseActiveSession = false
@@ -107,10 +110,37 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded := string(data)
+	for _, field := range []string{"line_height = 1.25", "cursor_style = \"quarter_block\"", "cursor_blink = false"} {
+		if !strings.Contains(encoded, field) {
+			t.Fatalf("missing terminal style field %q", field)
+		}
+	}
 	if !strings.Contains(encoded, "[terminal]") || !strings.Contains(encoded, "right_click_action = \"context_menu\"") || !strings.Contains(encoded, "warn_on_multi_line_paste = false") || !strings.Contains(encoded, "[tabs]") {
-		t.Fatalf("encoded GUI config does not use v4 preference groups:\n%s", encoded)
+		t.Fatalf("encoded GUI config does not use terminal preference groups:\n%s", encoded)
 	}
 	if strings.Contains(encoded, "[behavior]") || strings.Contains(encoded, "terminal_font_family") {
 		t.Fatalf("encoded GUI config still contains legacy preference groups:\n%s", encoded)
+	}
+}
+
+func TestStoreLoadsLegacyTerminalStyleWithoutRewritingFile(t *testing.T) {
+	store := Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
+	original := []byte("version = 5\n[terminal]\ncolor_scheme = \"dracula\"\nwarn_on_multi_line_paste = false\n")
+	if err := os.WriteFile(store.Path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Version != CurrentVersion || value.Terminal.LineHeight != 1 || !value.Terminal.CursorBlink || value.Terminal.CursorStyle != "block" || value.Terminal.ColorScheme != "dracula" || value.Terminal.WarnOnMultiLinePaste {
+		t.Fatalf("unexpected upgraded config: %#v", value.Terminal)
+	}
+	data, err := os.ReadFile(store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatal("loading legacy GUI config rewrote the file")
 	}
 }

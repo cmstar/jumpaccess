@@ -1910,6 +1910,13 @@ details > summary::-webkit-details-marker {
 .terminal-preview-host .xterm { height: 100%; }
 .terminal-preview-loading { min-height: 238px; color: var(--muted); font-size: .7rem; }
 
+/* xterm DOM 行的 line-height 等于实际字符格高。保留原生 border 闪烁，只定制贴底厚度；不影响普通下划线。 */
+:is(.terminal-host, .terminal-preview-host)[data-terminal-cursor-style="quarter_block"] .xterm-rows .xterm-cursor.xterm-cursor-underline {
+  box-sizing: border-box;
+  height: 100%;
+  border-bottom-width: 0.25lh;
+}
+
 .terminal-style-row,
 .terminal-style-fields .terminal-font-field {
   display: grid;
@@ -1928,6 +1935,28 @@ details > summary::-webkit-details-marker {
 .terminal-style-fields .terminal-font-toggle { top: 1px; }
 .terminal-style-fields .terminal-font-field .setting-help { grid-column: 2; margin-top: 0; }
 .terminal-style-fields > :last-child { border-bottom: 0; }
+
+.terminal-cursor-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-card .terminal-cursor-controls select {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+}
+
+.terminal-cursor-blink {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-cursor-blink .switch { flex: none; }
 
 .terminal-scheme-trigger {
   display: flex;

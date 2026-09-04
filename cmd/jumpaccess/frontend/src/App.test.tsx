@@ -64,10 +64,13 @@ const bootstrapState: BootstrapState = {
     auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '2026-08-29T12:00:00Z' },
   }],
   preferences: {
-    version: 5,
+    version: 6,
     theme: 'light',
     terminalFontFamily: 'JetBrains Mono',
     terminalFontSize: 13,
+    terminalLineHeight: 1,
+    terminalCursorStyle: 'block',
+    terminalCursorBlink: true,
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
@@ -775,8 +778,8 @@ test('配色下拉按深浅分组，选中后保存并与字体字号共用预�
   await screen.findByRole('heading', { name: '资产' })
   await user.click(screen.getByRole('button', { name: '打开设置' }))
   const preview = await screen.findByRole('region', { name: '终端预览' })
-  expect(screen.queryByText('行高')).not.toBeInTheDocument()
-  expect(screen.queryByText('光标样式与闪烁')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('行高')).toBeInTheDocument()
+  expect(screen.getByLabelText('光标样式')).toBeInTheDocument()
   expect(screen.queryByRole('listbox', { name: '终端配色方案' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('combobox', { name: '配色方案 Nord' }))
   const list = screen.getByRole('listbox', { name: '终端配色方案' })
@@ -844,6 +847,52 @@ test('配色保存失败时恢复已保存方案与预览', async () => {
   await screen.findByText('cannot save preferences')
   expect(screen.getByRole('combobox', { name: '配色方案 Nord' })).toBeVisible()
   expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
+})
+
+test('行高与光标样式、闪烁在终端样式面板设置并保存', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const stylePanel = screen.getByRole('heading', { name: '终端样式' }).closest('section')!
+  const height = within(stylePanel).getByLabelText('行高')
+  const cursor = within(stylePanel).getByLabelText('光标样式')
+  const blink = within(stylePanel).getByRole('switch', { name: '光标闪烁' })
+  expect(height).toHaveValue('1')
+  expect(within(height).getAllByRole('option').map((option) => option.textContent)).toEqual(
+    Array.from({ length: 11 }, (_, index) => `${(1 + index / 10).toFixed(1)} 倍`),
+  )
+  expect(cursor).toHaveValue('block')
+  expect(blink).toHaveAttribute('aria-checked', 'true')
+  expect(cursor.closest('.terminal-style-row')).toContainElement(blink)
+  await user.selectOptions(height, '1.5')
+  await user.selectOptions(cursor, 'bar')
+  await user.click(blink)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalLineHeight: 1.5, terminalCursorStyle: 'bar', terminalCursorBlink: false })))
+  expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('1.5 倍行高')
+  await user.selectOptions(cursor, 'quarter_block')
+  expect(within(cursor).getByRole('option', { name: '底部方块（¼ 高）' })).toBeInTheDocument()
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalCursorStyle: 'quarter_block', terminalCursorBlink: false })))
+})
+
+test('恢复自定义行高与不闪烁光标，保存失败时还原控件和预览', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, preferences: { ...bootstrapState.preferences, terminalLineHeight: 1.25, terminalCursorStyle: 'underline', terminalCursorBlink: false } }),
+    savePreferences: vi.fn().mockRejectedValue(new Error('style save failed')),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const preview = await screen.findByRole('region', { name: '终端预览' })
+  expect(screen.getByLabelText('行高')).toHaveValue('1.25')
+  expect(screen.getByLabelText('光标样式')).toHaveValue('underline')
+  expect(screen.getByRole('switch', { name: '光标闪烁' })).toHaveAttribute('aria-checked', 'false')
+  await user.selectOptions(screen.getByLabelText('行高'), '2')
+  await screen.findByText('style save failed')
+  expect(screen.getByLabelText('行高')).toHaveValue('1.25')
+  expect(preview).toHaveTextContent('1.25 倍行高')
 })
 
 test('鼠标右键与字号使用一致的横向布局并可切换为上下文菜单', async () => {

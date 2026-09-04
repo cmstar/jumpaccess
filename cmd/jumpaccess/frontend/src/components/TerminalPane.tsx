@@ -163,13 +163,10 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     const display = terminalDisplayOptions(initialDisplay.current)
     const theme = display.theme
     const terminal = new Terminal({
+      ...display,
       allowProposedApi: false,
       convertEol: false,
-      cursorBlink: true,
-      fontFamily: display.fontFamily,
-      fontSize: display.fontSize,
       scrollback: 10_000,
-      theme,
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)
@@ -286,7 +283,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     Object.assign(terminal.options, display)
     synchronizeTerminalViewportBackground(host, display.theme.background)
     fitRef.current?.()
-  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, session.id])
+  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, session.id])
 
   useEffect(() => {
     setContextMenu(null)
@@ -341,7 +338,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const hasSelection = terminalRef.current?.hasSelection() ?? false
   const canPaste = session.status === 'active'
   return <div className="terminal-pane" ref={paneRef}>
-    <div className="terminal-host" ref={hostRef} aria-label={`${session.title} SSH 终端`} />
+    <div className="terminal-host" data-terminal-cursor-style={preferences.terminalCursorStyle} ref={hostRef} aria-label={`${session.title} SSH 终端`} />
     {contextMenu ? <div
       aria-label="终端上下文菜单"
       className="terminal-context-menu"

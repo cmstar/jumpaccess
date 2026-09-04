@@ -56,6 +56,7 @@ import {
   type SessionLatency,
   type SessionState,
   type TerminalRightClickAction,
+  type TerminalCursorStyle,
   type ThemeMode,
   type Workspace,
   wailsBackend,
@@ -1352,6 +1353,8 @@ function TerminalFontInput({ families, onChange, value }: { families: string[]; 
   </div>
 }
 
+const terminalLineHeights = Array.from({ length: 11 }, (_, index) => 1 + index / 10)
+
 const settingsNavigation = [
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal-style', label: '终端样式', icon: TerminalSquare },
@@ -1413,12 +1416,26 @@ function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferenc
             </div>
           </section>
           <section className="settings-card" id="settings-terminal-style">
-            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>配色、字体和字号只影响终端内容。选择后自动保存并生效。</p></div></div>
+            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>配色、字体、行高和光标只影响终端内容。选择后自动保存并生效。</p></div></div>
             <Suspense fallback={<div className="terminal-preview-loading">正在加载终端预览…</div>}><TerminalPreview preferences={preferences} /></Suspense>
             <div className="terminal-style-fields">
               <TerminalSchemeSelect value={preferences.terminalColorScheme} onChange={(terminalColorScheme) => update({ terminalColorScheme })} />
               <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
               <div className="terminal-style-row"><label htmlFor="terminal-font-size">字号</label><select id="terminal-font-size" value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, i) => i + 9).map((size) => <option key={size} value={size}>{size} px</option>)}</select></div>
+              <div className="terminal-style-row">
+                <div><label htmlFor="terminal-line-height">行高</label><small className="setting-help" id="terminal-line-height-help">相对于默认行高的倍数。</small></div>
+                <select id="terminal-line-height" aria-describedby="terminal-line-height-help" value={preferences.terminalLineHeight} onChange={(event) => update({ terminalLineHeight: Number(event.target.value) })}>
+                  {!terminalLineHeights.includes(preferences.terminalLineHeight) ? <option value={preferences.terminalLineHeight}>{preferences.terminalLineHeight} 倍</option> : null}
+                  {terminalLineHeights.map((height) => <option key={height} value={height}>{height.toFixed(1)} 倍</option>)}
+                </select>
+              </div>
+              <div className="terminal-style-row">
+                <label htmlFor="terminal-cursor-style">光标样式</label>
+                <div className="terminal-cursor-controls">
+                  <select id="terminal-cursor-style" value={preferences.terminalCursorStyle} onChange={(event) => update({ terminalCursorStyle: event.target.value as TerminalCursorStyle })}><option value="block">方块</option><option value="bar">竖线</option><option value="underline">下划线</option><option value="quarter_block">底部方块（¼ 高）</option></select>
+                  <div className="terminal-cursor-blink"><label htmlFor="terminal-cursor-blink">闪烁</label><button id="terminal-cursor-blink" type="button" aria-label="光标闪烁" role="switch" aria-checked={preferences.terminalCursorBlink} className={preferences.terminalCursorBlink ? 'switch on' : 'switch'} onClick={() => update({ terminalCursorBlink: !preferences.terminalCursorBlink })}><span /></button></div>
+                </div>
+              </div>
             </div>
           </section>
           <section className="settings-card" id="settings-terminal-behavior">

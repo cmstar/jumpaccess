@@ -4,13 +4,14 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"unicode"
 
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 5
+const CurrentVersion = 6
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -58,11 +59,14 @@ type Appearance struct {
 }
 
 type Terminal struct {
-	ColorScheme          string `toml:"color_scheme"`
-	FontFamily           string `toml:"font_family"`
-	FontSize             int    `toml:"font_size"`
-	RightClickAction     string `toml:"right_click_action"`
-	WarnOnMultiLinePaste bool   `toml:"warn_on_multi_line_paste"`
+	ColorScheme          string  `toml:"color_scheme"`
+	FontFamily           string  `toml:"font_family"`
+	FontSize             int     `toml:"font_size"`
+	LineHeight           float64 `toml:"line_height"`
+	CursorStyle          string  `toml:"cursor_style"`
+	CursorBlink          bool    `toml:"cursor_blink"`
+	RightClickAction     string  `toml:"right_click_action"`
+	WarnOnMultiLinePaste bool    `toml:"warn_on_multi_line_paste"`
 }
 
 type Tabs struct {
@@ -131,6 +135,9 @@ func Default() Config {
 			ColorScheme:          "nord",
 			FontFamily:           "monospace",
 			FontSize:             12,
+			LineHeight:           1,
+			CursorStyle:          "block",
+			CursorBlink:          true,
 			RightClickAction:     TerminalRightClickPaste,
 			WarnOnMultiLinePaste: true,
 		},
@@ -156,7 +163,7 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
-	if header.Version == 3 || header.Version == 4 {
+	if header.Version == 3 || header.Version == 4 || header.Version == 5 {
 		return decodeGroupedPreferences(data)
 	}
 	if header.Version > CurrentVersion {
@@ -255,6 +262,14 @@ func (c Config) Validate() error {
 	}
 	if c.Terminal.FontSize < 9 || c.Terminal.FontSize > 32 {
 		return fmt.Errorf("terminal.font_size must be between 9 and 32")
+	}
+	if math.IsNaN(c.Terminal.LineHeight) || c.Terminal.LineHeight < 1 || c.Terminal.LineHeight > 2 {
+		return fmt.Errorf("terminal.line_height must be between 1 and 2")
+	}
+	switch c.Terminal.CursorStyle {
+	case "block", "bar", "underline", "quarter_block":
+	default:
+		return fmt.Errorf("terminal.cursor_style must be block, bar, underline, or quarter_block")
 	}
 	if !validTerminalColorScheme(c.Terminal.ColorScheme) {
 		return fmt.Errorf("terminal.color_scheme is unknown: %q", c.Terminal.ColorScheme)

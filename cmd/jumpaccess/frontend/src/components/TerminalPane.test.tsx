@@ -68,10 +68,13 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 const preferences: Preferences = {
-  version: 5,
+  version: 6,
   theme: 'light',
   terminalFontFamily: 'JetBrains Mono',
   terminalFontSize: 12,
+  terminalLineHeight: 1,
+  terminalCursorStyle: 'block',
+  terminalCursorBlink: true,
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,
@@ -121,6 +124,28 @@ test('配色和字体即时更新且保留终端选区，外围主题不改变�
   rerender(<TerminalPane backend={backend} output="history" preferences={{ ...changed, theme: 'dark' }} session={activeSession} />)
   expect(terminalMock.instances).toBe(instances)
   expect(terminalMock.options?.theme?.background).toBe('#eff1f5')
+})
+
+test.each([
+  { change: { terminalLineHeight: 1.5 }, expected: { lineHeight: 1.5 } },
+  { change: { terminalCursorStyle: 'underline' as const }, expected: { cursorStyle: 'underline' } },
+  { change: { terminalCursorStyle: 'quarter_block' as const }, expected: { cursorStyle: 'underline' } },
+  { change: { terminalCursorBlink: false }, expected: { cursorBlink: false } },
+])('行高和光标设置 $change 即时更新，不重建终端且重新报告尺寸', ({ change, expected }) => {
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
+  const { rerender } = render(<TerminalPane backend={backend} output="history" preferences={preferences} session={activeSession} />)
+  const instances = terminalMock.instances
+  const writes = terminalMock.writeCallbacks.length
+  terminalMock.selection = 'history'
+  vi.mocked(backend.resizeSSHSession).mockClear()
+  const changed = { ...preferences, ...change }
+  rerender(<TerminalPane backend={backend} output="history" preferences={changed} session={activeSession} />)
+  expect(terminalMock.options).toMatchObject(expected)
+  expect(screen.getByLabelText('production-web SSH 终端')).toHaveAttribute('data-terminal-cursor-style', changed.terminalCursorStyle)
+  expect(terminalMock.instances).toBe(instances)
+  expect(terminalMock.selection).toBe('history')
+  expect(terminalMock.writeCallbacks).toHaveLength(writes)
+  expect(backend.resizeSSHSession).toHaveBeenCalledWith(activeSession.id, 120, 34)
 })
 
 test('终端动作随选区变化并复用复制粘贴实现', async () => {
