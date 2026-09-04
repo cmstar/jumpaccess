@@ -37,6 +37,8 @@ import {
 import './App.css'
 import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
+import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
+import { terminalScheme } from './model/terminalTheme'
 import {
   type Account,
   type Alias,
@@ -70,6 +72,7 @@ import {
 } from './model/tabs'
 
 type AliasFilter = 'all' | 'with-alias' | 'without-alias'
+const TerminalPreview = lazy(() => import('./components/TerminalPreview').then((module) => ({ default: module.TerminalPreview })))
 
 interface PendingConnection {
   asset: Asset
@@ -251,6 +254,9 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const workspaceRef = useRef<TabWorkspace>(emptyTabWorkspace)
   const workspaceReady = useRef(false)
   const workspaceSaveQueue = useRef(Promise.resolve())
+  const preferenceSaveQueue = useRef(Promise.resolve())
+  const confirmedPreferences = useRef<Preferences | null>(null)
+  const preferenceRevision = useRef(0)
   const connectionAttempts = useRef(new Map<string, symbol>())
   const pendingSessionStates = useRef(new Map<string, SessionState>())
   const [profile, setProfile] = useState('')
@@ -829,18 +835,28 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
   async function savePreferences(next: Preferences) {
     if (!bootstrap) return
-    const previous = bootstrap.preferences
-    setBootstrap({ ...bootstrap, preferences: next })
-    try {
-      await backend.savePreferences(next)
-    } catch (reason) {
-      setBootstrap({ ...bootstrap, preferences: previous })
-      setError(errorMessage(reason))
-    }
+    confirmedPreferences.current ??= bootstrap.preferences
+    const revision = ++preferenceRevision.current
+    setBootstrap((current) => current ? { ...current, preferences: next } : current)
+    // 连续选择立即预览，但按顺序写入；旧请求失败不能撤销用户的新选择。
+    const save = preferenceSaveQueue.current.then(async () => {
+      try {
+        await backend.savePreferences(next)
+        confirmedPreferences.current = next
+      } catch (reason) {
+        if (preferenceRevision.current === revision) {
+          setBootstrap((current) => current ? { ...current, preferences: confirmedPreferences.current! } : current)
+        }
+        setError(errorMessage(reason))
+      }
+    })
+    preferenceSaveQueue.current = save
+    await save
   }
 
   async function quitApplication() {
     await workspaceSaveQueue.current.catch(() => undefined)
+    await preferenceSaveQueue.current
     window.runtime?.Quit?.()
   }
 
@@ -1061,6 +1077,7 @@ function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange,
   tab: SSHTab
 }) {
   const [terminalActions, setTerminalActions] = useState<TerminalActions | null>(null)
+  const terminalTheme = terminalScheme(preferences.terminalColorScheme).theme
   const descriptor = tab.descriptor
   const status: SessionState['status'] = tab.connectionStatus === 'active'
     ? 'active'
@@ -1116,7 +1133,7 @@ function SSHView({ backend, currentDirectory, latency, onCurrentDirectoryChange,
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
       </div>
     </div>
-    <div className="terminal-screen"><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
+    <div className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
     <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span></div>
   </section>
 }
@@ -1337,7 +1354,8 @@ function TerminalFontInput({ families, onChange, value }: { families: string[]; 
 
 const settingsNavigation = [
   { id: 'appearance', label: '外观', icon: Palette },
-  { id: 'terminal', label: '终端', icon: TerminalSquare },
+  { id: 'terminal-style', label: '终端样式', icon: TerminalSquare },
+  { id: 'terminal-behavior', label: '终端行为', icon: SlidersHorizontal },
   { id: 'tabs', label: 'Tab 行为', icon: PanelTopClose },
   { id: 'about', label: '关于 JumpAccess', icon: AppLogo },
 ] as const
@@ -1389,24 +1407,29 @@ function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferenc
       <div className="settings-scroll" data-testid="settings-scroll" onScroll={syncActiveSection} ref={scrollRef}>
         <div className="settings-stack">
           <section className="settings-card" id="settings-appearance">
-            <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>整套界面统一跟随所选主题。</p></div></div>
+            <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>控制窗口、菜单与设置页的主题，终端内容使用独立配色。</p></div></div>
             <div className="segmented-control" aria-label="界面主题">
               {([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as [ThemeMode, string][]).map(([mode, label]) => <button aria-pressed={preferences.theme === mode} className={preferences.theme === mode ? 'selected' : ''} key={mode} onClick={() => update({ theme: mode })}>{label}</button>)}
             </div>
           </section>
-          <section className="settings-card" id="settings-terminal">
-            <div className="settings-card-title"><TerminalSquare /><div><h2>终端</h2><p>分别控制 SSH 终端的显示和交互方式。</p></div></div>
-            <div className="settings-group">
-              <h3>字体与配色</h3>
+          <section className="settings-card" id="settings-terminal-style">
+            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>配色、字体和字号只影响终端内容。选择后自动保存并生效。</p></div></div>
+            <Suspense fallback={<div className="terminal-preview-loading">正在加载终端预览…</div>}><TerminalPreview preferences={preferences} /></Suspense>
+            <div className="terminal-style-fields">
+              <TerminalSchemeSelect value={preferences.terminalColorScheme} onChange={(terminalColorScheme) => update({ terminalColorScheme })} />
               <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
-              <label>字号<select value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{[12, 13, 14, 16, 18].map((size) => <option key={size}>{size}</option>)}</select></label>
+              <div className="terminal-style-row"><label htmlFor="terminal-font-size">字号</label><select id="terminal-font-size" value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, i) => i + 9).map((size) => <option key={size} value={size}>{size} px</option>)}</select></div>
             </div>
-            <div className="settings-group">
-              <h3>交互</h3>
-              <label>鼠标右键<select aria-label="鼠标右键" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select></label>
-              <small className="setting-help">打开上下文菜单后，右键提供复制和粘贴操作。</small>
-              <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
+          </section>
+          <section className="settings-card" id="settings-terminal-behavior">
+            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标与粘贴操作。</p></div></div>
+            <div className="terminal-style-fields">
+              <div className="terminal-style-row">
+                <div><label htmlFor="terminal-right-click">鼠标右键</label><small className="setting-help" id="terminal-right-click-help">打开上下文菜单后，右键提供复制和粘贴操作。</small></div>
+                <select id="terminal-right-click" aria-describedby="terminal-right-click-help" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select>
+              </div>
             </div>
+            <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
           </section>
           <section className="settings-card" id="settings-tabs">
             <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的关闭入口和确认方式。</p></div></div>

@@ -8,7 +8,7 @@ const terminalMock = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   keyHandler: undefined as ((event: KeyboardEvent) => boolean) | undefined,
   instances: 0,
-  options: undefined as { fontFamily?: string; fontSize?: number } | undefined,
+  options: undefined as { fontFamily?: string; fontSize?: number; theme?: { background?: string; red?: string } } | undefined,
   oscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
   selection: '',
@@ -29,7 +29,7 @@ vi.mock('@xterm/xterm', () => ({
         return { dispose: () => terminalMock.oscHandlers.delete(ident) }
       },
     }
-    constructor(options: { fontFamily?: string; fontSize?: number }) { terminalMock.instances += 1; terminalMock.options = options }
+    constructor(public options: NonNullable<typeof terminalMock.options>) { terminalMock.instances += 1; terminalMock.options = options }
     loadAddon() {}
     open() {}
     write(_data: string, callback?: () => void) {
@@ -68,10 +68,11 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 const preferences: Preferences = {
-  version: 4,
+  version: 5,
   theme: 'light',
   terminalFontFamily: 'JetBrains Mono',
   terminalFontSize: 12,
+  terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,
   confirmCloseActiveSession: true,
@@ -103,6 +104,23 @@ beforeEach(() => {
   terminalMock.pasted = []
   terminalMock.writeCallbacks = []
   terminalMock.writeResponse = ''
+})
+
+test('配色和字体即时更新且保留终端选区，外围主题不改变终端配色', () => {
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
+  const initial = { ...preferences, terminalColorScheme: 'nord' }
+  const { rerender } = render(<TerminalPane backend={backend} output="history" preferences={initial} session={activeSession} />)
+  const instances = terminalMock.instances
+  terminalMock.selection = 'history'
+  const changed = { ...initial, terminalColorScheme: 'catppuccin-latte', terminalFontFamily: 'Consolas', terminalFontSize: 18 }
+  rerender(<TerminalPane backend={backend} output="history" preferences={changed} session={activeSession} />)
+  expect(terminalMock.instances).toBe(instances)
+  expect(terminalMock.options).toMatchObject({ fontFamily: 'Consolas', fontSize: 18, theme: { background: '#eff1f5', red: '#d20f39' } })
+  expect(terminalMock.selection).toBe('history')
+  expect(screen.getByLabelText('production-web SSH 终端')).toHaveStyle({ backgroundColor: '#eff1f5' })
+  rerender(<TerminalPane backend={backend} output="history" preferences={{ ...changed, theme: 'dark' }} session={activeSession} />)
+  expect(terminalMock.instances).toBe(instances)
+  expect(terminalMock.options?.theme?.background).toBe('#eff1f5')
 })
 
 test('终端动作随选区变化并复用复制粘贴实现', async () => {

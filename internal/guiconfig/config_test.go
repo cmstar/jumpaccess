@@ -1,9 +1,35 @@
 package guiconfig
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestTerminalColorSchemeDefaultsAndValidation(t *testing.T) {
+	value := Default()
+	if value.Terminal.ColorScheme != "nord" {
+		t.Fatalf("default color scheme = %q", value.Terminal.ColorScheme)
+	}
+	value.Terminal.ColorScheme = "catppuccin-latte"
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.Terminal.ColorScheme = "unknown-scheme"
+	if err := value.Validate(); err == nil {
+		t.Fatal("accepted unknown color scheme")
+	}
+}
+
+func TestDecodeAddsColorSchemeWithoutLosingVersionFourPreferences(t *testing.T) {
+	got, err := Decode([]byte("version = 4\n[terminal]\nfont_family = \"Consolas\"\nfont_size = 18\nright_click_action = \"context_menu\"\nwarn_on_multi_line_paste = false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != CurrentVersion || got.Terminal.ColorScheme != "nord" || got.Terminal.FontFamily != "Consolas" || got.Terminal.FontSize != 18 || got.Terminal.WarnOnMultiLinePaste || got.Terminal.RightClickAction != "context_menu" {
+		t.Fatalf("unexpected preferences: %#v", got)
+	}
+}
 
 func TestDefaultUsesTwelvePointTerminalFont(t *testing.T) {
 	if got := Default().Terminal.FontSize; got != 12 {
@@ -169,13 +195,13 @@ func TestDecodeRejectsUnknownField(t *testing.T) {
 
 func TestDecodeReportsNewerVersionBeforeUnknownFields(t *testing.T) {
 	_, err := Decode([]byte("" +
-		"version = 5\n" +
+		fmt.Sprintf("version = %d\n", CurrentVersion+1) +
 		"[future]\n" +
 		"future = true\n"))
 	if err == nil {
 		t.Fatal("Decode error = nil, want version incompatibility")
 	}
-	if got := err.Error(); !strings.Contains(got, "GUI config version 5 is newer than supported version 4; update JumpAccess") {
+	if got := err.Error(); !strings.Contains(got, fmt.Sprintf("GUI config version %d is newer than supported version %d; update JumpAccess", CurrentVersion+1, CurrentVersion)) {
 		t.Fatalf("Decode error = %q, want actionable version incompatibility", got)
 	}
 }

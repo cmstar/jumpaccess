@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
 import App from './App'
+import appStyles from './App.css?inline'
 import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionLatency, SessionOutput, SessionState } from './lib/backend'
 
 const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites 
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    constructor(public options: Record<string, unknown>) {}
     cols = 120
     rows = 34
     parser = {
@@ -62,10 +64,11 @@ const bootstrapState: BootstrapState = {
     auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '2026-08-29T12:00:00Z' },
   }],
   preferences: {
-    version: 4,
+    version: 5,
     theme: 'light',
     terminalFontFamily: 'JetBrains Mono',
     terminalFontSize: 13,
+    terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
     confirmCloseActiveSession: true,
@@ -378,6 +381,33 @@ test('恢复 SSH Tab 时保持断连并且不自动连接', async () => {
   await waitFor(() => expect(terminalWrites.join('')).toContain('Connection closed.\r\n\r\nPress Enter to reconnect ...'))
 })
 
+test.each([
+  { theme: 'light', terminalColorScheme: 'nord', background: '#2e3440' },
+  { theme: 'dark', terminalColorScheme: 'catppuccin-latte', background: '#eff1f5' },
+] as const)('应用 $theme 主题下终端内容与四周留白统一使用 $terminalColorScheme 背景', async ({ theme, terminalColorScheme, background }) => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      preferences: { ...bootstrapState.preferences, theme, terminalColorScheme },
+      workspace: {
+        activeTabId: 'ssh-restored',
+        tabs: [{
+          id: 'ssh-restored', type: 'ssh', profile: 'production', organization: 'org-1',
+          target: 'production-web', account: 'account-1', alias: 'production-web',
+          assetId: 'asset-1', assetName: 'prod-web-01',
+        }],
+      },
+    }),
+  })
+  const { container } = render(<><style>{appStyles}</style><App backend={backend} /></>)
+  await screen.findByRole('tab', { name: /production-web/ })
+  const terminalHost = await screen.findByLabelText('production-web SSH 终端')
+  expect(container.querySelector('.terminal-screen')).toHaveStyle({ backgroundColor: background })
+  expect(container.querySelector('.terminal-screen')).toHaveStyle({ padding: '12px' })
+  expect(terminalHost).toHaveStyle({ backgroundColor: background })
+  expect(container.querySelector('.terminal-toolbar')).not.toHaveStyle({ backgroundColor: background })
+})
+
 test('断连 SSH Tab 连按 Enter 只启动一次重连', async () => {
   terminalKeyHandlers.length = 0
   let resolveStart: (session: SessionState) => void = () => undefined
@@ -662,16 +692,16 @@ test('设置页使用左侧导航和右侧单列滚动面板', async () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }))
 
     const navigation = screen.getByRole('navigation', { name: '设置导航' })
-    const navigationLabels = ['外观', '终端', 'Tab 行为', '关于 JumpAccess']
+    const navigationLabels = ['外观', '终端样式', '终端行为', 'Tab 行为', '关于 JumpAccess']
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(navigationLabels)
 
     const scrollContainer = screen.getByTestId('settings-scroll')
-    const sectionIDs = ['settings-appearance', 'settings-terminal', 'settings-tabs', 'settings-about']
+    const sectionIDs = ['settings-appearance', 'settings-terminal-style', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
     expect(Array.from(scrollContainer.querySelectorAll(':scope > .settings-stack > section')).map((section) => section.id)).toEqual(sectionIDs)
 
-    await user.click(within(navigation).getByRole('button', { name: '终端' }))
+    await user.click(within(navigation).getByRole('button', { name: '终端行为' }))
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
-    expect(within(navigation).getByRole('button', { name: '终端' })).toHaveAttribute('aria-current', 'location')
+    expect(within(navigation).getByRole('button', { name: '终端行为' })).toHaveAttribute('aria-current', 'location')
   } finally {
     if (originalScrollIntoView) {
       Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
@@ -695,7 +725,8 @@ test('设置页滚动时同步选中对应的导航项', async () => {
   const scrollContainer = screen.getByTestId('settings-scroll')
   const sectionOffsets: Record<string, number> = {
     'settings-appearance': 0,
-    'settings-terminal': 220,
+    'settings-terminal-style': 220,
+    'settings-terminal-behavior': 380,
     'settings-tabs': 520,
     'settings-about': 760,
   }
@@ -737,17 +768,105 @@ test('Tab 行为设置可隐藏关闭按钮且保留鼠标中键关闭', async (
   expect(screen.queryByRole('tab', { name: '资产' })).not.toBeInTheDocument()
 })
 
-test('终端交互设置可把鼠标右键切换为上下文菜单', async () => {
+test('配色下拉按深浅分组，选中后保存并与字体字号共用预览', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
   render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const preview = await screen.findByRole('region', { name: '终端预览' })
+  expect(screen.queryByText('行高')).not.toBeInTheDocument()
+  expect(screen.queryByText('光标样式与闪烁')).not.toBeInTheDocument()
+  expect(screen.queryByRole('listbox', { name: '终端配色方案' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('combobox', { name: '配色方案 Nord' }))
+  const list = screen.getByRole('listbox', { name: '终端配色方案' })
+  expect(within(list).getByRole('group', { name: '深色' })).toBeVisible()
+  expect(within(list).getByRole('group', { name: '浅色' })).toBeVisible()
+  expect(within(list).getAllByRole('option')).toHaveLength(14)
+  expect(within(list).getByRole('option', { name: 'Nord' })).toHaveAttribute('aria-selected', 'true')
+  expect(within(list).getByRole('option', { name: 'Nord' }).querySelectorAll('.scheme-swatches i')).toHaveLength(16)
+  await user.click(within(list).getByRole('option', { name: 'Catppuccin Latte' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalColorScheme: 'catppuccin-latte', theme: 'light' })))
+  expect(screen.queryByRole('listbox', { name: '终端配色方案' })).not.toBeInTheDocument()
+  expect(preview).toHaveTextContent('Catppuccin Latte')
+  expect(preview.querySelector('.terminal-preview-host')).toHaveStyle({ backgroundColor: '#eff1f5' })
+  await user.selectOptions(screen.getByLabelText('字号'), '18')
+  expect(preview).toHaveTextContent('18 px')
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalColorScheme: 'catppuccin-latte', terminalFontSize: 18 })))
+})
+
+test('配色下拉支持键盘单选，Escape 和失焦不会保存未确认项', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const control = screen.getByRole('combobox', { name: '配色方案 Nord' })
+  control.focus()
+  await user.keyboard('{ArrowDown}{End}{Escape}')
+  expect(control).toHaveAttribute('aria-expanded', 'false')
+  expect(backend.savePreferences).not.toHaveBeenCalled()
+  await user.keyboard('{ArrowDown}{End}{Enter}')
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalColorScheme: 'solarized-light' })))
+  await user.keyboard('{ArrowDown}{Home}{Tab}')
+  expect(screen.queryByRole('listbox', { name: '终端配色方案' })).not.toBeInTheDocument()
+  expect(backend.savePreferences).toHaveBeenCalledTimes(1)
+})
+
+test('连续调整配色和字号按顺序保存，前一次失败不会覆盖后一次预览', async () => {
+  let rejectFirst!: (error: Error) => void
+  const savePreferences = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject })).mockResolvedValue(undefined)
+  const backend = makeBackend({ savePreferences })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await screen.findByRole('region', { name: '终端预览' })
+  await user.click(screen.getByRole('combobox', { name: '配色方案 Nord' }))
+  await user.click(screen.getByRole('option', { name: 'Dracula' }))
+  await user.selectOptions(screen.getByLabelText('字号'), '18')
+  expect(savePreferences).toHaveBeenCalledTimes(1)
+  await act(async () => rejectFirst(new Error('first save failed')))
+  await waitFor(() => expect(savePreferences).toHaveBeenCalledTimes(2))
+  expect(savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalColorScheme: 'dracula', terminalFontSize: 18 }))
+  expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Dracula · 18 px')
+})
+
+test('配色保存失败时恢复已保存方案与预览', async () => {
+  const backend = makeBackend({ savePreferences: vi.fn().mockRejectedValue(new Error('cannot save preferences')) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await screen.findByRole('region', { name: '终端预览' })
+  await user.click(screen.getByRole('combobox', { name: '配色方案 Nord' }))
+  await user.click(screen.getByRole('option', { name: 'Dracula' }))
+  await screen.findByText('cannot save preferences')
+  expect(screen.getByRole('combobox', { name: '配色方案 Nord' })).toBeVisible()
+  expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
+})
+
+test('鼠标右键与字号使用一致的横向布局并可切换为上下文菜单', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<><style>{appStyles}</style><App backend={backend} /></>)
 
   await screen.findByRole('heading', { name: '资产' })
   await user.click(screen.getByRole('button', { name: '打开设置' }))
-  expect(screen.getByRole('heading', { name: '字体与配色' })).toBeVisible()
-  expect(screen.getByRole('heading', { name: '交互' })).toBeVisible()
+  const stylePanel = screen.getByRole('heading', { name: '终端样式' }).closest('section')!
+  const behaviorPanel = screen.getByRole('heading', { name: '终端行为' }).closest('section')!
+  expect(stylePanel.parentElement).toBe(behaviorPanel.parentElement)
+  expect(within(stylePanel).queryByLabelText('鼠标右键')).not.toBeInTheDocument()
 
-  await user.selectOptions(screen.getByLabelText('鼠标右键'), 'context_menu')
+  const rightClick = screen.getByRole('combobox', { name: '鼠标右键' })
+  const fontSizeRow = screen.getByLabelText('字号').parentElement!
+  expect(rightClick.parentElement).toHaveStyle({
+    display: 'grid',
+    gridTemplateColumns: getComputedStyle(fontSizeRow).gridTemplateColumns,
+  })
+  expect(rightClick.previousElementSibling).toContainElement(screen.getByText('鼠标右键', { selector: 'label' }))
+  expect(rightClick).toHaveAccessibleDescription('打开上下文菜单后，右键提供复制和粘贴操作。')
+  await user.selectOptions(rightClick, 'context_menu')
 
   await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
     terminalRightClickAction: 'context_menu',

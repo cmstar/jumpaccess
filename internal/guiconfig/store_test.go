@@ -79,6 +79,7 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	want.Appearance.Theme = "dark"
 	want.Terminal.FontFamily = "Cascadia Mono"
 	want.Terminal.FontSize = 16
+	want.Terminal.ColorScheme = "catppuccin-latte"
 	want.Terminal.RightClickAction = TerminalRightClickContextMenu
 	want.Terminal.WarnOnMultiLinePaste = false
 	want.Tabs.ConfirmCloseActiveSession = false

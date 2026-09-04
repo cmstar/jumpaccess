@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import type { Backend, Preferences, SessionState } from '../lib/backend'
 import { synchronizeTerminalViewportBackground } from './terminalViewport'
+import { terminalDisplayOptions } from '../model/terminalTheme'
 
 interface TerminalPaneProps {
   backend: Backend
@@ -69,6 +70,8 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const hostRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const initialDisplay = useRef(preferences)
+  const fitRef = useRef<(() => void) | null>(null)
   const writtenRef = useRef(0)
   const historyReplayRef = useRef(false)
   const currentDirectoryRef = useRef('')
@@ -157,16 +160,14 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const dark = document.documentElement.classList.contains('dark')
-    const theme = dark
-      ? { background: '#101817', foreground: '#d8e7e1', cursor: '#63d9ae', selectionBackground: '#315d4d' }
-      : { background: '#f7faf8', foreground: '#263d35', cursor: '#16825e', selectionBackground: '#bde9d8' }
+    const display = terminalDisplayOptions(initialDisplay.current)
+    const theme = display.theme
     const terminal = new Terminal({
       allowProposedApi: false,
       convertEol: false,
       cursorBlink: true,
-      fontFamily: preferences.terminalFontFamily,
-      fontSize: preferences.terminalFontSize,
+      fontFamily: display.fontFamily,
+      fontSize: display.fontSize,
       scrollback: 10_000,
       theme,
     })
@@ -254,6 +255,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       if (session.id) void backend.resizeSSHSession(session.id, cols, rows)
     })
     const observer = new ResizeObserver(fitAndReport)
+    fitRef.current = fitAndReport
     observer.observe(host)
     requestAnimationFrame(() => {
       fitAndReport()
@@ -269,11 +271,22 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       resized.dispose()
       terminal.dispose()
       terminalRef.current = null
+      fitRef.current = null
       actionsChangeRef.current?.(null)
       pendingPasteRef.current = null
       historyReplayRef.current = false
     }
-  }, [backend, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.theme, session.id])
+  }, [backend, session.id])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const host = hostRef.current
+    if (!terminal || !host) return
+    const display = terminalDisplayOptions(preferences)
+    Object.assign(terminal.options, display)
+    synchronizeTerminalViewportBackground(host, display.theme.background)
+    fitRef.current?.()
+  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, session.id])
 
   useEffect(() => {
     setContextMenu(null)

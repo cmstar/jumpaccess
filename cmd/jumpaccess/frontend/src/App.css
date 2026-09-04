@@ -1884,6 +1884,133 @@ details > summary::-webkit-details-marker {
   font-weight: 650;
 }
 
+.terminal-preview {
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.terminal-preview-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: .62rem;
+}
+
+.terminal-preview-host {
+  box-sizing: content-box;
+  min-width: 0;
+  padding: 12px;
+}
+
+.terminal-preview-host .xterm { height: 100%; }
+.terminal-preview-loading { min-height: 238px; color: var(--muted); font-size: .7rem; }
+
+.terminal-style-row,
+.terminal-style-fields .terminal-font-field {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(200px, 340px);
+  align-items: center;
+  gap: 8px 20px;
+  min-height: 56px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-card .terminal-style-row label,
+.terminal-style-fields .terminal-font-field > label { margin: 0; }
+.settings-card .terminal-style-row select,
+.terminal-style-fields .terminal-font-control input { margin-top: 0; }
+.terminal-style-fields .terminal-font-toggle { top: 1px; }
+.terminal-style-fields .terminal-font-field .setting-help { grid-column: 2; margin-top: 0; }
+.terminal-style-fields > :last-child { border-bottom: 0; }
+
+.terminal-scheme-trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: .7rem;
+  text-align: left;
+}
+
+.terminal-scheme-trigger > span:not(.scheme-swatches),
+.terminal-scheme-options button > span:not(.scheme-swatches) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.terminal-scheme-trigger > svg,
+.terminal-scheme-options button > svg { width: 16px; flex: 0 0 16px; margin-left: auto; }
+.terminal-scheme-trigger[aria-expanded="true"] { border-color: var(--accent); }
+.terminal-scheme-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.scheme-swatches {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(8, 8px);
+  gap: 2px;
+  padding: 5px;
+  border-radius: 5px;
+}
+.scheme-swatches i { width: 8px; height: 8px; border-radius: 2px; }
+
+.terminal-scheme-options {
+  position: fixed;
+  z-index: 120;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.scheme-group-label {
+  position: sticky;
+  top: -5px;
+  padding: 7px 9px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: .6rem;
+  font-weight: 600;
+}
+
+.terminal-scheme-options button {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  font-size: .7rem;
+  text-align: left;
+}
+.terminal-scheme-options button.active { background: var(--surface-soft); }
+.terminal-scheme-options button[aria-selected="true"] { color: var(--accent-strong); }
+
+@media (max-width: 760px) {
+  .terminal-style-row,
+  .terminal-style-fields .terminal-font-field { grid-template-columns: 1fr; gap: 6px; }
+  .terminal-style-fields .terminal-font-field .setting-help { grid-column: 1; }
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2262,17 +2389,13 @@ details > summary::-webkit-details-marker {
   min-width: 0;
   min-height: 0;
   grid-template-rows: 46px minmax(0, 1fr) 25px;
-  background: #f7faf8;
+  background: var(--surface);
 }
 
 .terminal-panel.tab-terminal {
   height: 100%;
   min-height: 0;
   flex: 1;
-}
-
-.dark .terminal-panel {
-  background: #101817;
 }
 
 .terminal-toolbar {
@@ -2396,7 +2519,7 @@ details > summary::-webkit-details-marker {
   display: grid;
   height: 100%;
   place-items: center;
-  color: var(--muted);
+  color: inherit;
   font-size: .7rem;
 }
 
@@ -2452,10 +2575,6 @@ details > summary::-webkit-details-marker {
 
 .terminal-context-menu svg {
   width: 13px;
-}
-
-.terminal-host .xterm-viewport {
-  border-radius: 6px;
 }
 
 .terminal-statusbar {

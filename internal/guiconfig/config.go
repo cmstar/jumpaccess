@@ -1,6 +1,8 @@
 package guiconfig
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode"
@@ -8,7 +10,27 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 4
+const CurrentVersion = 5
+
+// 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
+//
+//go:embed terminal-schemes.json
+var terminalSchemesJSON []byte
+
+func validTerminalColorScheme(id string) bool {
+	var schemes []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(terminalSchemesJSON, &schemes); err != nil {
+		return false
+	}
+	for _, scheme := range schemes {
+		if scheme.ID == id {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	TerminalRightClickPaste       = "paste"
@@ -36,6 +58,7 @@ type Appearance struct {
 }
 
 type Terminal struct {
+	ColorScheme          string `toml:"color_scheme"`
 	FontFamily           string `toml:"font_family"`
 	FontSize             int    `toml:"font_size"`
 	RightClickAction     string `toml:"right_click_action"`
@@ -105,6 +128,7 @@ func Default() Config {
 			Theme: "system",
 		},
 		Terminal: Terminal{
+			ColorScheme:          "nord",
 			FontFamily:           "monospace",
 			FontSize:             12,
 			RightClickAction:     TerminalRightClickPaste,
@@ -132,8 +156,8 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
-	if header.Version == 3 {
-		return decodeVersionThree(data)
+	if header.Version == 3 || header.Version == 4 {
+		return decodeGroupedPreferences(data)
 	}
 	if header.Version > CurrentVersion {
 		return Config{}, fmt.Errorf("GUI config version %d is newer than supported version %d; update JumpAccess", header.Version, CurrentVersion)
@@ -156,7 +180,7 @@ func Decode(data []byte) (Config, error) {
 	return result, nil
 }
 
-func decodeVersionThree(data []byte) (Config, error) {
+func decodeGroupedPreferences(data []byte) (Config, error) {
 	result := Default()
 	metadata, err := toml.Decode(string(data), &result)
 	if err != nil {
@@ -231,6 +255,9 @@ func (c Config) Validate() error {
 	}
 	if c.Terminal.FontSize < 9 || c.Terminal.FontSize > 32 {
 		return fmt.Errorf("terminal.font_size must be between 9 and 32")
+	}
+	if !validTerminalColorScheme(c.Terminal.ColorScheme) {
+		return fmt.Errorf("terminal.color_scheme is unknown: %q", c.Terminal.ColorScheme)
 	}
 	switch c.Terminal.RightClickAction {
 	case TerminalRightClickPaste, TerminalRightClickContextMenu:
