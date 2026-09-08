@@ -234,6 +234,7 @@ declare global {
       EventsOnMultiple(eventName: string, callback: (event: unknown) => void, maxCallbacks: number): () => void
       Quit?(): void
       WindowMinimise?(): void
+      WindowIsMaximised?(): Promise<boolean>
       WindowToggleMaximise?(): void
     }
   }

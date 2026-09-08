@@ -954,8 +954,27 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, 
 }) {
   const mac = navigator.platform.toLowerCase().includes('mac')
   const runtime = window.runtime
+  const [maximized, setMaximized] = useState(false)
   const [draggedTabID, setDraggedTabID] = useState('')
   const [dropTargetID, setDropTargetID] = useState('')
+  const toggleMaximized = () => {
+    runtime?.WindowToggleMaximise?.()
+    setMaximized((current) => !current)
+  }
+  useEffect(() => {
+    if (mac) return
+    const syncWindowState = () => {
+      const state = runtime?.WindowIsMaximised?.()
+      if (state) void state.then(setMaximized).catch(() => undefined)
+    }
+    syncWindowState()
+    window.addEventListener('resize', syncWindowState)
+    window.addEventListener('focus', syncWindowState)
+    return () => {
+      window.removeEventListener('resize', syncWindowState)
+      window.removeEventListener('focus', syncWindowState)
+    }
+  }, [mac, runtime])
   const activateFromKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex = index
     if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
@@ -1032,7 +1051,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, 
       </div>)}
     </div>
     <button aria-label="新建连接" className="titlebar-button new-tab-button" onClick={onOpenQuick} title="新建连接 (Ctrl/Cmd+K)" type="button"><Plus /></button>
-    <div className="titlebar-drag-region" onDoubleClick={() => runtime?.WindowToggleMaximise?.()} />
+    <div className="titlebar-drag-region" onDoubleClick={toggleMaximized} />
     <nav aria-label="顶部快捷操作" className="titlebar-actions">
       <button aria-label="打开资产" className="titlebar-button" onClick={() => onOpenSingleton('assets')} title="资产" type="button"><Boxes /></button>
       <button
@@ -1046,7 +1065,12 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, 
     </nav>
     {!mac ? <div aria-label="窗口控制" className="window-controls">
       <button aria-label="最小化" onClick={onMinimize} type="button"><Minus /></button>
-      <button aria-label="最大化或还原" onClick={() => runtime?.WindowToggleMaximise?.()} type="button"><Square /></button>
+      <button
+        aria-label={maximized ? '还原窗口' : '最大化窗口'}
+        onClick={toggleMaximized}
+        title={maximized ? '还原窗口' : '最大化窗口'}
+        type="button"
+      >{maximized ? <Copy /> : <Square />}</button>
       <button aria-label="关闭窗口" className="window-close" onClick={onQuit} type="button"><X /></button>
     </div> : null}
   </header>

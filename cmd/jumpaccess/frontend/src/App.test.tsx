@@ -358,6 +358,36 @@ test('Windows 最小化交给后端记录当前显示器，恢复焦点时校正
   expect(backend.ensureWindowVisible).toHaveBeenCalledTimes(1)
 })
 
+test('Windows 最大化按钮随窗口状态切换最大化和还原图标', async () => {
+  let maximized = false
+  const previousRuntime = window.runtime
+  window.runtime = {
+    EventsOnMultiple: vi.fn().mockReturnValue(() => undefined),
+    WindowIsMaximised: vi.fn().mockImplementation(async () => maximized),
+    WindowToggleMaximise: vi.fn().mockImplementation(() => { maximized = !maximized }),
+  }
+  const user = userEvent.setup()
+
+  try {
+    render(<App backend={makeBackend()} />)
+    await screen.findByRole('heading', { name: '资产' })
+
+    const maximize = await screen.findByRole('button', { name: '最大化窗口' })
+    expect(maximize.querySelector('.lucide-square')).toBeInTheDocument()
+
+    await user.click(maximize)
+
+    const restore = await screen.findByRole('button', { name: '还原窗口' })
+    expect(restore.querySelector('.lucide-copy')).toBeInTheDocument()
+
+    maximized = false
+    fireEvent.resize(window)
+    expect(await screen.findByRole('button', { name: '最大化窗口' })).toBeInTheDocument()
+  } finally {
+    window.runtime = previousRuntime
+  }
+})
+
 test('恢复 SSH Tab 时保持断连并且不自动连接', async () => {
   terminalKeyHandlers.length = 0
   terminalWrites.length = 0
