@@ -96,7 +96,7 @@ interface AppProps {
   backend?: Backend
 }
 
-const pageSize = 25
+const pageSize = 50
 const terminalBufferLimit = 1024 * 1024
 const disconnectedMessage = 'Connection closed.\r\n\r\nPress Enter to reconnect ...\r\n'
 const TerminalPane = lazy(() => import('./components/TerminalPane').then((module) => ({ default: module.TerminalPane })))

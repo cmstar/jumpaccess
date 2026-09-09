@@ -120,7 +120,7 @@ const bootstrapState: BootstrapState = {
 const assetPage: AssetPage = {
   count: 1,
   offset: 0,
-  limit: 25,
+  limit: 50,
   aliasCount: 2,
   results: [{
     id: 'asset-1',
@@ -577,7 +577,7 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
 
   expect(await screen.findByRole('heading', { name: '资产' })).toBeInTheDocument()
   await waitFor(() => expect(backend.listAssets).toHaveBeenCalledWith({
-    profile: 'production', organization: 'org-1', search: '', offset: 0, limit: 25,
+    profile: 'production', organization: 'org-1', search: '', offset: 0, limit: 50,
   }))
   const search = screen.getByRole('searchbox', { name: '搜索资产或 Alias' })
   await user.type(search, 'production-web')
