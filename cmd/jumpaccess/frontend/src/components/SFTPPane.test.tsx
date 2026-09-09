@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 import { wailsBackend, type Backend, type SFTPEntry, type SFTPTransfer } from '../lib/backend'
@@ -39,6 +39,71 @@ test.each(['disconnected', 'failed', 'connecting', 'reconnecting'] as const)('SF
   expect(reconnect).toHaveProperty('disabled', !available)
   await userEvent.click(reconnect)
   expect(onReconnect).toHaveBeenCalledTimes(available ? 1 : 0)
+})
+
+test('单击名称文字或名称单元格切换选中，并与复选框和文件操作同步', async () => {
+  const backend = backendFor()
+  show(backend)
+  const file = await screen.findByRole('button', { name: '打开 README.md' })
+  const checkbox = screen.getByRole('checkbox', { name: '选择 README.md' })
+  await userEvent.click(file)
+  expect(checkbox).toBeChecked()
+  expect(file.closest('tr')).toHaveClass('selected')
+  expect(screen.getByRole('button', { name: '下载' })).toBeEnabled()
+  await userEvent.click(file.closest('td')!)
+  expect(checkbox).not.toBeChecked()
+  expect(screen.getByRole('button', { name: '下载' })).toBeDisabled()
+  await userEvent.click(file.closest('td')!)
+  await userEvent.click(screen.getByRole('button', { name: '打开 releases' }))
+  expect(checkbox).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '选择 releases' })).toBeChecked()
+  await userEvent.click(checkbox)
+  expect(checkbox).not.toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '选择 releases' })).toBeChecked()
+  expect(backend.readSFTPDirectory).toHaveBeenCalledTimes(1)
+})
+
+test.each([false, true])('拖选文件名保留文本选区且不改变文件选中状态（原选中：%s）', async (checked) => {
+  show(backendFor())
+  const file = await screen.findByRole('button', { name: '打开 README.md' })
+  const checkbox = screen.getByRole('checkbox', { name: '选择 README.md' })
+  if (checked) await userEvent.click(checkbox)
+  fireEvent.pointerDown(file, { clientX: 10, clientY: 10 })
+  const text = within(file).getByText('README.md').firstChild!
+  const range = document.createRange()
+  range.setStart(text, 0)
+  range.setEnd(text, 6)
+  const selection = window.getSelection()!
+  selection.removeAllRanges()
+  selection.addRange(range)
+  try {
+    fireEvent.click(file, { detail: 1, clientX: 70, clientY: 10 })
+    expect(selection.toString()).toBe('README')
+    expect(checkbox).toHaveProperty('checked', checked)
+    fireEvent.click(screen.getByRole('button', { name: '打开 releases' }), { detail: 1 })
+    expect(screen.getByRole('checkbox', { name: '选择 releases' })).toBeChecked()
+    fireEvent.pointerDown(file, { clientX: 40, clientY: 10 })
+    fireEvent.click(file, { detail: 1, clientX: 40, clientY: 10 })
+    expect(checkbox).toHaveProperty('checked', !checked)
+  } finally {
+    selection.removeAllRanges()
+  }
+  await userEvent.click(file)
+  expect(checkbox).toHaveProperty('checked', checked)
+})
+
+test('双击名称单元格只进入一次文件夹，双击文件不进入目录', async () => {
+  const backend = backendFor()
+  show(backend)
+  const file = await screen.findByRole('button', { name: '打开 README.md' })
+  await userEvent.dblClick(file)
+  expect(screen.getByRole('checkbox', { name: '选择 README.md' })).toBeChecked()
+  expect(backend.readSFTPDirectory).toHaveBeenCalledTimes(1)
+  const folder = screen.getByRole('button', { name: '打开 releases' })
+  await userEvent.dblClick(folder.closest('td')!)
+  expect(await screen.findByText('此目录为空')).toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: '远程路径' })).toHaveValue('/home/deploy/releases')
+  expect(backend.readSFTPDirectory).toHaveBeenCalledTimes(2)
 })
 
 test('浏览远程目录并切换隐藏文件，输入路径后进入服务器返回目录', async () => {
