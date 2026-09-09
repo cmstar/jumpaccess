@@ -7,6 +7,130 @@ import (
 	"testing"
 )
 
+func TestDownloadBuffersUntilCompletion(t *testing.T) {
+	var store Store
+	dir := t.TempDir()
+	grant, err := store.GrantDirectory("ssh", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := bytes.Repeat([]byte{0, 128, 255}, 100_000)
+	file, err := store.CreateDownload("ssh", grant, "buffered.bin", int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.CloseSession("") })
+	for offset := 0; offset < len(data); offset += ChunkSize {
+		if err := store.Write(file.ID, data[offset:min(offset+ChunkSize, len(data))]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, file.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("下载完成前写入了 %d 字节", info.Size())
+	}
+	if err := store.Close(file.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, file.Name))
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("缓冲内容未完整保存: %v", err)
+	}
+}
+
+func TestDownloadBufferBudgetBatchingAndCleanup(t *testing.T) {
+	var store Store
+	dir := t.TempDir()
+	t.Cleanup(func() { store.CloseSession("") })
+	create := func(session, name string, size int64) File {
+		t.Helper()
+		grant, err := store.GrantDirectory(session, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := store.CreateDownload(session, grant, name, size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	large := create("first", "large", downloadBufferLimit+ChunkSize)
+	other := create("second", "other", ChunkSize)
+	if store.bufferReserved != downloadBufferLimit {
+		t.Fatalf("缓冲总额 = %d", store.bufferReserved)
+	}
+	chunk := bytes.Repeat([]byte{0xa5}, ChunkSize)
+	for range downloadBufferLimit / ChunkSize {
+		if err := store.Write(large.ID, chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, large.Name))
+	if err != nil || info.Size() != 0 {
+		t.Fatalf("恰好 50 MiB 时不应提前刷盘: %v", err)
+	}
+	if err := store.Write(large.ID, chunk); err != nil {
+		t.Fatal(err)
+	}
+	info, err = os.Stat(filepath.Join(dir, large.Name))
+	if err != nil || info.Size() != downloadBufferLimit {
+		t.Fatalf("越过缓冲边界应批量写入 50 MiB: %v", err)
+	}
+	if err := store.Write(other.ID, chunk); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(other.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(large.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []File{large, other} {
+		got, err := os.ReadFile(filepath.Join(dir, file.Name))
+		if err != nil || int64(len(got)) != file.Size || bytes.Count(got, []byte{0xa5}) != len(got) {
+			t.Fatalf("缓冲或降级写入丢失数据: %v", err)
+		}
+	}
+	if store.bufferReserved != 0 {
+		t.Fatal("完成后未释放缓冲额度")
+	}
+	partial := create("cancel", "partial", downloadBufferLimit)
+	if err := store.Write(partial.ID, chunk); err != nil {
+		t.Fatal(err)
+	}
+	store.CloseSession("cancel")
+	if store.bufferReserved != 0 {
+		t.Fatal("断连后未释放缓冲额度")
+	}
+	if _, err := os.Stat(filepath.Join(dir, partial.Name)); !os.IsNotExist(err) {
+		t.Fatal("断连后留下部分文件")
+	}
+	failed := create("failure", "failed", int64(len(chunk)))
+	if err := store.Write(failed.ID, chunk); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟保存时底层文件句柄失效，Flush 失败不能报告完成。
+	if err := store.files[failed.ID].file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(failed.ID, true); err == nil {
+		t.Fatal("忽略了保存错误")
+	}
+	if store.bufferReserved != 0 {
+		t.Fatal("保存失败后未释放缓冲额度")
+	}
+	if _, err := os.Stat(filepath.Join(dir, failed.Name)); !os.IsNotExist(err) {
+		t.Fatal("保存失败后留下部分文件")
+	}
+	empty := create("empty", "empty", 0)
+	if err := store.Close(empty.ID, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDownloadConfinesNamesPreservesExistingAndCleansPartial(t *testing.T) {
 	var store Store
 	dir := t.TempDir()

@@ -1,5 +1,6 @@
 import { Sentry, type Detection, type Session, type Transfer } from 'zmodem.js'
 import type { TransferFile, ZmodemBackend, ZmodemState } from './zmodemTypes'
+import { ZmodemProgress } from './zmodemProgress'
 
 export function encodeBytes(bytes: Uint8Array | number[]): string {
   let text = ''
@@ -35,8 +36,10 @@ export class ZmodemController {
   private detectedHeader = false
   private bytesWithoutProgress = 0
   private lastProgressAt = 0
+  private terminalProgress: ZmodemProgress
 
-  constructor(readonly id: string, private backend: ZmodemBackend, private output: (text: string) => void, private changed: (state: ZmodemState) => void) {
+  constructor(readonly id: string, private backend: ZmodemBackend, output: (text: string) => void, private changed: (state: ZmodemState) => void) {
+    this.terminalProgress = new ZmodemProgress(output)
     this.sentry = this.newSentry()
   }
   private update(patch: Partial<ZmodemState>) {
@@ -79,7 +82,7 @@ export class ZmodemController {
     // 待确认握手后出现普通输出，说明请求已过时；不能再向 Shell 发协议应答。
     if (bytes.length && this.detection) { this.detection = undefined; this.sentry = this.newSentry() }
     const text = this.decoder.decode(bytes, { stream: true })
-    if (text) this.output(text)
+    if (text) this.terminalProgress.terminal(text)
   }
 
   // 先收齐完整起始帧，避免分包造成握手乱码或重复弹窗。
@@ -137,11 +140,12 @@ export class ZmodemController {
   }
   private touch() {
     clearTimeout(this.timer)
-    this.timer = setTimeout(() => this.cancel('传输等待超时，已取消'), this.selecting ? 300_000 : 60_000)
+    this.timer = setTimeout(() => this.cancel('传输等待超时，已取消', 'Transfer timed out'), this.selecting ? 300_000 : 60_000)
   }
   private progress(transferred: number) {
     this.bytesWithoutProgress = 0
     this.state = { ...this.state, transferred }
+    this.terminalProgress.update(transferred)
     const now = Date.now()
     if (now - this.lastProgressAt >= 100) { this.lastProgressAt = now; this.update({ transferred }) }
   }
@@ -158,7 +162,7 @@ export class ZmodemController {
       if (this.disposed || generation !== this.generation) { await this.backend.endZmodemTransfer(this.id); return }
       if ((direction === 'upload' && !files.length) || (direction === 'download' && !grant)) { this.cancel(); return }
       const detection = this.detection
-      if (!detection?.is_valid()) { this.cancel('远程传输请求已失效，请重新执行命令'); return }
+      if (!detection?.is_valid()) { this.cancel('远程传输请求已失效，请重新执行命令', 'Transfer request expired. Run the command again.'); return }
       this.selecting = false
       this.touch()
       const session = detection.confirm()
@@ -167,9 +171,13 @@ export class ZmodemController {
       if (direction === 'upload') await this.upload(session, files, generation)
       else {
         this.offeredFiles = 0
+        this.receiveJob = Promise.resolve()
         session.on('offer', offer => {
           this.offeredFiles++
-          this.receiveJob = this.download(offer, grant, generation)
+          // 下一份 offer 可以早于上一个文件落盘；按文件顺序保存及结束进度。
+          this.receiveJob = this.receiveJob.then(() => {
+            if (!this.disposed && generation === this.generation) return this.download(offer, grant, generation)
+          })
           void this.receiveJob.catch(reason => this.fail(reason))
         })
         session.on('session_end', () => {
@@ -186,8 +194,10 @@ export class ZmodemController {
     for (const file of files) {
       if (this.disposed || generation !== this.generation) return
       this.update({ name: file.name, size: file.size, transferred: 0 })
+      this.terminalProgress.start('upload', file.name, file.size)
       const transfer = await session.send_offer({ name: file.name, size: file.size })
-      if (!transfer) { skipped++; await this.backend.closeZmodemFile(file.id, false); continue }
+      if (this.disposed || generation !== this.generation) return
+      if (!transfer) { skipped++; this.terminalProgress.end('Skipped by remote'); await this.backend.closeZmodemFile(file.id, false); continue }
       let transferred = 0
       while (transferred < file.size) {
         const bytes = decodeBytes(await this.backend.readZmodemFile(file.id))
@@ -201,6 +211,8 @@ export class ZmodemController {
       }
       await transfer.end()
       await this.backend.closeZmodemFile(file.id, true)
+      if (this.disposed || generation !== this.generation) return
+      this.terminalProgress.end('Complete', true)
     }
     await session.close()
     if (generation === this.generation) await this.finish(skipped ? `上传结束，远端跳过 ${skipped} 个文件` : '上传完成')
@@ -211,10 +223,11 @@ export class ZmodemController {
     const file = await this.backend.createZmodemDownload(this.id, grant, details.name, details.size)
     if (this.disposed || generation !== this.generation) { await this.backend.closeZmodemFile(file.id, false); return }
     this.update({ name: file.name, size: file.size, transferred: 0 })
+    this.terminalProgress.start('download', file.name, file.size)
     let transferred = 0
     await offer.accept({ on_input: data => {
       this.bytesWithoutProgress = 0
-      // 不使用库默认的整文件缓存；每个协议块顺序写入原生文件句柄。
+      // 不在 JS 中缓存整文件；协议块交给 Go 端的有界缓冲。
       const encoded = encodeBytes(data)
       this.diskQueue = this.diskQueue.then(async () => {
         if (this.disposed || generation !== this.generation) return
@@ -225,7 +238,10 @@ export class ZmodemController {
       void this.diskQueue.catch(reason => this.fail(reason))
     } })
     await this.diskQueue
-    if (generation === this.generation) await this.backend.closeZmodemFile(file.id, true)
+    if (!this.disposed && generation === this.generation) {
+      await this.backend.closeZmodemFile(file.id, true)
+      if (!this.disposed && generation === this.generation) this.terminalProgress.end('Complete', true)
+    }
   }
   private async finish(message: string) {
     if (this.finishing) return
@@ -242,8 +258,9 @@ export class ZmodemController {
     this.finishing = false
     this.update({ busy: false, message })
   }
-  cancel(message = '传输已取消') {
+  cancel(message = '传输已取消', terminalMessage = 'Transfer cancelled') {
     if (this.disposed || this.finishing) return
+    this.terminalProgress.end(terminalMessage)
     this.update({ message })
     this.generation++
     const session = this.sentry.get_confirmed_session()
@@ -261,10 +278,12 @@ export class ZmodemController {
   }
   private fail(reason: unknown) {
     if (!this.state.busy || this.disposed || this.finishing) return
-    this.cancel(`传输失败：${reason instanceof Error ? reason.message : String(reason)}`)
+    // 后端错误可能为中文；详情保留在状态栏，终端提示统一使用英文。
+    this.cancel(`传输失败：${reason instanceof Error ? reason.message : String(reason)}`, 'Transfer failed. See the status bar for details.')
   }
   dispose() {
     if (this.disposed) return
+    this.terminalProgress.end('Transfer interrupted')
     this.disposed = true
     this.generation++
     clearTimeout(this.timer)

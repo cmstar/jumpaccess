@@ -85,6 +85,8 @@ docs/               # 长期项目知识
 
 ZMODEM 修改需验证全字节二进制数据、分片握手和 UTF-8、双端真实协议收发、原生选择取消、断连后迟到的选择结果、下载文件名边界和同名文件保护、分块输出确认与关闭解锁。`go test -race ./internal/application/sshsession ./internal/application/zmodemfiles ./internal/sshclient` 检查核心并发边界；前端测试不使用真实账号或生产文件。用户本机还需使用实际 `lrzsz` 和 JumpServer 验证策略兼容性。
 
+下载缓冲还需覆盖恰好 50 MiB、超过额度后的分批写入、多会话共享额度、空文件、取消清理和 Flush 失败。进度需覆盖原地刷新与节流、保存完成前不显示 100%、Shell 提示符恢复、多文件顺序、取消后的迟到回调和文件名控制字符过滤。
+
 生产行为采用 RED–GREEN–REFACTOR：先添加能够说明行为的失败测试，确认失败原因正确，再实现最小改动并重构。
 
 默认测试不需要真实 JumpServer 账号，优先覆盖：

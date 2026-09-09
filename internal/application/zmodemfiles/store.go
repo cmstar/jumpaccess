@@ -2,6 +2,7 @@
 package zmodemfiles
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -15,6 +16,9 @@ import (
 
 const ChunkSize = 64 * 1024
 
+// 所有会话共用下载缓冲额度，避免多会话按文件大小无限分配内存。
+const downloadBufferLimit = 50 * 1024 * 1024
+
 type File struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -22,15 +26,17 @@ type File struct {
 }
 type openedFile struct {
 	file          *os.File
+	buffer        *bufio.Writer
 	session       string
 	download      bool
 	size, written int64
 }
 type directoryGrant struct{ session, path string }
 type Store struct {
-	mu          sync.Mutex
-	files       map[string]*openedFile
-	directories map[string]directoryGrant
+	mu             sync.Mutex
+	files          map[string]*openedFile
+	directories    map[string]directoryGrant
+	bufferReserved int64
 }
 
 func randomID() (string, error) {
@@ -133,7 +139,14 @@ func (s *Store) CreateDownload(session, grantID, name string, size int64) (File,
 		if s.files == nil {
 			s.files = make(map[string]*openedFile)
 		}
-		s.files[id] = &openedFile{file: file, session: session, download: true, size: size}
+		opened := &openedFile{file: file, session: session, download: true, size: size}
+		capacity := min(size, downloadBufferLimit-s.bufferReserved)
+		// 无额度时沿用操作系统的文件缓存，不继续增加应用缓冲。
+		if capacity > 0 {
+			opened.buffer = bufio.NewWriterSize(file, int(capacity))
+			s.bufferReserved += int64(opened.buffer.Size())
+		}
+		s.files[id] = opened
 		return File{ID: id, Name: candidate, Size: size}, nil
 	}
 	return File{}, fmt.Errorf("同名文件过多，无法创建下载文件")
@@ -164,7 +177,11 @@ func (s *Store) Write(id string, data []byte) error {
 	if len(data) > ChunkSize || f.written+int64(len(data)) > f.size {
 		return fmt.Errorf("下载数据超出声明大小")
 	}
-	n, err := f.file.Write(data)
+	var writer io.Writer = f.file
+	if f.buffer != nil {
+		writer = f.buffer
+	}
+	n, err := writer.Write(data)
 	f.written += int64(n)
 	if err == nil && n != len(data) {
 		err = io.ErrShortWrite
@@ -184,12 +201,23 @@ func (s *Store) closeLocked(id string, complete bool) error {
 		return nil
 	}
 	delete(s.files, id)
+	defer func() {
+		if f.buffer != nil {
+			s.bufferReserved -= int64(f.buffer.Size())
+			f.buffer = nil
+		}
+	}()
 	var err error
 	if f.download && complete {
 		if f.written != f.size {
 			err = fmt.Errorf("下载未完成")
 		} else {
-			err = f.file.Sync()
+			if f.buffer != nil {
+				err = f.buffer.Flush()
+			}
+			if err == nil {
+				err = f.file.Sync()
+			}
 		}
 	}
 	if closeErr := f.file.Close(); err == nil {
