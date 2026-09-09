@@ -73,7 +73,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 SSH ZMODEM 协议由前端 `lib/zmodem.ts` 的会话级控制器和 `zmodem.js` 0.1.10 实现。控制器在 App 层按 live session ID 管理，切换 Tab、重建 xterm 或历史回放不会重启传输。先收齐起始帧，协议字节不写入终端历史；用户选择上传文件或下载目录后才确认握手、发送协议应答。
 
-`sshsession` 对桌面输出使用 Base64 和有序序号，每块最多 32 KiB。前端解析并将下载内容交给 Go 端缓冲或文件写入后确认该块，后端再继续输出，形成到 SSH channel 的反压。普通文本使用流式 UTF-8 解码。CLI 保持原有流契约。
+`sshsession` 对桌面输出使用 Base64 和有序序号，每块最多 32 KiB。前端解析并将下载内容交给 Go 端缓冲或文件写入后确认该块，后端再继续输出，形成到 SSH channel 的反压。普通文本使用流式 UTF-8 解码。CLI 使用独立的直接终端适配器。
 
 `internal/application/zmodemfiles` 持有原生对话框授权的文件句柄和目录授权；上传最多每次读取 64 KiB，下载协议块交给 Go 端 `bufio.Writer`，JS 不缓存整文件。所有 live Session 共用 50 MiB 的下载缓冲额度，单文件预留容量为声明大小与剩余额度的较小值；额度耗尽时直接写文件。能容纳的文件收齐后保存，较大文件在缓冲满后分批写入。额度限制活动下载缓冲，不包含运行时、桥接临时对象和操作系统缓存。下载拒绝路径分隔符、控制字符、Windows 设备名和 ADS，使用排他创建避免覆盖；同名文件添加数字后缀。完成时核对大小、Flush 后 Sync，成功才报告完成；取消、错误、断连及退出丢弃剩余缓冲，清理未完成文件和授权并释放额度。ZMODEM 的受限二进制块跨 Wails 桥接；独立 SFTP 的文件流仍全部留在 Go。
 
@@ -92,6 +92,14 @@ SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校�
 从 SSH 打开 SFTP 时，桌面适配器用原 Session 的 Profile、Organization、Asset ID 和 Account 固定连接身份。目录仅取打开时的 OSC 7 快照。KoKo 的 `/` 是平台配置的 SFTP 根目录；只有已知 `sftp_home` 的物理映射时，才把 SSH 目录换算为 SFTP 路径。无法映射或访问时静默尝试 home／起始目录，不假设 `/home/<username>`。文件浏览与终端此后独立。
 
 上传和下载使用原生文件选择器及 Wails 文件拖入；Go 逐文件流式传输，冲突等待、取消和重试由会话队列负责。文件内容不跨 Wails 事件桥。传输临时文件在成功后发布为目标文件；递归操作跳过已识别的符号链接；针对 KoKo 的文件类型兼容行为，通过 READLINK 补充识别。关闭连接会取消其任务，切换 Tab 不影响任务；退出前有未完成任务时先请求前端确认。
+
+### CLI ZMODEM
+
+`sshclient.Runner` 在 stdin/stdout 均为终端时，把输出交给 `internal/clitransfer`，默认识别 CRC 有效的起始帧。普通 SSH 字节不变；文件选择期间键盘仅进入本地路径提示，传输期间只处理本地 Ctrl+C，完成后恢复远端输入。用户选择期间若远端输出普通文本，则请求失效，不再向 Shell 发送协议应答。起始帧前缀等待上限为 1 秒，本地选择为 5 分钟，协议读写空闲为 60 秒；取消残留数据只在有限窗口内丢弃，并提示 Enter 刷新 Shell。写入串行且可取消，阻塞的远端写入通过关闭会话解除，输出解析提前退出时先关闭管道再等待 SSH 结束。
+
+`internal/zmodem` 是独立 Go 协议层：接收 CRC16/CRC32，发送 CRC16，子包最多 8 KiB，发送确认窗口最多 1 MiB 并遵循远端缓冲声明；校验 CRC 和 32 位文件偏移，支持多文件下载、上传恢复偏移、有限重传及远端跳过。普通终端数据和远端协议在 Go 层分流，不运行 JavaScript，不依赖本机 `rz` / `sz`。下载复用 `zmodemfiles.Store` 的名称校验、排他创建、50 MiB 缓冲和清理规则；上传由本地明确选择的普通文件句柄提供可定位读取。文件小于 4 GiB，协议不提供目录传输。
+
+`internal/downloads` 提供系统目录解析：Windows Known Folder 遵循用户重定向，macOS CGO 构建通过 Foundation 读取 Downloads；非原生构建回退到用户 `Downloads`，路径不可用时由 CLI 请求另选目录。`jumpctl ssh --download-dir` 只覆盖本次连接，不修改持久配置。非终端 I/O 和 `jumpctl proxy` 保持透传。
 
 ### 通用 ProxyCommand
 

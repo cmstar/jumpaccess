@@ -68,7 +68,7 @@ func run() int {
 		SelectAccount: func(accounts []jumpserver.Account) (jumpserver.Account, error) {
 			return terminalprompt.SelectAccount(os.Stdin, os.Stderr, accounts)
 		},
-		RunSSH: func(ctx context.Context, prepared connectapp.Prepared) error {
+		RunSSH: func(ctx context.Context, prepared connectapp.Prepared, options cli.SSHOptions) error {
 			hostKeys := sshhostkey.Store{
 				Path: filepath.Join(rootDir, "known_hosts"),
 				Confirm: func(host, fingerprint string) (bool, error) {
@@ -86,8 +86,9 @@ func run() int {
 			})
 			return (sshclient.Runner{
 				Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-				HostKeyCallback: callback,
-				Timeout:         configuration.Behavior.ConnectTimeout.Duration,
+				HostKeyCallback:   callback,
+				DownloadDirectory: options.DownloadDirectory,
+				Timeout:           configuration.Behavior.ConnectTimeout.Duration,
 			}).Run(ctx, prepared.Connection)
 		},
 		RunProxy: func(ctx context.Context, prepared connectapp.Prepared) error {

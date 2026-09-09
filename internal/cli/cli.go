@@ -28,10 +28,12 @@ type Dependencies struct {
 	Auth          AuthService
 	Resources     ResourceService
 	Connect       ConnectionPreparer
-	RunSSH        func(context.Context, connectapp.Prepared) error
+	RunSSH        func(context.Context, connectapp.Prepared, SSHOptions) error
 	RunProxy      func(context.Context, connectapp.Prepared) error
 	SelectAccount func([]jumpserver.Account) (jumpserver.Account, error)
 }
+
+type SSHOptions struct{ DownloadDirectory string }
 
 type CredentialRemover interface {
 	Delete(string) error

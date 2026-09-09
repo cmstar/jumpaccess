@@ -491,12 +491,15 @@ func TestSSHCommandPreparesInteractiveTargetAndRunsClient(t *testing.T) {
 	var ran jumpserver.ClientConnection
 	root := NewRoot(Dependencies{
 		Connect: preparer,
-		RunSSH: func(_ context.Context, prepared connectapp.Prepared) error {
+		RunSSH: func(_ context.Context, prepared connectapp.Prepared, options SSHOptions) error {
+			if options.DownloadDirectory != "local downloads" {
+				t.Fatalf("download directory = %q", options.DownloadDirectory)
+			}
 			ran = prepared.Connection
 			return nil
 		},
 	})
-	root.SetArgs([]string{"ssh", "web", "--profile", "work", "--organization", "org-1", "--account", "root"})
+	root.SetArgs([]string{"ssh", "web", "--profile", "work", "--organization", "org-1", "--account", "root", "--download-dir", "local downloads"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
@@ -506,6 +509,27 @@ func TestSSHCommandPreparesInteractiveTargetAndRunsClient(t *testing.T) {
 	}
 	if ran.Endpoint.Host != "gateway" {
 		t.Fatalf("ran connection = %#v", ran)
+	}
+}
+
+func TestSSHDownloadsDefaultWithoutZmodemFlag(t *testing.T) {
+	ran := false
+	root := NewRoot(Dependencies{
+		Connect: &fakeConnectionPreparer{},
+		RunSSH: func(_ context.Context, _ connectapp.Prepared, options SSHOptions) error {
+			ran = true
+			if options.DownloadDirectory != "" {
+				t.Fatalf("unexpected explicit directory: %q", options.DownloadDirectory)
+			}
+			return nil
+		},
+	})
+	root.SetArgs([]string{"ssh", "web"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Fatal("SSH did not start without transfer flags")
 	}
 }
 

@@ -8,17 +8,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cmstar/jumpaccess/internal/clitransfer"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
 
 type Runner struct {
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	HostKeyCallback ssh.HostKeyCallback
-	Timeout         time.Duration
+	Stdin             io.Reader
+	Stdout            io.Writer
+	Stderr            io.Writer
+	HostKeyCallback   ssh.HostKeyCallback
+	Timeout           time.Duration
+	DownloadDirectory string
 }
 
 func (r Runner) Run(ctx context.Context, connection jumpserver.ClientConnection) error {
@@ -26,11 +28,20 @@ func (r Runner) Run(ctx context.Context, connection jumpserver.ClientConnection)
 	if err != nil {
 		return err
 	}
+	stdout := r.Stdout
+	var transferReader *io.PipeReader
+	var transferWriter *io.PipeWriter
+	if input != nil {
+		transferReader, transferWriter = io.Pipe()
+		defer transferReader.Close()
+		defer transferWriter.Close()
+		stdout = transferWriter
+	}
 	session, err := Open(ctx, OpenOptions{
 		Connection:      connection,
 		HostKeyCallback: r.HostKeyCallback,
 		Timeout:         r.Timeout,
-		Stdout:          r.Stdout,
+		Stdout:          stdout,
 		Stderr:          r.Stderr,
 		Terminal:        terminal,
 	})
@@ -44,6 +55,35 @@ func (r Runner) Run(ctx context.Context, connection jumpserver.ClientConnection)
 			return fmt.Errorf("enable raw terminal mode: %w", err)
 		}
 		defer func() { _ = term.Restore(int(input.Fd()), state) }()
+		transferContext, stopTransfer := context.WithCancel(ctx)
+		defer stopTransfer()
+		transferred := make(chan error, 1)
+		go func() {
+			transferred <- clitransfer.Run(transferContext, r.Stdin, r.Stdout, session, transferReader, clitransfer.Options{DownloadDirectory: r.DownloadDirectory})
+		}()
+		finished := make(chan error, 1)
+		go func() {
+			err := session.Wait()
+			_ = transferWriter.Close()
+			finished <- err
+		}()
+		select {
+		case err := <-finished:
+			transferErr := <-transferred
+			if err != nil {
+				return err
+			}
+			return transferErr
+		case transferErr := <-transferred:
+			// 解析器提前退出时，先解除 SSH 输出复制的管道阻塞，再等待会话结束。
+			_ = transferReader.Close()
+			_ = session.Close()
+			err := <-finished
+			if transferErr != nil {
+				return transferErr
+			}
+			return err
+		}
 	}
 	if r.Stdin != nil {
 		go func() {

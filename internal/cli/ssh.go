@@ -12,6 +12,7 @@ func newSSHCommand(deps Dependencies) *cobra.Command {
 	var profile string
 	var organization string
 	var account string
+	var options SSHOptions
 	command := &cobra.Command{
 		Use:   "ssh <target>",
 		Short: "Open an interactive SSH session through JumpServer",
@@ -32,11 +33,12 @@ func newSSHCommand(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return deps.RunSSH(cmd.Context(), prepared)
+			return deps.RunSSH(cmd.Context(), prepared, options)
 		},
 	}
 	command.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
 	command.Flags().StringVar(&organization, "organization", "", "JumpServer organization ID")
 	command.Flags().StringVar(&account, "account", "", "account ID, alias, name, or username")
+	command.Flags().StringVar(&options.DownloadDirectory, "download-dir", "", "local ZMODEM download directory (defaults to the system Downloads folder)")
 	return command
 }

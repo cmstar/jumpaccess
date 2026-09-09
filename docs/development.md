@@ -31,6 +31,9 @@ internal/application/desktop/  # Wails 使用的类型化桌面应用 API
 internal/application/sshsession/ # GUI 多 SSH 会话与批量输出管理
 internal/application/sftpsession/ # GUI SFTP 目录、文件操作与传输队列
 internal/cli/       # CLI 参数和输出适配
+internal/clitransfer/ # CLI ZMODEM 检测、本地输入切换和进度
+internal/zmodem/    # Go ZMODEM 协议收发和 CRC 校验
+internal/downloads/ # 系统下载目录查询
 internal/config/    # TOML 模型、校验和存储
 internal/guiconfig/ # GUI 独有偏好与 gui.toml 存储
 internal/credential/# 私有文件凭据与原生凭据兼容适配
@@ -86,6 +89,8 @@ docs/               # 长期项目知识
 ZMODEM 修改需验证全字节二进制数据、分片握手和 UTF-8、双端真实协议收发、原生选择取消、断连后迟到的选择结果、下载文件名边界和同名文件保护、分块输出确认与关闭解锁。`go test -race ./internal/application/sshsession ./internal/application/zmodemfiles ./internal/sshclient` 检查核心并发边界；前端测试不使用真实账号或生产文件。用户本机还需使用实际 `lrzsz` 和 JumpServer 验证策略兼容性。
 
 下载缓冲还需覆盖恰好 50 MiB、超过额度后的分批写入、多会话共享额度、空文件、取消清理和 Flush 失败。进度需覆盖原地刷新与节流、保存完成前不显示 100%、Shell 提示符恢复、多文件顺序、取消后的迟到回调和文件名控制字符过滤。
+
+CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./internal/sshclient`，验证默认启用、可选目录覆盖、系统目录不可用回退、本地路径隔离和取消后输入恢复。前端执行过 `npm ci` 且 Node.js 可用时，测试自动启动独立的 `zmodem.js` 对端验证互通；缺少这些测试依赖会明确 skip，不影响 CLI 构建或运行。PATH 中存在真实 `rz` / `sz` 时运行 lrzsz 互通；Windows 可用 `JUMPACCESS_TEST_LRZSZ_WSL_DIR` 指向 Ubuntu-22.04 中的测试二进制目录，使用 WSL 进行互通验证。macOS 默认目录的原生实现仍需 macOS smoke test。
 
 生产行为采用 RED–GREEN–REFACTOR：先添加能够说明行为的失败测试，确认失败原因正确，再实现最小改动并重构。
 

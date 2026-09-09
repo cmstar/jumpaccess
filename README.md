@@ -140,7 +140,24 @@ Host production-web
 
 能力检测使用独立 SSH `exec` channel。部分 JumpServer 网关会拒绝它，此时显示“无法检测”，不会向当前 Shell 插入探测命令。仍可手工运行 `rz` / `sz`，识别到握手后会弹出文件选择器并启用对应方向的按钮。命令存在不代表堡垒机允许传输；被策略阻止或超时会显示错误。
 
-ZMODEM 使用当前 SSH 会话，不依赖 SFTP 权限。`jumpctl` CLI 和通用 `ProxyCommand` 保持原有数据透传行为，外部终端需自行支持 ZMODEM。
+ZMODEM 使用当前 SSH 会话，不依赖 SFTP 权限。
+
+### CLI 上传和下载
+
+`jumpctl ssh` 在交互终端中默认识别 `rz` / `sz`，无需 `--zmodem` 参数，也无需本地安装 `lrzsz` 或 Node.js：
+
+```powershell
+jumpctl ssh my-server
+jumpctl ssh my-server --download-dir "D:\Downloads"
+```
+
+- 下载默认保存到系统“下载”目录。Windows 读取 Known Folder 配置，支持目录重定向；macOS 正式构建读取系统 Downloads 目录。`--download-dir` 可覆盖本次连接的保存位置；目录不存在或不可写时，在终端提示输入其他本地目录。
+- 远端运行 `rz` 后，本机显示 `Local file to upload`，输入单个本地普通文件路径并回车即可；路径可以带引号，支持 `~`。输入内容不会发到远端 Shell。空路径或 Ctrl+C 取消选择。
+- 远端运行 `sz file1 file2` 可连续下载多个文件，同名文件自动另存。下载复用 50 MiB 缓冲和取消清理；终端进度及结果提示全部使用英文。
+- 传输期间 Ctrl+C 取消；取消或失败后按 Enter 刷新远端提示符。若远端写入已被流控卡住，取消或超时会关闭该 SSH 会话，避免进程持续阻塞。
+- CLI 使用标准 32 位 ZMODEM 文件偏移，单文件必须小于 4 GiB；不提供目录传输。标准输入或输出被重定向时保持字节透传，不启动本地交互式文件传输。
+
+`jumpctl proxy` 保持透传，由外部终端或 SSH 客户端处理 ZMODEM，不使用 CLI 本地文件选择和下载目录逻辑。
 
 ## 文档索引
 
