@@ -28,7 +28,9 @@ test('SSH 传输按钮在断开按钮之前，切换 Tab 不重复处理传输�
   const download = screen.getByLabelText('下载文件（ZMODEM）')
   const buttons = upload.closest('.terminal-toolbar-actions')!.querySelectorAll('button')
   const disconnect = screen.getByRole('button', { name: '断开 production-web SSH 连接' })
-  expect(Array.from(buttons).slice(-3)).toEqual([upload, download, disconnect])
+  const reconnect = screen.getByRole('button', { name: '重新连接' })
+  expect(Array.from(buttons).slice(-4)).toEqual([upload, download, reconnect, disconnect])
+  expect(reconnect.previousElementSibling).toHaveClass('terminal-action-separator')
   const session = await vi.mocked(backend.startSSHSession).mock.results[0].value
   act(() => output({ id: session.id, encoding: 'base64', data: btoa('**\x18B00000000000000\r\n\x11') }))
   await waitFor(() => expect(zmodem.chooseZmodemDownloadDirectory).toHaveBeenCalledTimes(1))
@@ -1359,7 +1361,9 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   const sftp = within(actions).getByRole('button', { name: '从 SSH 连接 SFTP' })
   const upload = within(actions).getByRole('button', { name: '上传文件（ZMODEM）' })
   const download = within(actions).getByRole('button', { name: '下载文件（ZMODEM）' })
-  expect(within(actions).getAllByRole('button')).toEqual([copySelection, pasteClipboard, copyDirectory, sftp, upload, download, disconnect])
+  const reconnect = within(actions).getByRole('button', { name: '重新连接' })
+  expect(within(actions).getAllByRole('button')).toEqual([copySelection, pasteClipboard, copyDirectory, sftp, upload, download, reconnect, disconnect])
+  expect(reconnect).toBeEnabled()
   expect(sftp).toBeDisabled()
   expect(sftp).toHaveAttribute('title', '连接SFTP （当前不可用）')
   expect(sftp.previousElementSibling).toHaveClass('terminal-action-separator')
@@ -1379,7 +1383,8 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
   expect(copyDirectory).toBeDisabled()
   expect(copyDirectory).toHaveAttribute('title', '复制当前路径\n当前路径不可用')
   expect(download.nextElementSibling).toHaveClass('terminal-action-separator')
-  expect(download.nextElementSibling?.nextElementSibling).toBe(disconnect)
+  expect(download.nextElementSibling?.nextElementSibling).toBe(reconnect)
+  expect(reconnect.nextElementSibling).toBe(disconnect)
 
   terminalState.selection = 'selected output'
   act(() => terminalState.selectionHandler?.())
@@ -1399,10 +1404,51 @@ test('SSH 标题栏显示 Alias、原始资产名、ID 和状态灯，并按 OSC
 
   act(() => stateHandler({ ...activeSession, status: 'closed' }))
   expect(copyDirectory).toBeDisabled()
+  expect(reconnect).toBeDisabled()
   expect(pasteClipboard).toBeDisabled()
   expect(disconnect).toBeDisabled()
   expect(within(toolbar).getByRole('img', { name: '连接状态：未连接' })).toHaveClass('offline')
   expect(within(toolbar).queryByText('— ms')).not.toBeInTheDocument()
+})
+
+test('标题栏重连图标等待旧 SSH 关闭后在原 Tab 建立新连接，重复点击不重复连接', async () => {
+  let finishClose!: () => void
+  const active: SessionState = { id: 'live-1', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const backend = makeBackend({
+    startSSHSession: vi.fn().mockResolvedValueOnce(active).mockResolvedValue({ ...active, id: 'live-2', status: 'connecting' }),
+    closeSSHSession: vi.fn(() => new Promise<void>(resolve => { finishClose = resolve })),
+  })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  const reconnect = await screen.findByRole('button', { name: '重新连接' })
+  expect(reconnect).toBeEnabled()
+  expect(reconnect).toHaveAttribute('title', '重新连接')
+  expect(reconnect.textContent).toBe('')
+  expect(reconnect.querySelector('svg')).not.toBeNull()
+  await userEvent.click(reconnect)
+  await userEvent.click(reconnect)
+  expect(backend.closeSSHSession).toHaveBeenCalledTimes(1)
+  expect(backend.closeSSHSession).toHaveBeenCalledWith('live-1')
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+  await act(async () => finishClose())
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledTimes(2))
+  expect(backend.startSSHSession).toHaveBeenLastCalledWith({ profile: 'production', organization: 'org-1', target: 'production-web', account: 'account-1', columns: 120, rows: 34 })
+  expect(screen.getAllByRole('tab', { name: /production-web/ })).toHaveLength(1)
+  expect(reconnect).toBeDisabled()
+  expect(screen.getByRole('button', { name: '断开 production-web SSH 连接' })).toBeDisabled()
+})
+
+test('SSH 关闭失败时重连不创建第二个连接并提示错误', async () => {
+  const backend = makeBackend({
+    startSSHSession: vi.fn().mockResolvedValue({ id: 'live-1', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }),
+    closeSSHSession: vi.fn().mockRejectedValue(new Error('关闭失败')),
+  })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await userEvent.click(await screen.findByRole('button', { name: '重新连接' }))
+  expect(await screen.findByText('关闭失败')).toBeInTheDocument()
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: '重新连接' })).toBeEnabled()
 })
 
 test('标题栏断开按钮只断开活动 Session 并保留 SSH Tab', async () => {
@@ -1446,6 +1492,7 @@ test('连接不可用时标题栏显示红灯并禁用断开和路径复制', as
   expect(disconnectedIndicator.closest('.terminal-connection-metric')).toHaveClass('latency-hidden')
   expect(within(toolbar).queryByText(/ms$/)).not.toBeInTheDocument()
   expect(within(toolbar).getByRole('button', { name: '复制当前工作目录' })).toBeDisabled()
+  expect(within(toolbar).getByRole('button', { name: '重新连接' })).toBeDisabled()
   expect(disconnect).toBeDisabled()
 })
 

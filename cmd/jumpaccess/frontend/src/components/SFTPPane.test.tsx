@@ -25,6 +25,22 @@ function backendFor(overrides: Partial<Backend> = {}): Backend {
 }
 function show(backend: Backend, currentTab = tab) { return render(<SFTPPane backend={backend} tab={currentTab} onReconnect={vi.fn()} onDisconnect={vi.fn()} />) }
 
+test.each(['disconnected', 'failed', 'connecting', 'reconnecting'] as const)('SFTP %s 状态的重连使用带悬停提示的图标并保持可用性', async (connectionStatus) => {
+  const onReconnect = vi.fn()
+  render(<SFTPPane backend={backendFor()} tab={{ ...tab, sessionID: undefined, connectionStatus }} onReconnect={onReconnect} onDisconnect={vi.fn()} />)
+  const reconnect = screen.getByRole('button', { name: '重新连接' })
+  expect(reconnect.closest('.terminal-toolbar-actions')).not.toBeNull()
+  expect(reconnect.closest('.sftp-actions')).toBeNull()
+  expect(reconnect).toHaveAttribute('title', '重新连接')
+  expect(reconnect).toHaveClass('icon-button')
+  expect(reconnect.textContent).toBe('')
+  expect(reconnect.querySelector('svg')).not.toBeNull()
+  const available = connectionStatus === 'disconnected' || connectionStatus === 'failed'
+  expect(reconnect).toHaveProperty('disabled', !available)
+  await userEvent.click(reconnect)
+  expect(onReconnect).toHaveBeenCalledTimes(available ? 1 : 0)
+})
+
 test('浏览远程目录并切换隐藏文件，输入路径后进入服务器返回目录', async () => {
   const backend = backendFor()
   show(backend)

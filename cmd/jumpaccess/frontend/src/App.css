@@ -2429,6 +2429,8 @@ details > summary::-webkit-details-marker {
 
 .terminal-toolbar {
   display: flex;
+  height: 46px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 0 14px;
