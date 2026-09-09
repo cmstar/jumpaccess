@@ -1290,7 +1290,8 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
         <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
         <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions || transfer?.busy} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
         <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
-        {canConnectSFTP ? <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={status !== 'active'} onClick={onConnectSFTP} title="连接 SFTP" type="button"><FolderOpen /></button> : null}
+        <span aria-hidden="true" className="terminal-action-separator" />
+        <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={!canConnectSFTP || status !== 'active'} onClick={onConnectSFTP} title={canConnectSFTP && status === 'active' ? '连接SFTP' : '连接SFTP （当前不可用）'} type="button"><FolderOpen /></button>
         <ZmodemToolbar key={session.id} active={status === 'active'} state={transfer} onCommand={onTransferCommand} />
         <span aria-hidden="true" className="terminal-action-separator" />
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
