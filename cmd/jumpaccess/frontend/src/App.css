@@ -3170,3 +3170,20 @@ details > summary::-webkit-details-marker {
   .terminal-sidebar { display: none; }
   .start-actions { grid-template-columns: 1fr; }
 }
+.zmodem-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zmodem-status .button {
+  flex-shrink: 0;
+  min-height: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: inherit;
+}

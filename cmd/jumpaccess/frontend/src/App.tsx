@@ -39,6 +39,9 @@ import './App.css'
 import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
 import { SFTPPane } from './components/SFTPPane'
+import { ZmodemToolbar } from './components/ZmodemToolbar'
+import { ZmodemController, decodeBytes } from './lib/zmodem'
+import type { ZmodemState } from './lib/zmodemTypes'
 import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
 import { terminalScheme } from './model/terminalTheme'
 import {
@@ -288,6 +291,31 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [sshSFTPSupport, setSSHSFTPSupport] = useState<Record<string, boolean>>({})
   const [sessionDirectories, setSessionDirectories] = useState<Record<string, string>>({})
   const [sessionLatencies, setSessionLatencies] = useState<Record<string, SessionLatency>>({})
+  const transferControllers = useRef(new Map<string, ZmodemController>())
+  const [transferStates, setTransferStates] = useState<Record<string, ZmodemState>>({})
+  const earlyOutput = useRef(new Map<string, string>())
+
+  function appendSSHOutput(id: string, data: string) {
+    const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === id)
+    if (!tab) {
+      earlyOutput.current.set(id, ((earlyOutput.current.get(id) ?? '') + data).slice(-terminalBufferLimit))
+      if (earlyOutput.current.size > 64) earlyOutput.current.delete(earlyOutput.current.keys().next().value!)
+      return
+    }
+    const pending = earlyOutput.current.get(id) ?? ''
+    earlyOutput.current.delete(id)
+    setSessionOutput(current => ({ ...current, [tab.id]: ((current[tab.id] ?? '') + pending + data).slice(-terminalBufferLimit) }))
+  }
+
+  function transferFor(id: string) {
+    if (!backend.zmodem) return undefined
+    let controller = transferControllers.current.get(id)
+    if (!controller) {
+      controller = new ZmodemController(id, backend.zmodem, data => appendSSHOutput(id, data), state => setTransferStates(current => ({ ...current, [id]: state })))
+      transferControllers.current.set(id, controller)
+    }
+    return controller
+  }
   const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
@@ -399,6 +427,12 @@ export default function App({ backend = wailsBackend }: AppProps) {
       })
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
     const offState = backend.onSessionState((event) => {
+      if (event.status === 'active') void transferFor(event.id)?.probe()
+      if (event.status === 'closed' || event.status === 'failed') {
+        transferControllers.current.get(event.id)?.dispose()
+        transferControllers.current.delete(event.id)
+        setTransferStates(current => { const next = { ...current }; delete next[event.id]; return next })
+      }
       const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === event.id)
       if (!tab) {
         pendingSessionStates.current.set(event.id, event)
@@ -411,12 +445,10 @@ export default function App({ backend = wailsBackend }: AppProps) {
       applySessionState(event, tab.id)
     })
     const offOutput = backend.onSessionOutput((event) => {
-      const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === event.id)
-      if (!tab) return
-      setSessionOutput((current) => ({
-        ...current,
-        [tab.id]: ((current[tab.id] ?? '') + event.data).slice(-terminalBufferLimit),
-      }))
+      const controller = transferFor(event.id)
+      const acknowledge = () => { if (event.sequence) void backend.acknowledgeSSHOutput?.(event.id, event.sequence).catch(() => {}) }
+      if (controller) void controller.consume(event.encoding === 'base64' ? decodeBytes(event.data) : new TextEncoder().encode(event.data)).finally(acknowledge)
+      else { appendSSHOutput(event.id, event.encoding === 'base64' ? new TextDecoder().decode(decodeBytes(event.data)) : event.data); acknowledge() }
     })
     const offLatency = backend.onSessionLatency((event) => {
       setSessionLatencies((current) => ({ ...current, [event.id]: event }))
@@ -441,6 +473,9 @@ export default function App({ backend = wailsBackend }: AppProps) {
       offHostKey()
       connectionAttempts.current.clear()
       pendingSessionStates.current.clear()
+      for (const controller of transferControllers.current.values()) controller.dispose()
+      transferControllers.current.clear()
+      earlyOutput.current.clear()
     }
   }, [backend])
 
@@ -763,6 +798,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
       }
       dispatchTabs({ type: 'attach-session', tabID, sessionID: session.id })
       const pendingState = pendingSessionStates.current.get(session.id)
+      appendSSHOutput(session.id, '')
+      if (session.status === 'active' && pendingState?.status !== 'active') void transferFor(session.id)?.probe()
       pendingSessionStates.current.delete(session.id)
       if (pendingState) {
         applySessionState(pendingState, tabID)
@@ -1022,7 +1059,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         ) : null}
 
         {workspace.tabs.filter((tab): tab is SFTPTab => tab.kind === 'sftp').map((tab) => <div className="sftp-tab-content" hidden={tab.id !== workspace.activeTabID} key={tab.id}><SFTPPane active={tab.id === workspace.activeTabID} backend={backend} tab={tab} onReconnect={() => void beginSFTPConnection(tab.id, tab.descriptor)} onDisconnect={() => void requestSFTPClose(tab, true)} /></div>)}
-        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
+        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -1039,7 +1076,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
       {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
-      {pendingQuit ? <Modal title="停止传输并退出？" description="仍有未完成的 SFTP 传输。退出会停止这些任务。" onClose={() => setPendingQuit(false)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingQuit(false)}>取消</button><button className="button primary danger" onClick={() => void run(async () => { await workspaceSaveQueue.current; await preferenceSaveQueue.current; await backend.confirmQuit(); setPendingQuit(false) })}>停止并退出</button></div></Modal> : null}
+      {pendingQuit ? <Modal title="停止传输并退出？" description="仍有未完成的文件传输。退出会停止这些任务。" onClose={() => setPendingQuit(false)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingQuit(false)}>取消</button><button className="button primary danger" onClick={() => void run(async () => { await workspaceSaveQueue.current; await preferenceSaveQueue.current; await backend.confirmQuit(); setPendingQuit(false) })}>停止并退出</button></div></Modal> : null}
       {pendingSFTPClose ? <Modal title={pendingSFTPClose.disconnectOnly ? "停止传输并断开？" : "停止传输并关闭？"} description="此连接仍有未完成的传输。继续会停止这些任务。" onClose={() => setPendingSFTPClose(null)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingSFTPClose(null)}>取消</button><button className="button primary danger" onClick={() => void confirmSFTPClose()}>{pendingSFTPClose.disconnectOnly ? '停止并断开' : '停止并关闭'}</button></div></Modal> : null}
       {pendingDisconnect ? <DisconnectSessionDialog tab={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void closeTab(pendingDisconnect)} /> : null}
       {pendingProfileLogout ? <LogoutProfileDialog profile={pendingProfileLogout} onCancel={() => setPendingProfileLogout(null)} onConfirm={() => logoutProfile(pendingProfileLogout)} /> : null}
@@ -1184,7 +1221,10 @@ function StartPage({ onAction }: { onAction: (action: SingletonTabKind | 'quick'
   </section>
 }
 
-function SSHView({ backend, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onReconnect, output, preferences, tab }: {
+function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onReconnect, output, preferences, tab }: {
+  transfer?: ZmodemState
+  onTransferCommand: (command: string) => void
+  onCancelTransfer: () => void
   backend: Backend
   currentDirectory: string
   canConnectSFTP: boolean
@@ -1248,15 +1288,16 @@ function SSHView({ backend, canConnectSFTP, onConnectSFTP, currentDirectory, lat
       </div>
       <div className="terminal-toolbar-actions">
         <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
-        <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
+        <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions || transfer?.busy} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
         <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
         {canConnectSFTP ? <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={status !== 'active'} onClick={onConnectSFTP} title="连接 SFTP" type="button"><FolderOpen /></button> : null}
+        <ZmodemToolbar key={session.id} active={status === 'active'} state={transfer} onCommand={onTransferCommand} />
         <span aria-hidden="true" className="terminal-action-separator" />
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
       </div>
     </div>
-    <div className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
-    <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span></div>
+    <div className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
+    <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{transfer.message || (!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用')}{transfer.name ? ` · ${transfer.name} · ${transfer.transferred ?? 0} / ${transfer.size ?? 0} B` : ''}{transfer.busy ? <button className="button ghost small" onClick={onCancelTransfer} type="button">取消传输</button> : null}</span> : null}</div>
   </section>
 }
 

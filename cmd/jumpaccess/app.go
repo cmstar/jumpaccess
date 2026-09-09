@@ -13,6 +13,7 @@ import (
 	desktopapp "github.com/cmstar/jumpaccess/internal/application/desktop"
 	sftpsessionapp "github.com/cmstar/jumpaccess/internal/application/sftpsession"
 	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
+	"github.com/cmstar/jumpaccess/internal/application/zmodemfiles"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/cmstar/jumpaccess/internal/sftpclient"
@@ -32,6 +33,7 @@ type desktopApp struct {
 	window               desktopWindow
 	api                  desktopapp.Service
 	sessions             *sshsessionapp.Manager
+	zmodemFiles          zmodemfiles.Store
 	sftp                 *sftpsessionapp.Manager
 	emitEvent            func(context.Context, string, ...interface{})
 	quit                 func(context.Context)
@@ -157,7 +159,8 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 	}
 	app.hostKeys = hostKeys
 	app.sessions = &sshsessionapp.Manager{
-		Prepare: core.Connect,
+		BinaryOutput: true,
+		Prepare:      core.Connect,
 		HostKeyCallback: func(ctx context.Context) (ssh.HostKeyCallback, error) {
 			return (sshhostkey.Store{
 				Path: filepath.Join(rootDir, "known_hosts"),
@@ -171,6 +174,9 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 		},
 		Timeout: core.Configuration.Behavior.ConnectTimeout.Duration,
 		EmitState: func(event sshsessionapp.StateEvent) {
+			if event.Status == sshsessionapp.StatusClosed || event.Status == sshsessionapp.StatusFailed {
+				app.zmodemFiles.CloseSession(event.ID)
+			}
 			runtime.EventsEmit(app.context(), "ssh:state", event)
 		},
 		EmitOutput: func(event sshsessionapp.OutputEvent) {
@@ -241,7 +247,7 @@ func (a *desktopApp) restoreInitialWindow(ctx context.Context) {
 }
 
 func (a *desktopApp) beforeClose(ctx context.Context) bool {
-	if a.sftp != nil && a.requestQuit(a.sftp.HasActiveTransfers()) {
+	if a.requestQuit((a.sftp != nil && a.sftp.HasActiveTransfers()) || (a.sessions != nil && a.sessions.HasActiveTransfers())) {
 		return true
 	}
 	if err := a.saveWindowPlacement(ctx); err != nil {
@@ -389,6 +395,7 @@ func (a *desktopApp) lastNormalPlacement() guiconfig.WindowPlacement {
 }
 
 func (a *desktopApp) shutdown(context.Context) {
+	a.zmodemFiles.CloseSession("")
 	if a.stopAuthSupervision != nil {
 		a.stopAuthSupervision()
 	}

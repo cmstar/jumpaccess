@@ -9,6 +9,7 @@ import { synchronizeTerminalViewportBackground } from './terminalViewport'
 import { terminalDisplayOptions } from '../model/terminalTheme'
 
 interface TerminalPaneProps {
+  transferBusy?: boolean
   backend: Backend
   onActionsChange?: (actions: TerminalActions | null) => void
   onCurrentDirectoryChange?: (directory: string) => void
@@ -65,7 +66,7 @@ function currentDirectoryFromOSC7(payload: string): string | undefined {
   }
 }
 
-export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, preferences, session }: TerminalPaneProps) {
+export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, preferences, session, transferBusy = false }: TerminalPaneProps) {
   const paneRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -81,6 +82,8 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const rightClickActionRef = useRef(preferences.terminalRightClickAction)
   const warnOnMultiLinePasteRef = useRef(preferences.terminalWarnOnMultiLinePaste)
   const statusRef = useRef(session.status)
+  const transferBusyRef = useRef(transferBusy)
+  transferBusyRef.current = transferBusy
   const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null)
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null)
   const pendingPasteRef = useRef<PendingPaste | null>(null)
@@ -99,6 +102,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   }
 
   function sendPastedText(text: string, expectedSessionID: string) {
+    if (transferBusyRef.current) return
     const terminal = terminalRef.current
     if (!terminal || statusRef.current !== 'active' || session.id !== expectedSessionID) return
     terminal.input(textForTerminalInput(text), true)
@@ -106,6 +110,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   }
 
   async function requestPaste(providedText?: string) {
+    if (transferBusyRef.current) return
     const terminal = terminalRef.current
     const readsClipboard = providedText === undefined
     if (!terminal || statusRef.current !== 'active' || pendingPasteRef.current || (readsClipboard && clipboardReadInFlightRef.current)) return
@@ -225,6 +230,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       }
     }
     terminal.attachCustomKeyEventHandler((event) => {
+      if (transferBusyRef.current) return false
       if (event.type === 'keydown' && event.key === 'Insert' && !event.altKey && !event.metaKey) {
         if (event.ctrlKey && !event.shiftKey) {
           event.preventDefault()
@@ -246,6 +252,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       return false
     })
     const input = terminal.onData((data) => {
+      if (transferBusyRef.current) return
       if (statusRef.current === 'active' && !historyReplayRef.current) void backend.writeSSHSession(session.id, data)
     })
     const resized = terminal.onResize(({ cols, rows }) => {

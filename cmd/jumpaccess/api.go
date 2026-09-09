@@ -165,6 +165,7 @@ func (a *desktopApp) ResizeSSHSession(id string, columns, rows int) error {
 }
 
 func (a *desktopApp) CloseSSHSession(id string) error {
+	a.zmodemFiles.CloseSession(id)
 	return a.sessions.Close(id)
 }
 

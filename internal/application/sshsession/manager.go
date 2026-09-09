@@ -3,6 +3,7 @@ package sshsession
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -52,8 +53,10 @@ type StateEvent struct {
 }
 
 type OutputEvent struct {
-	ID   string `json:"id"`
-	Data string `json:"data"`
+	ID       string `json:"id"`
+	Data     string `json:"data"`
+	Encoding string `json:"encoding,omitempty"`
+	Sequence uint64 `json:"sequence,omitempty"`
 }
 
 type LatencyEvent struct {
@@ -86,19 +89,23 @@ type Manager struct {
 	BatchInterval   time.Duration
 	BatchSize       int
 	LatencyInterval time.Duration
+	BinaryOutput    bool
 
 	mu       sync.Mutex
 	sessions map[string]*managedSession
 }
 
 type managedSession struct {
-	state    StateEvent
-	cancel   context.CancelFunc
-	terminal TerminalSession
-	output   *batchWriter
-	columns  int
-	rows     int
-	dismiss  bool
+	state          StateEvent
+	cancel         context.CancelFunc
+	terminal       TerminalSession
+	output         *batchWriter
+	columns        int
+	rows           int
+	dismiss        bool
+	outputAck      chan struct{}
+	outputSequence uint64
+	transferActive bool
 }
 
 func (m *Manager) Start(parent context.Context, request StartRequest) (StateEvent, error) {
@@ -151,7 +158,39 @@ func (m *Manager) run(ctx context.Context, id string, request StartRequest) {
 		return
 	}
 	output := newBatchWriter(m.batchInterval(), m.batchSize(), func(data string) {
-		m.emitOutput(OutputEvent{ID: id, Data: data})
+		if !m.BinaryOutput {
+			m.emitOutput(OutputEvent{ID: id, Data: data})
+			return
+		}
+		for len(data) > 0 {
+			size := min(len(data), 32*1024)
+			event := OutputEvent{ID: id, Data: base64.StdEncoding.EncodeToString([]byte(data[:size])), Encoding: "base64"}
+			data = data[size:]
+			ack := make(chan struct{})
+			m.mu.Lock()
+			session := m.sessions[id]
+			if session == nil || ctx.Err() != nil {
+				m.mu.Unlock()
+				return
+			}
+			session.outputSequence++
+			event.Sequence = session.outputSequence
+			session.outputAck = ack
+			m.mu.Unlock()
+			m.emitOutput(event)
+			// 等前端完成本块解析和落盘，才继续读取 SSH，限制事件桥的在途数据。
+			timer := time.NewTimer(time.Minute)
+			select {
+			case <-ack:
+				timer.Stop()
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+				session.cancel()
+				return
+			}
+		}
 	})
 	columns, rows, exists := m.dimensions(id)
 	if !exists {
@@ -292,11 +331,19 @@ func (m *Manager) finish(id string, ctx context.Context, err error) {
 }
 
 func (m *Manager) Write(id, data string) error {
+	return m.writeData(id, data, false)
+}
+
+func (m *Manager) writeData(id, data string, binary bool) error {
 	m.mu.Lock()
 	session, exists := m.sessions[id]
 	if !exists || session.state.Status != StatusActive || session.terminal == nil {
 		m.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrSessionNotActive, id)
+	}
+	if session.transferActive && !binary {
+		m.mu.Unlock()
+		return fmt.Errorf("ZMODEM 传输期间暂停终端输入")
 	}
 	terminal := session.terminal
 	m.mu.Unlock()
@@ -444,8 +491,8 @@ func (w *batchWriter) Write(value []byte) (int, error) {
 	flush := len(w.data) >= w.limit
 	if flush {
 		data := w.takeLocked()
-		w.mu.Unlock()
 		w.emitData(data)
+		w.mu.Unlock()
 		return len(value), nil
 	}
 	if w.timer == nil {
@@ -463,16 +510,16 @@ func (w *batchWriter) Close() error {
 	}
 	w.closed = true
 	data := w.takeLocked()
-	w.mu.Unlock()
 	w.emitData(data)
+	w.mu.Unlock()
 	return nil
 }
 
 func (w *batchWriter) flush() {
 	w.mu.Lock()
 	data := w.takeLocked()
-	w.mu.Unlock()
 	w.emitData(data)
+	w.mu.Unlock()
 }
 
 func (w *batchWriter) takeLocked() []byte {

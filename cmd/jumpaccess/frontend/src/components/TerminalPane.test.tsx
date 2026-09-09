@@ -95,6 +95,16 @@ const disconnectedSession: SessionState = {
 
 const activeSession: SessionState = { ...disconnectedSession, status: 'active' }
 
+test('ZMODEM 传输期间暂停终端输入，完成后恢复', () => {
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
+  const { rerender } = render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} transferBusy />)
+  act(() => terminalMock.dataHandler?.('x'))
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+  rerender(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} transferBusy={false} />)
+  act(() => terminalMock.dataHandler?.('pwd\r'))
+  expect(backend.writeSSHSession).toHaveBeenCalledWith('session-1', 'pwd\r')
+})
+
 beforeEach(() => {
   terminalMock.dataHandler = undefined
   terminalMock.keyHandler = undefined

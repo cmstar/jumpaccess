@@ -124,6 +124,8 @@ export interface SessionState {
 export interface SessionOutput {
   id: string
   data: string
+  encoding?: 'base64'
+  sequence?: number
 }
 
 export interface SFTPStartRequest {
@@ -198,6 +200,8 @@ export interface LoginAttempt {
 }
 
 export interface Backend {
+  acknowledgeSSHOutput?(id: string, sequence: number): Promise<void>
+  zmodem?: import('./zmodemTypes').ZmodemBackend
   bootstrap(): Promise<BootstrapState>
   listOrganizations(profile: string): Promise<Organization[]>
   listAssets(request: { profile: string; organization: string; search: string; offset: number; limit: number }): Promise<AssetPage>
@@ -266,6 +270,16 @@ type GoPreferences = {
 }
 
 type DesktopBinding = {
+  AcknowledgeSSHOutput(id: string, sequence: number): Promise<void>
+  ProbeSSHTransferCommands(id: string): Promise<import('./zmodemTypes').TransferCapabilities>
+  WriteSSHBinary(id: string, data: string): Promise<void>
+  ChooseZmodemUploadFiles(id: string): Promise<import('./zmodemTypes').TransferFile[]>
+  ChooseZmodemDownloadDirectory(id: string): Promise<string>
+  CreateZmodemDownload(session: string, grant: string, name: string, size: number): Promise<import('./zmodemTypes').TransferFile>
+  ReadZmodemFile(id: string): Promise<string>
+  WriteZmodemFile(id: string, data: string): Promise<void>
+  CloseZmodemFile(id: string, complete: boolean): Promise<void>
+  EndZmodemTransfer(id: string): Promise<void>
   Bootstrap(): Promise<Omit<BootstrapState, 'preferences'> & { preferences: GoPreferences }>
   ListOrganizations(profile: string): Promise<Organization[]>
   ListAssets(request: Parameters<Backend['listAssets']>[0]): Promise<AssetPage>
@@ -385,6 +399,18 @@ function fromPreferences(value: Preferences): GoPreferences {
 }
 
 export const wailsBackend: Backend = {
+  acknowledgeSSHOutput: (id, sequence) => binding().AcknowledgeSSHOutput(id, sequence),
+  zmodem: {
+    probeSSHTransferCommands: id => binding().ProbeSSHTransferCommands(id),
+    writeSSHBinary: (id, data) => binding().WriteSSHBinary(id, data),
+    chooseZmodemUploadFiles: id => binding().ChooseZmodemUploadFiles(id),
+    chooseZmodemDownloadDirectory: id => binding().ChooseZmodemDownloadDirectory(id),
+    createZmodemDownload: (session, grant, name, size) => binding().CreateZmodemDownload(session, grant, name, size),
+    readZmodemFile: id => binding().ReadZmodemFile(id),
+    writeZmodemFile: (id, data) => binding().WriteZmodemFile(id, data),
+    closeZmodemFile: (id, complete) => binding().CloseZmodemFile(id, complete),
+    endZmodemTransfer: id => binding().EndZmodemTransfer(id),
+  },
   async bootstrap() {
     const state = await binding().Bootstrap()
     return { ...state, preferences: toPreferences(state.preferences) }

@@ -5,6 +5,41 @@ import { expect, test, vi } from 'vitest'
 import App from './App'
 import appStyles from './App.css?inline'
 import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionLatency, SessionOutput, SessionState } from './lib/backend'
+import type { ZmodemBackend } from './lib/zmodemTypes'
+
+test('SSH 传输按钮在断开按钮之前，切换 Tab 不重复处理传输握手', async () => {
+  let output!: (event: SessionOutput) => void
+  let resolveDirectory!: (value: string) => void
+  const zmodem: ZmodemBackend = {
+    probeSSHTransferCommands: vi.fn().mockResolvedValue({ checked: true, upload: true, download: true }),
+    writeSSHBinary: vi.fn().mockResolvedValue(undefined),
+    chooseZmodemUploadFiles: vi.fn().mockResolvedValue([]),
+    chooseZmodemDownloadDirectory: vi.fn().mockImplementation(() => new Promise(resolve => { resolveDirectory = resolve })),
+    createZmodemDownload: vi.fn(), readZmodemFile: vi.fn(), writeZmodemFile: vi.fn(), closeZmodemFile: vi.fn(),
+    endZmodemTransfer: vi.fn().mockResolvedValue(undefined),
+  }
+  const active: SessionState = { id: 'session-zmodem', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const backend = makeBackend({ zmodem, startSSHSession: vi.fn().mockResolvedValue(active), onSessionOutput: handler => { output = handler; return () => {} } })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  const upload = await screen.findByLabelText('上传文件（ZMODEM）')
+  const download = screen.getByLabelText('下载文件（ZMODEM）')
+  const buttons = upload.closest('.terminal-toolbar-actions')!.querySelectorAll('button')
+  const disconnect = screen.getByRole('button', { name: '断开 production-web SSH 连接' })
+  expect(Array.from(buttons).slice(-3)).toEqual([upload, download, disconnect])
+  const session = await vi.mocked(backend.startSSHSession).mock.results[0].value
+  act(() => output({ id: session.id, encoding: 'base64', data: btoa('**\x18B00000000000000\r\n\x11') }))
+  await waitFor(() => expect(zmodem.chooseZmodemDownloadDirectory).toHaveBeenCalledTimes(1))
+  expect(upload).toBeDisabled()
+  await user.click(screen.getByRole('tab', { name: /资产/ }))
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(zmodem.chooseZmodemDownloadDirectory).toHaveBeenCalledTimes(1)
+  expect(terminalWrites.join('')).not.toContain('B00000000000000')
+  act(() => resolveDirectory(''))
+  await waitFor(() => expect(screen.getByLabelText('上传文件（ZMODEM）')).toBeEnabled())
+})
 
 const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
@@ -656,7 +691,7 @@ test('从资产连接且存在多个账号时要求明确选择', async () => {
   render(<App backend={backend} />)
 
   await screen.findByTestId('asset-row-asset-1')
-  await user.click(screen.getByRole('button', { name: '连接 prod-web-01' }))
+  await user.click(await screen.findByRole('button', { name: '连接 prod-web-01' }))
   expect(await screen.findByRole('dialog', { name: '选择连接账号' })).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: /ops/ }))
   await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledWith(expect.objectContaining({

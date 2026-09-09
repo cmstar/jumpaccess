@@ -69,7 +69,21 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
-### 桌面 SFTP
+### 桌面 ZMODEM
+
+SSH ZMODEM 协议由前端 `lib/zmodem.ts` 的会话级控制器和 `zmodem.js` 0.1.10 实现。控制器在 App 层按 live session ID 管理，切换 Tab、重建 xterm 或历史回放不会重启传输。先收齐起始帧，协议字节不写入终端历史；用户选择上传文件或下载目录后才确认握手、发送协议应答。
+
+`sshsession` 对桌面输出使用 Base64 和有序序号，每块最多 32 KiB。前端解析、落盘后确认该块，后端再继续输出，形成到 SSH channel 的反压。普通文本使用流式 UTF-8 解码。CLI 保持原有流契约。
+
+`internal/application/zmodemfiles` 持有原生对话框授权的文件句柄和目录授权；上传最多每次读取 64 KiB，下载按协议块写入，不缓存整文件。下载拒绝路径分隔符、控制字符、Windows 设备名和 ADS，使用排他创建避免覆盖；同名文件添加数字后缀。完成时核对大小并同步落盘；取消、错误、断连及退出清理未完成文件和授权。ZMODEM 的受限二进制块跨 Wails 桥接；独立 SFTP 的文件流仍全部留在 Go。
+
+能力探测在同一 SSH transport 上请求独立 `exec` channel，分别检查 PATH 中的 `rz` 和 `sz`，超时为 5 秒。响应不匹配或网关拒绝时为未知，不能当作未安装，也不向交互 PTY 自动写探测命令。手工命令握手能证实对应方向的能力。工具栏向当前 PTY 写入 `rz` 或引用后的单文件 `sz -- <path>`，用户需要处于 Shell 提示符。普通终端输入在传输期间由后端暂停，二进制协议输入单独放行。
+
+文件选择最多等待 5 分钟，传输无数据活动最多等待 60 秒，可手工取消。每个 Session 同时传输一个批次，不持久化能力、进度或授权。真实 JumpServer 策略下的兼容性仍需本机 smoke test。
+
+Windows 在 ZMODEM 原生文件选择器打开前和返回后，检查当前前台窗口是否属于本进程。指针隐藏且没有按住鼠标按钮时，向其 WebView 子窗口发送原生鼠标移动通知，由 Chromium 恢复指针可见性，规避 WebView2 152 的回归（[上游问题 #5687](https://github.com/MicrosoftEdge/WebView2Feedback/issues/5687)）。不移动实际鼠标、不修改系统设置或 `ShowCursor` 计数；通知超时有上限。非 Windows 不应用此兼容项。Wails 的 WebView2 loader 会清空额外浏览器环境参数，因此不能仅通过设置 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 关闭该功能。
+
+### 独立 SFTP 会话
 
 SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校验资产授权协议。连接到 client-url 返回的 gateway，使用短期 Connection Token 请求 `sftp` subsystem，不启动 Shell，也不复用 SSH Tab 的连接。两种连接共享 `known_hosts` 和主机密钥确认。
 

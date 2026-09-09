@@ -156,7 +156,7 @@ func (s *Session) Wait() error {
 func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.finished)
-		_ = s.stdin.Close()
+		// 关闭 channel 和 transport 已包含输入流；避免与 CLI 的 CloseInput 并发 CloseWrite。
 		s.closeErr = s.remote.Close()
 		if err := s.client.Close(); s.closeErr == nil {
 			s.closeErr = err
