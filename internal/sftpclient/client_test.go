@@ -349,7 +349,7 @@ func TestLstatRecognizesKoKoLinksWithoutFollowingTheirTargets(t *testing.T) {
 }
 
 func TestLstatRefusesIndeterminateLinkType(t *testing.T) {
-	for _, readlinkErr := range []error{os.ErrPermission, sftp.ErrSSHFxOpUnsupported, errors.New("unexpected server failure"), errors.New(`sftp: "unsupported" (SSH_FX_OP_UNSUPPORTED)`)} {
+	for _, readlinkErr := range []error{os.ErrPermission, sftp.ErrSSHFxOpUnsupported, errors.New("unexpected server failure"), errors.New(`sftp: "unsupported" (SSH_FX_OP_UNSUPPORTED)`), errors.New(`sftp: "permission denied" (SSH_FX_PERMISSION_DENIED)`), errors.New(`sftp: "malformed packet" (SSH_FX_BAD_MESSAGE)`), errors.New("Bad message")} {
 		t.Run(readlinkErr.Error(), func(t *testing.T) {
 			handlers := sftp.InMemHandler()
 			if err := handlers.FileCmd.Filecmd(sftp.NewRequest("Mkdir", "/target")); err != nil {
@@ -368,10 +368,82 @@ func TestLstatRefusesIndeterminateLinkType(t *testing.T) {
 	}
 }
 
+func TestLstatHandlesOpenSSHReadlinkBadMessageThroughKoKo(t *testing.T) {
+	for _, readlinkErr := range []error{
+		sftp.ErrSSHFxBadMessage,
+		errors.New(`sftp: "Bad message" (SSH_FX_BAD_MESSAGE)`),
+		errors.New(`sftp: "invalid argument" (SSH_FX_FAILURE)`),
+	} {
+		t.Run(readlinkErr.Error(), func(t *testing.T) {
+			handlers := sftp.InMemHandler()
+			if err := handlers.FileCmd.Filecmd(sftp.NewRequest("Mkdir", "/folder")); err != nil {
+				t.Fatal(err)
+			}
+			for name, target := range map[string]string{"/link": "/folder", "/dangling": "/missing"} {
+				request := sftp.NewRequest("Symlink", target)
+				request.Target = name
+				if err := handlers.FileCmd.Filecmd(request); err != nil {
+					t.Fatal(err)
+				}
+			}
+			handlers.FileList = koKoFileLister{FileLister: handlers.FileList, ordinaryReadlinkErr: readlinkErr}
+			client, err := Open(context.Background(), startSFTPServerWithHandlers(t, false, handlers))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			file, err := client.OpenFile("/folder/file", os.O_CREATE|os.O_WRONLY|os.O_EXCL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.WriteString(file, "download contents"); err != nil {
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"/folder", "/folder/file"} {
+				info, err := client.Lstat(name)
+				if err != nil {
+					t.Fatalf("download/delete metadata for %q: %v", name, err)
+				}
+				if info.Mode()&os.ModeSymlink != 0 || info.IsDir() != (name == "/folder") {
+					t.Fatalf("incorrect type for %q: %v", name, info.Mode())
+				}
+			}
+			reader, err := client.Open("/folder/file")
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(reader)
+			reader.Close()
+			if err != nil || string(data) != "download contents" {
+				t.Fatalf("download=%q error=%v", data, err)
+			}
+			for _, name := range []string{"/link", "/dangling"} {
+				info, err := client.Lstat(name)
+				if err != nil || info.Mode()&os.ModeSymlink == 0 || info.IsDir() {
+					t.Fatalf("link was followed: name=%q info=%v error=%v", name, info, err)
+				}
+			}
+			if _, err := client.Lstat("/missing"); !os.IsNotExist(err) {
+				t.Fatalf("missing file error changed: %v", err)
+			}
+			if err := client.Remove("/folder/file"); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.RemoveDirectory("/folder"); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 // KoKo 没有实现 LstatFileLister，其 Lstat 请求会回退到跟随链接的 Stat。
 type koKoFileLister struct {
 	sftp.FileLister
-	readlinkErr error
+	readlinkErr         error
+	ordinaryReadlinkErr error
 }
 
 func TestMetadataDeadlineKeepsSFTPSessionUsable(t *testing.T) {
@@ -442,7 +514,11 @@ func (k koKoFileLister) Readlink(name string) (string, error) {
 	if k.readlinkErr != nil {
 		return "", k.readlinkErr
 	}
-	return k.FileLister.(sftp.ReadlinkFileLister).Readlink(name)
+	target, err := k.FileLister.(sftp.ReadlinkFileLister).Readlink(name)
+	if errors.Is(err, os.ErrInvalid) && k.ordinaryReadlinkErr != nil {
+		return "", k.ordinaryReadlinkErr
+	}
+	return target, err
 }
 
 type blockedFileReader struct{ started chan struct{} }

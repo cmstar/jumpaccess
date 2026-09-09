@@ -93,6 +93,8 @@ SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校�
 
 上传和下载使用原生文件选择器及 Wails 文件拖入；Go 逐文件流式传输，冲突等待、取消和重试由会话队列负责。文件内容不跨 Wails 事件桥。传输临时文件在成功后发布为目标文件；递归操作跳过已识别的符号链接；针对 KoKo 的文件类型兼容行为，通过 READLINK 补充识别。关闭连接会取消其任务，切换 Tab 不影响任务；退出前有未完成任务时先请求前端确认。
 
+文件类型检查兼容普通文件 READLINK 的两类返回：OpenSSH 将 `EINVAL` 编码为 `SSH_FX_BAD_MESSAGE`（`Bad message`），pkg/sftp 使用 `SSH_FX_FAILURE`；KoKo 可能再将上游 status 包装为一层 Failure。只有已知的非链接返回才继续 Lstat，权限拒绝、未实现和未知错误仍返回失败；READLINK 成功时保留符号链接类型，避免递归进入目标。此兼容仅用于 READLINK，不全局忽略下载或删除操作的 Bad message。
+
 ### CLI ZMODEM
 
 `sshclient.Runner` 在 stdin/stdout 均为终端时，把输出交给 `internal/clitransfer`，默认识别 CRC 有效的起始帧。普通 SSH 字节不变；文件选择期间键盘仅进入本地路径提示，传输期间只处理本地 Ctrl+C，完成后恢复远端输入。用户选择期间若远端输出普通文本，则请求失效，不再向 Shell 发送协议应答。起始帧前缀等待上限为 1 秒，本地选择为 5 分钟，协议读写空闲为 60 秒；取消残留数据只在有限窗口内丢弃，并提示 Enter 刷新 Shell。写入串行且可取消，阻塞的远端写入通过关闭会话解除，输出解析提前退出时先关闭管道再等待 SSH 结束。

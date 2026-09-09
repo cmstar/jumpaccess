@@ -93,11 +93,12 @@ func lstat(remote *sftp.Client, name string) (os.FileInfo, error) {
 		return linkInfo{name: path.Base(name), size: int64(len(target))}, nil
 	}
 	var status *sftp.StatusError
-	if !errors.As(err, &status) || status.FxCode() != sftp.ErrSSHFxFailure || !readlinkNotLink(status) {
+	if !errors.As(err, &status) || !readlinkNotLink(status) {
 		return nil, err
 	}
-	// OpenSSH 将普通文件的 READLINK EINVAL 编码为 SSH_FX_FAILURE。
-	// 权限拒绝、未实现和断线不能据此判定为普通文件，已在上方返回错误。
+	// OpenSSH 将普通文件的 READLINK EINVAL 编码为 SSH_FX_BAD_MESSAGE；
+	// pkg/sftp 返回 SSH_FX_FAILURE，KoKo 还可能将上游错误包装成 Failure。
+	// 仅识别这些已知返回；权限拒绝、未实现和未知错误仍在上方返回。
 	return remote.Lstat(name)
 }
 
@@ -105,18 +106,28 @@ func readlinkNotLink(status *sftp.StatusError) bool {
 	message := status.Error()
 	// pkg/sftp 未公开 status message；KoKo 最多再包装一层上游 status。
 	for depth := 0; depth < 2; depth++ {
-		const prefix, suffix = "sftp: ", " (SSH_FX_FAILURE)"
+		const prefix = "sftp: "
+		suffix := " (SSH_FX_FAILURE)"
+		badMessage := strings.HasSuffix(message, " (SSH_FX_BAD_MESSAGE)")
+		if badMessage {
+			suffix = " (SSH_FX_BAD_MESSAGE)"
+		}
 		if !strings.HasPrefix(message, prefix) || !strings.HasSuffix(message, suffix) {
-			break
+			return false
 		}
 		decoded, err := strconv.Unquote(strings.TrimSuffix(strings.TrimPrefix(message, prefix), suffix))
 		if err != nil {
 			return false
 		}
+		if badMessage {
+			return decoded == "Bad message" || decoded == "bad message"
+		}
+		if decoded == "invalid argument" || decoded == "Failure" {
+			return true
+		}
 		message = decoded
 	}
-	// SFTP v3 的无说明 Failure 也可能表示其他故障，协议无法完全消除这项歧义。
-	return message == "invalid argument" || message == "Failure"
+	return false
 }
 
 type linkInfo struct {
