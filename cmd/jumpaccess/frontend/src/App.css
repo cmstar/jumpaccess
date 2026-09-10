@@ -2546,6 +2546,24 @@ details > summary::-webkit-details-marker {
   overflow: hidden;
 }
 
+/* 图片层只属于终端内容容器；独立透明度不会影响文字和弹出菜单。 */
+.terminal-background-surface { position: relative; isolation: isolate; }
+.terminal-background-layer { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.terminal-background-image { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; }
+.terminal-preview-screen { overflow: hidden; }
+.background-file-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.background-file-control input { flex: 1; min-width: 0; margin-top: 0; }
+.background-file-control button { flex-shrink: 0; }
+.background-slider { display: flex; align-items: center; gap: 12px; }
+.settings-card .background-slider input { flex: 1; width: 100%; min-width: 0; margin: 0; padding: 0; accent-color: var(--accent); }
+.background-slider output { width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.background-error { color: var(--danger); font-size: .8rem; }
+
+@media (max-width: 720px) {
+  .background-file-control { flex-wrap: wrap; }
+  .background-file-control input { flex-basis: 100%; }
+}
+
 .terminal-loading {
   display: grid;
   height: 100%;

@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 import type { Backend, Preferences, SessionState } from '../lib/backend'
 import { synchronizeTerminalViewportBackground } from './terminalViewport'
 import { terminalDisplayOptions } from '../model/terminalTheme'
+import { useTerminalBackground } from './TerminalBackground'
 
 interface TerminalPaneProps {
   transferBusy?: boolean
@@ -67,6 +68,7 @@ function currentDirectoryFromOSC7(payload: string): string | undefined {
 }
 
 export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, preferences, session, transferBusy = false }: TerminalPaneProps) {
+  const backgroundVisible = !!useTerminalBackground().image
   const paneRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -286,11 +288,11 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     const terminal = terminalRef.current
     const host = hostRef.current
     if (!terminal || !host) return
-    const display = terminalDisplayOptions(preferences)
+    const display = terminalDisplayOptions(preferences, backgroundVisible)
     Object.assign(terminal.options, display)
     synchronizeTerminalViewportBackground(host, display.theme.background)
     fitRef.current?.()
-  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, session.id])
+  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, session.id, backgroundVisible])
 
   useEffect(() => {
     setContextMenu(null)

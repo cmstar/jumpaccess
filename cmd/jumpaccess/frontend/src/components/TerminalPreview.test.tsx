@@ -1,3 +1,4 @@
+import { defaultTerminalBackground } from '../model/terminalBackground'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { ITerminalOptions } from '@xterm/xterm'
@@ -19,6 +20,7 @@ vi.mock('@xterm/xterm', () => ({
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = mock.fit } }))
 
 const preferences: Preferences = {
+  terminalBackground: { ...defaultTerminalBackground },
   version: 6, theme: 'light', terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12,
   terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true,
   terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, confirmCloseActiveSession: true, showTabCloseButtons: true,

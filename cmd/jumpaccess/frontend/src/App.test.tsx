@@ -1,3 +1,4 @@
+import { defaultTerminalBackground } from './model/terminalBackground'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
@@ -101,6 +102,7 @@ const bootstrapState: BootstrapState = {
     auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: '2026-08-29T12:00:00Z' },
   }],
   preferences: {
+    terminalBackground: { ...defaultTerminalBackground },
     version: 6,
     theme: 'light',
     terminalFontFamily: 'JetBrains Mono',
@@ -175,6 +177,8 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     cancelLogin: vi.fn().mockResolvedValue(undefined),
     logout: vi.fn().mockResolvedValue(undefined),
     licenseText: vi.fn().mockResolvedValue('MIT License'),
+    chooseTerminalBackground: vi.fn().mockResolvedValue(''),
+    readTerminalBackground: vi.fn().mockRejectedValue(new Error('图片不可用')),
     openConfig: vi.fn().mockResolvedValue(undefined),
     listMonospaceFonts: vi.fn().mockResolvedValue([]),
     startSSHSession: vi.fn().mockResolvedValue(session),
@@ -769,11 +773,11 @@ test('设置页使用左侧导航和右侧单列滚动面板', async () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }))
 
     const navigation = screen.getByRole('navigation', { name: '设置导航' })
-    const navigationLabels = ['外观', '终端样式', '终端行为', 'Tab 行为', '关于 JumpAccess']
+    const navigationLabels = ['外观', '终端样式', '终端背景图', '终端行为', 'Tab 行为', '关于 JumpAccess']
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(navigationLabels)
 
     const scrollContainer = screen.getByTestId('settings-scroll')
-    const sectionIDs = ['settings-appearance', 'settings-terminal-style', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
+    const sectionIDs = ['settings-appearance', 'settings-terminal-style', 'settings-terminal-background', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
     expect(Array.from(scrollContainer.querySelectorAll(':scope > .settings-stack > section')).map((section) => section.id)).toEqual(sectionIDs)
 
     await user.click(within(navigation).getByRole('button', { name: '终端行为' }))
@@ -803,6 +807,7 @@ test('设置页滚动时同步选中对应的导航项', async () => {
   const sectionOffsets: Record<string, number> = {
     'settings-appearance': 0,
     'settings-terminal-style': 220,
+    'settings-terminal-background': 300,
     'settings-terminal-behavior': 380,
     'settings-tabs': 520,
     'settings-about': 760,

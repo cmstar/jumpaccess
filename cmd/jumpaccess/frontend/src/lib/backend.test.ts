@@ -1,3 +1,4 @@
+import { defaultTerminalBackground } from '../model/terminalBackground'
 import { afterEach, expect, test, vi } from 'vitest'
 import { wailsBackend } from './backend'
 
@@ -6,7 +7,7 @@ afterEach(() => vi.unstubAllGlobals())
 test.each(['block', 'bar', 'underline', 'quarter_block'])('Wails 偏好映射双向保留行高、%s 光标和关闭的闪烁值', async (style) => {
   const preferences = {
     Version: 6, Appearance: { Theme: 'light' },
-    Terminal: { FontFamily: 'monospace', FontSize: 12, ColorScheme: 'nord', LineHeight: 1.25, CursorStyle: style, CursorBlink: false, RightClickAction: 'paste', WarnOnMultiLinePaste: true },
+    Terminal: { Background: { ...defaultTerminalBackground, enabled: true, filePath: 'D:/图片/a.png', transparencyPercent: 0, positionXPercent: 0, positionYPercent: 100, fitMode: 'tile', tileFitLongEdge: true, tileOnlyWholeTiles: true }, FontFamily: 'monospace', FontSize: 12, ColorScheme: 'nord', LineHeight: 1.25, CursorStyle: style, CursorBlink: false, RightClickAction: 'paste', WarnOnMultiLinePaste: true },
     Tabs: { ConfirmCloseActiveSession: true, ShowCloseButtons: true },
   }
   const save = vi.fn().mockResolvedValue(undefined)

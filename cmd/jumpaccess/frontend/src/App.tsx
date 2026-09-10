@@ -11,6 +11,7 @@ import {
   FolderOutput,
   FolderOpen,
   KeyRound,
+  ImageIcon,
   Layers3,
   LogIn,
   LogOut,
@@ -44,6 +45,8 @@ import { ZmodemToolbar } from './components/ZmodemToolbar'
 import { ZmodemController, decodeBytes } from './lib/zmodem'
 import type { ZmodemState } from './lib/zmodemTypes'
 import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
+import { TerminalBackgroundProvider, TerminalBackgroundSurface } from './components/TerminalBackground'
+import { TerminalBackgroundSettings } from './components/TerminalBackgroundSettings'
 import { terminalScheme } from './model/terminalTheme'
 import {
   type Account,
@@ -1037,7 +1040,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }
 
   return (
-    <main className={`app-shell ${navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'windows'}`}>
+    <TerminalBackgroundProvider backend={backend} settings={bootstrap.preferences.terminalBackground}><main className={`app-shell ${navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'windows'}`}>
       <TitleBar
         activeTabID={workspace.activeTabID}
         auth={currentAuth}
@@ -1083,7 +1086,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
-        {activeTab?.kind === 'settings' ? <SettingsView fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
+        {activeTab?.kind === 'settings' ? <SettingsView backend={backend} fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
       </section>
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
@@ -1101,7 +1104,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
       {pendingDisconnect ? <DisconnectSessionDialog tab={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void closeTab(pendingDisconnect)} /> : null}
       {pendingProfileLogout ? <LogoutProfileDialog profile={pendingProfileLogout} onCancel={() => setPendingProfileLogout(null)} onConfirm={() => logoutProfile(pendingProfileLogout)} /> : null}
       {pendingProfileDeletion ? <DeleteProfileDialog profile={pendingProfileDeletion} onCancel={() => setPendingProfileDeletion(null)} onConfirm={() => void deleteProfile(pendingProfileDeletion)} /> : null}
-    </main>
+    </main></TerminalBackgroundProvider>
   )
 }
 
@@ -1343,7 +1346,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
         <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
       </div>
     </div>
-    <div className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></div>
+    <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
     <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{transfer.message || (!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用')}{transfer.name ? ` · ${transfer.name} · ${transfer.transferred ?? 0} / ${transfer.size ?? 0} B` : ''}{transfer.busy ? <button className="button ghost small" onClick={onCancelTransfer} type="button">取消传输</button> : null}</span> : null}</div>
   </section>
 }
@@ -1569,6 +1572,7 @@ const terminalLineHeights = Array.from({ length: 11 }, (_, index) => 1 + index /
 const settingsNavigation = [
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal-style', label: '终端样式', icon: TerminalSquare },
+  { id: 'terminal-background', label: '终端背景图', icon: ImageIcon },
   { id: 'terminal-behavior', label: '终端行为', icon: SlidersHorizontal },
   { id: 'tabs', label: 'Tab 行为', icon: PanelTopClose },
   { id: 'about', label: '关于 JumpAccess', icon: AppLogo },
@@ -1576,7 +1580,7 @@ const settingsNavigation = [
 
 type SettingsSectionID = typeof settingsNavigation[number]['id']
 
-function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferences, version }: { fontFamilies: string[]; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+function SettingsView({ backend, fontFamilies, onLicense, onOpenConfig, onSave, preferences, version }: { backend: Backend; fontFamilies: string[]; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
   const [activeSection, setActiveSection] = useState<SettingsSectionID>('appearance')
   const scrollRef = useRef<HTMLDivElement>(null)
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
@@ -1649,6 +1653,7 @@ function SettingsView({ fontFamilies, onLicense, onOpenConfig, onSave, preferenc
               </div>
             </div>
           </section>
+          <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />
           <section className="settings-card" id="settings-terminal-behavior">
             <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标与粘贴操作。</p></div></div>
             <div className="terminal-style-fields">

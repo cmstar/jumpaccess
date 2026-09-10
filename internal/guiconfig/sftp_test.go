@@ -2,6 +2,7 @@ package guiconfig
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -44,7 +45,7 @@ func TestSFTPWorkspaceUsesNewSchemaWithoutLosingV6Preferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "version = 7") {
+	if !strings.Contains(string(raw), fmt.Sprintf("version = %d", CurrentVersion)) {
 		t.Fatalf("saved schema does not distinguish SFTP workspace: %s", raw)
 	}
 	loaded, err := store.Load()

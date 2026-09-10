@@ -22,14 +22,18 @@ export function terminalScheme(id: string): TerminalScheme {
 }
 
 // 预览和会话使用同一组渲染参数；UI 的应用主题不参与终端配色。
-export function terminalDisplayOptions(preferences: Pick<Preferences, 'terminalColorScheme' | 'terminalFontFamily' | 'terminalFontSize' | 'terminalLineHeight' | 'terminalCursorStyle' | 'terminalCursorBlink'>) {
+export function terminalDisplayOptions(preferences: Pick<Preferences, 'terminalColorScheme' | 'terminalFontFamily' | 'terminalFontSize' | 'terminalLineHeight' | 'terminalCursorStyle' | 'terminalCursorBlink'>, backgroundVisible = false) {
+  const theme = { ...terminalScheme(preferences.terminalColorScheme).theme }
+  if (backgroundVisible) theme.background = `${theme.background.slice(0, 7)}00`
   return {
+    // 创建时启用，后续开关背景只更新 theme，不重建终端或会话。
+    allowTransparency: true,
     fontFamily: preferences.terminalFontFamily,
     fontSize: preferences.terminalFontSize,
     lineHeight: preferences.terminalLineHeight,
     // 底部方块借用原生下划线的颜色与闪烁，由宿主的样式标记调整厚度。
     cursorStyle: preferences.terminalCursorStyle === 'quarter_block' ? 'underline' : preferences.terminalCursorStyle,
     cursorBlink: preferences.terminalCursorBlink,
-    theme: { ...terminalScheme(preferences.terminalColorScheme).theme },
+    theme,
   } satisfies ITerminalOptions
 }

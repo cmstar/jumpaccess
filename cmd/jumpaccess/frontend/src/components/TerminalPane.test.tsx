@@ -1,7 +1,9 @@
+import { defaultTerminalBackground } from '../model/terminalBackground'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { TerminalPane } from './TerminalPane'
+import { TerminalBackgroundProvider } from './TerminalBackground'
 import type { Backend, Preferences, SessionState } from '../lib/backend'
 
 const terminalMock = vi.hoisted(() => ({
@@ -68,6 +70,7 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 const preferences: Preferences = {
+  terminalBackground: { ...defaultTerminalBackground },
   version: 6,
   theme: 'light',
   terminalFontFamily: 'JetBrains Mono',
@@ -94,6 +97,28 @@ const disconnectedSession: SessionState = {
 }
 
 const activeSession: SessionState = { ...disconnectedSession, status: 'active' }
+
+test('启用和关闭背景图不重建终端，保留选区及输入通道', async () => {
+  let loaded: (() => void) | null = null
+  vi.stubGlobal('Image', class { naturalWidth = 100; naturalHeight = 100; src = ''; onerror = null; set onload(value: (() => void) | null) { loaded = value } })
+  try {
+    const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined), readTerminalBackground: vi.fn().mockResolvedValue('data:image/png;base64,test') } as unknown as Backend
+    const view = (enabled: boolean) => <TerminalBackgroundProvider backend={backend} settings={{ ...defaultTerminalBackground, enabled, filePath: 'a.png' }}><TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} /></TerminalBackgroundProvider>
+    const { rerender } = render(view(false))
+    terminalMock.selection = '保留选区'
+    rerender(view(true))
+    await waitFor(() => expect(loaded).not.toBeNull())
+    act(() => loaded?.())
+    expect(terminalMock.options?.theme?.background).toBe('#2e344000')
+    expect(terminalMock.instances).toBe(1)
+    expect(terminalMock.selection).toBe('保留选区')
+    act(() => terminalMock.dataHandler?.('pwd\r'))
+    expect(backend.writeSSHSession).toHaveBeenCalledWith('session-1', 'pwd\r')
+    rerender(view(false))
+    expect(terminalMock.options?.theme?.background).toBe('#2e3440')
+    expect(terminalMock.instances).toBe(1)
+  } finally { vi.unstubAllGlobals() }
+})
 
 test('ZMODEM 传输期间暂停终端输入，完成后恢复', () => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend

@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 7
+const CurrentVersion = 8
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -59,14 +59,44 @@ type Appearance struct {
 }
 
 type Terminal struct {
-	ColorScheme          string  `toml:"color_scheme"`
-	FontFamily           string  `toml:"font_family"`
-	FontSize             int     `toml:"font_size"`
-	LineHeight           float64 `toml:"line_height"`
-	CursorStyle          string  `toml:"cursor_style"`
-	CursorBlink          bool    `toml:"cursor_blink"`
-	RightClickAction     string  `toml:"right_click_action"`
-	WarnOnMultiLinePaste bool    `toml:"warn_on_multi_line_paste"`
+	Background           Background `toml:"background"`
+	ColorScheme          string     `toml:"color_scheme"`
+	FontFamily           string     `toml:"font_family"`
+	FontSize             int        `toml:"font_size"`
+	LineHeight           float64    `toml:"line_height"`
+	CursorStyle          string     `toml:"cursor_style"`
+	CursorBlink          bool       `toml:"cursor_blink"`
+	RightClickAction     string     `toml:"right_click_action"`
+	WarnOnMultiLinePaste bool       `toml:"warn_on_multi_line_paste"`
+}
+
+// Background 只作用于 GUI SSH 终端内容区域。
+type Background struct {
+	Enabled             bool   `toml:"enabled" json:"enabled"`
+	FilePath            string `toml:"file_path" json:"filePath"`
+	TransparencyPercent int    `toml:"transparency_percent" json:"transparencyPercent"`
+	FitMode             string `toml:"fit_mode" json:"fitMode"`
+	PositionXPercent    int    `toml:"position_x_percent" json:"positionXPercent"`
+	PositionYPercent    int    `toml:"position_y_percent" json:"positionYPercent"`
+	TileFitLongEdge     bool   `toml:"tile_fit_long_edge" json:"tileFitLongEdge"`
+	TileOnlyWholeTiles  bool   `toml:"tile_only_whole_tiles" json:"tileOnlyWholeTiles"`
+}
+
+func (b Background) Validate() error {
+	switch b.FitMode {
+	case "cover", "contain", "stretch", "tile":
+	default:
+		return fmt.Errorf("terminal.background.fit_mode is invalid")
+	}
+	if b.TransparencyPercent < 0 || b.TransparencyPercent > 95 || b.PositionXPercent < 0 || b.PositionXPercent > 100 || b.PositionYPercent < 0 || b.PositionYPercent > 100 {
+		return fmt.Errorf("terminal.background percentages are out of range")
+	}
+	for _, c := range b.FilePath {
+		if unicode.IsControl(c) {
+			return fmt.Errorf("terminal.background.file_path is invalid")
+		}
+	}
+	return nil
 }
 
 type Tabs struct {
@@ -132,6 +162,7 @@ func Default() Config {
 			Theme: "system",
 		},
 		Terminal: Terminal{
+			Background:           Background{TransparencyPercent: 70, FitMode: "cover", PositionXPercent: 50, PositionYPercent: 50},
 			ColorScheme:          "nord",
 			FontFamily:           "monospace",
 			FontSize:             12,
@@ -163,7 +194,7 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
-	if header.Version >= 3 && header.Version <= 6 {
+	if header.Version >= 3 && header.Version < CurrentVersion {
 		return decodeGroupedPreferences(data)
 	}
 	if header.Version > CurrentVersion {
@@ -243,6 +274,9 @@ func decodeLegacy(data []byte, version int) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if err := c.Terminal.Background.Validate(); err != nil {
+		return err
+	}
 	if c.Version != CurrentVersion {
 		return fmt.Errorf("unsupported GUI config version %d", c.Version)
 	}

@@ -1,8 +1,11 @@
+import { defaultTerminalBackground, type TerminalBackground } from '../model/terminalBackground'
+
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type TerminalRightClickAction = 'paste' | 'context_menu'
 export type TerminalCursorStyle = 'block' | 'bar' | 'underline' | 'quarter_block'
 
 export interface Preferences {
+  terminalBackground: TerminalBackground
   version: number
   theme: ThemeMode
   terminalFontFamily: string
@@ -219,6 +222,8 @@ export interface Backend {
   minimizeWindow(): Promise<void>
   ensureWindowVisible(): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
+  chooseTerminalBackground(currentPath: string): Promise<string>
+  readTerminalBackground(path: string): Promise<string>
   saveWorkspace(workspace: Workspace): Promise<void>
   getAuthStatus(profile: string): Promise<AuthStatus>
   refreshAuth(profile: string): Promise<AuthStatus>
@@ -265,7 +270,7 @@ export interface Backend {
 type GoPreferences = {
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
+  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean }
 }
 
@@ -297,6 +302,8 @@ type DesktopBinding = {
   MinimizeWindow(): Promise<void>
   EnsureWindowVisible(): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
+  ChooseTerminalBackground(currentPath: string): Promise<string>
+  ReadTerminalBackground(path: string): Promise<string>
   SaveWorkspace(workspace: Workspace): Promise<void>
   GetAuthStatus(profile: string): Promise<AuthStatus>
   RefreshAuth(profile: string): Promise<AuthStatus>
@@ -362,6 +369,7 @@ function subscribe<T>(eventName: string, handler: (event: T) => void): () => voi
 function toPreferences(value: GoPreferences): Preferences {
   return {
     version: value.Version,
+    terminalBackground: value.Terminal.Background ?? { ...defaultTerminalBackground },
     theme: value.Appearance.Theme,
     terminalFontFamily: value.Terminal.FontFamily,
     terminalFontSize: value.Terminal.FontSize,
@@ -383,6 +391,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       Theme: value.theme,
     },
     Terminal: {
+      Background: value.terminalBackground,
       FontFamily: value.terminalFontFamily,
       FontSize: value.terminalFontSize,
       LineHeight: value.terminalLineHeight,
@@ -432,6 +441,8 @@ export const wailsBackend: Backend = {
   minimizeWindow: () => binding().MinimizeWindow(),
   ensureWindowVisible: () => binding().EnsureWindowVisible(),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
+  chooseTerminalBackground: (currentPath) => binding().ChooseTerminalBackground(currentPath),
+  readTerminalBackground: (path) => binding().ReadTerminalBackground(path),
   saveWorkspace: (workspace) => binding().SaveWorkspace(workspace),
   getAuthStatus: (profile) => binding().GetAuthStatus(profile),
   refreshAuth: (profile) => binding().RefreshAuth(profile),

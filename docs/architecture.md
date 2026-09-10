@@ -34,7 +34,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
-| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键与多行粘贴警告等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式与终端行为拆为同级面板，但持久化仍共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
+| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键与多行粘贴警告等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
@@ -45,6 +45,8 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 ## 关键数据流
 
 终端当前使用 xterm DOM 渲染器。产品光标值 `quarter_block` 在共用渲染参数中映射为原生 `underline`，预览和会话宿主通过限定 CSS 将其加粗为字符格高度的约 25%，沿用原生光标颜色与闪烁。此适配依赖 DOM 光标结构；将来切换 Canvas/WebGL 渲染器或升级 xterm 时，必须重新验证或补充对应实现，不能直接把产品自定义值传给 xterm。
+
+终端背景由应用级 Provider 统一加载，预览和 SSH 会话共用独立的背景容器。容器以终端方案底色打底，图片层单独设置透明度；xterm 创建时启用透明背景支持，图片加载成功后仅把默认背景的 alpha 设为 0，保留 RGB、ANSI 色、光标和选区参数。背景范围包含终端内容及内边距，排除外层框体和工具栏，固定在可视区域并不随输出滚动；切换图片或开关只更新显示，不重建终端和 SSH Session。图片失败时恢复纯色，设置页显示原因。
 
 ### 浏览器登录
 
