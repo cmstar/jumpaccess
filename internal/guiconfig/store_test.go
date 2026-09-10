@@ -10,6 +10,29 @@ import (
 	"time"
 )
 
+func TestStoreRoundTripsWindowsTerminalSchemes(t *testing.T) {
+	for _, id := range []string{
+		"campbell", "campbell-powershell", "cga", "dark-plus", "dimidium", "ibm-5153", "ottosson",
+		"tango-dark", "tango-light", "vintage", "vscode-dark-modern", "vscode-light-modern", "ubuntu-22-04", "ubuntu-22-04-light",
+	} {
+		t.Run(id, func(t *testing.T) {
+			store := Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
+			value := Default()
+			value.Terminal.ColorScheme = id
+			if err := store.Save(value); err != nil {
+				t.Fatal(err)
+			}
+			got, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Terminal != value.Terminal {
+				t.Fatalf("terminal preferences changed after saving %s: %#v", id, got.Terminal)
+			}
+		})
+	}
+}
+
 func TestStoreUpdateSerializesWorkspaceAndWindowChanges(t *testing.T) {
 	store := Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
 	if err := store.Save(Default()); err != nil {

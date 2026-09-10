@@ -867,8 +867,18 @@ THE SOFTWARE.
 
 ------------------------------------------------------------------------
 
-microsoft/terminal (One Half and Solarized terminal ports)
+microsoft/terminal (Campbell, Campbell Powershell, CGA, Dark+, Dimidium,
+IBM 5153, Ottosson, One Half, Solarized, Tango, Vintage and VSCode Modern
+terminal ports)
 Source: https://raw.githubusercontent.com/microsoft/terminal/093e49e29a9f806ff83025c49be5d0c970673b00/src/cascadia/TerminalSettingsModel/defaults.json
+
+ubuntu/WSL (Ubuntu 22.04 dark and light terminal schemes)
+Source: https://raw.githubusercontent.com/ubuntu/WSL/3b7a6b2a43af18aa541eeee1669ac27656630097/meta/Ubuntu22.04LTS/generated/DistroLauncher-Appx/Terminal/Fragments/terminal.json
+License: https://github.com/ubuntu/WSL/blob/3b7a6b2a43af18aa541eeee1669ac27656630097/LICENSE
+
+JumpAccess modifications: converted Windows Terminal color keys to xterm.js,
+normalized hex values, added cursor accent, derived missing selection
+background and added contrasting selection foreground.
 
 Copyright (c) Microsoft Corporation. All rights reserved.
 

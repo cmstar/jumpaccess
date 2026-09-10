@@ -845,7 +845,12 @@ test('Tab 行为设置可隐藏关闭按钮且保留鼠标中键关闭', async (
   expect(screen.queryByRole('tab', { name: '资产' })).not.toBeInTheDocument()
 })
 
-test('配色下拉按深浅分组，选中后保存并与字体字号共用预览', async () => {
+test.each([
+  ['Catppuccin Latte', 'catppuccin-latte', '#eff1f5'],
+  ['Campbell', 'campbell', '#0c0c0c'],
+  ['Tango Light', 'tango-light', '#ffffff'],
+  ['Ubuntu-22.04-ColorScheme', 'ubuntu-22-04', '#300a24'],
+])('配色下拉按深浅分组，选中 %s 后保存并与字体字号共用预览', async (name, id, background) => {
   const backend = makeBackend()
   const user = userEvent.setup()
   render(<App backend={backend} />)
@@ -859,17 +864,17 @@ test('配色下拉按深浅分组，选中后保存并与字体字号共用预�
   const list = screen.getByRole('listbox', { name: '终端配色方案' })
   expect(within(list).getByRole('group', { name: '深色' })).toBeVisible()
   expect(within(list).getByRole('group', { name: '浅色' })).toBeVisible()
-  expect(within(list).getAllByRole('option')).toHaveLength(14)
+  expect(within(list).getAllByRole('option')).toHaveLength(28)
   expect(within(list).getByRole('option', { name: 'Nord' })).toHaveAttribute('aria-selected', 'true')
   expect(within(list).getByRole('option', { name: 'Nord' }).querySelectorAll('.scheme-swatches i')).toHaveLength(16)
-  await user.click(within(list).getByRole('option', { name: 'Catppuccin Latte' }))
-  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalColorScheme: 'catppuccin-latte', theme: 'light' })))
+  await user.click(within(list).getByRole('option', { name }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalColorScheme: id, theme: 'light' })))
   expect(screen.queryByRole('listbox', { name: '终端配色方案' })).not.toBeInTheDocument()
-  expect(preview).toHaveTextContent('Catppuccin Latte')
-  expect(preview.querySelector('.terminal-preview-host')).toHaveStyle({ backgroundColor: '#eff1f5' })
+  expect(preview).toHaveTextContent(name)
+  expect(preview.querySelector('.terminal-preview-host')).toHaveStyle({ backgroundColor: background })
   await user.selectOptions(screen.getByLabelText('字号'), '18')
   expect(preview).toHaveTextContent('18 px')
-  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalColorScheme: 'catppuccin-latte', terminalFontSize: 18 })))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalColorScheme: id, terminalFontSize: 18 })))
 })
 
 test('配色下拉支持键盘单选，Escape 和失焦不会保存未确认项', async () => {
