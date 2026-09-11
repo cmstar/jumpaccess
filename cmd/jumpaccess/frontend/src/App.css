@@ -2108,6 +2108,9 @@ details > summary::-webkit-details-marker {
 .dialog-fields label {
   display: block;
   margin-top: 10px;
+}
+
+.dialog-fields label {
   color: var(--muted);
   font-size: .65rem;
   font-weight: 600;
@@ -2274,10 +2277,6 @@ details > summary::-webkit-details-marker {
 .settings-card .setting-help {
   display: block;
   margin-top: 6px;
-  color: var(--muted);
-  font-size: .62rem;
-  font-weight: 500;
-  line-height: 1.45;
 }
 
 .settings-card .setting-help + .setting-row {
@@ -2298,13 +2297,19 @@ details > summary::-webkit-details-marker {
   display: block;
 }
 
+.settings-card label,
 .setting-row strong {
+  color: var(--text);
   font-size: .7rem;
   font-weight: 650;
 }
 
 .setting-row small {
   margin-top: 3px;
+}
+
+.settings-card .setting-help,
+.setting-row small {
   color: var(--muted);
   font-size: .65rem;
   font-weight: 450;
