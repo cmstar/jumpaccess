@@ -253,6 +253,69 @@ test('没有可用 Profile 时启动后自动打开 Profile 页面', async () =>
   expect(screen.queryByRole('button', { name: /^认证状态：/ })).not.toBeInTheDocument()
 })
 
+test.each(['成功', '刷新失败', '状态加载失败'])('刷新认证期间禁用按钮并旋转图标，%s后恢复', async (outcome) => {
+  let resolveRefresh!: () => void
+  let rejectRefresh!: (reason: Error) => void
+  let resolveBootstrap!: () => void
+  let rejectBootstrap!: (reason: Error) => void
+  const backend = makeBackend({
+    refreshAuth: vi.fn(() => new Promise<BootstrapState['profiles'][number]['auth']>((resolve, reject) => {
+      resolveRefresh = () => resolve(bootstrapState.profiles[0].auth)
+      rejectRefresh = reject
+    })),
+    bootstrap: vi.fn().mockResolvedValueOnce(bootstrapState).mockImplementation(() => new Promise((resolve, reject) => {
+      resolveBootstrap = () => resolve(bootstrapState)
+      rejectBootstrap = reject
+    })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: /^打开 Profile/ }))
+  await user.click(screen.getByRole('button', { name: '刷新认证' }))
+
+  const busy = screen.getByRole('button', { name: '刷新中…' })
+  expect(busy).toBeDisabled()
+  expect(busy.querySelector('svg')).toHaveClass('spin')
+  await user.click(busy)
+  expect(backend.refreshAuth).toHaveBeenCalledTimes(1)
+  expect(backend.refreshAuth).toHaveBeenCalledWith('production')
+
+  if (outcome === '刷新失败') await act(async () => rejectRefresh(new Error('认证刷新失败')))
+  else {
+    await act(async () => resolveRefresh())
+    expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled()
+    if (outcome === '状态加载失败') await act(async () => rejectBootstrap(new Error('状态加载失败')))
+    else await act(async () => resolveBootstrap())
+  }
+  const ready = await screen.findByRole('button', { name: '刷新认证' })
+  expect(ready).toBeEnabled()
+  expect(ready.querySelector('svg')).not.toHaveClass('spin')
+  if (outcome === '成功') expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  else expect(screen.getByRole('alert')).toHaveTextContent(outcome === '刷新失败' ? '认证刷新失败' : '状态加载失败')
+})
+
+test('刷新认证状态按 Profile 独立保存，切换 Tab 后仍保持忙碌', async () => {
+  let finish!: () => void
+  const state = { ...bootstrapState, profiles: [...bootstrapState.profiles, { ...bootstrapState.profiles[0], name: 'staging' }] }
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue(state),
+    refreshAuth: vi.fn(() => new Promise<BootstrapState['profiles'][number]['auth']>(resolve => { finish = () => resolve(state.profiles[0].auth) })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: /^打开 Profile/ }))
+  const card = (name: string) => within(screen.getByRole('heading', { name }).closest('article')!)
+  await user.click(card('production').getByRole('button', { name: '刷新认证' }))
+  expect(card('staging').getByRole('button', { name: '刷新认证' })).toBeEnabled()
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  await user.click(screen.getByRole('tab', { name: 'Profile' }))
+  const busy = card('production').getByRole('button', { name: '刷新中…' })
+  expect(busy).toBeDisabled()
+  expect(busy.querySelector('svg')).toHaveClass('spin')
+  await act(async () => finish())
+  expect(card('production').getByRole('button', { name: '刷新认证' })).toBeEnabled()
+})
+
 test('当前 Profile 未登录时启动后自动打开 Profile 页面', async () => {
   const listOrganizations = vi.fn().mockRejectedValue(new Error('login required for profile "production"; run jumpctl auth login'))
   const listAssets = vi.fn().mockRejectedValue(new Error('login required for profile "production"; run jumpctl auth login'))
