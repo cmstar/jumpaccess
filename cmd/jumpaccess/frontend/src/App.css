@@ -798,6 +798,11 @@ kbd {
   overflow: hidden;
 }
 
+.content[hidden],
+.settings-page[hidden] {
+  display: none;
+}
+
 .asset-pane,
 .full-pane {
   min-width: 0;

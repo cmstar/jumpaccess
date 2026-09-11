@@ -852,7 +852,33 @@ test('设置页使用左侧导航和右侧单列滚动面板', async () => {
   }
 })
 
-test('设置页滚动时同步选中对应的导航项', async () => {
+test('切换 Tab 后保留资产列表和详情的滚动位置，关闭后重新打开从顶部开始', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  const assetPane = (await screen.findByRole('heading', { name: '资产' })).closest('section')!
+  const detailPane = (await screen.findByRole('heading', { name: 'prod-web-01' })).closest('aside')!
+  assetPane.scrollTop = 640
+  detailPane.scrollTop = 160
+  fireEvent.scroll(assetPane)
+  fireEvent.scroll(detailPane)
+  const assetCalls = vi.mocked(backend.listAssets).mock.calls.length
+
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(screen.queryByRole('heading', { name: '资产' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+
+  expect(screen.getByRole('heading', { name: '资产' }).closest('section')).toHaveProperty('scrollTop', 640)
+  expect(screen.getByRole('heading', { name: 'prod-web-01' }).closest('aside')).toHaveProperty('scrollTop', 160)
+  expect(backend.listAssets).toHaveBeenCalledTimes(assetCalls)
+  await user.click(screen.getByRole('button', { name: '关闭 资产 Tab' }))
+  expect(assetPane).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '打开资产' }))
+  expect(screen.getByRole('heading', { name: '资产' }).closest('section')).toHaveProperty('scrollTop', 0)
+})
+
+test('设置页滚动时同步导航，切换 Tab 后保留视图，关闭后重新打开重置', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
   render(<App backend={backend} />)
@@ -872,13 +898,25 @@ test('设置页滚动时同步选中对应的导航项', async () => {
   for (const [id, offsetTop] of Object.entries(sectionOffsets)) {
     Object.defineProperty(document.getElementById(id), 'offsetTop', { configurable: true, value: offsetTop })
   }
-  Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 500 })
+  scrollContainer.scrollTop = 500
 
   fireEvent.scroll(scrollContainer)
 
   const navigation = screen.getByRole('navigation', { name: '设置导航' })
   expect(within(navigation).getByRole('button', { name: 'Tab 行为' })).toHaveAttribute('aria-current', 'location')
   expect(within(navigation).getByRole('button', { name: '外观' })).not.toHaveAttribute('aria-current')
+
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  expect(screen.queryByRole('navigation', { name: '设置导航' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: '设置' }))
+  expect(screen.getByTestId('settings-scroll')).toHaveProperty('scrollTop', 500)
+  expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: 'Tab 行为' })).toHaveAttribute('aria-current', 'location')
+
+  await user.click(screen.getByRole('button', { name: '关闭 设置 Tab' }))
+  expect(scrollContainer).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(screen.getByTestId('settings-scroll')).toHaveProperty('scrollTop', 0)
+  expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: '外观' })).toHaveAttribute('aria-current', 'location')
 })
 
 test('Tab 行为设置可隐藏关闭按钮且保留鼠标中键关闭', async () => {

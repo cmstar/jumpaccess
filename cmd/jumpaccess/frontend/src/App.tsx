@@ -1081,8 +1081,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
         {!activeTab ? <StartPage onAction={(action) => action === 'quick' ? setQuickOpen(true) : openSingleton(action)} /> : null}
 
-        {activeTab?.kind === 'assets' ? (
-          <div className="content">
+        {workspace.tabs.some((tab) => tab.kind === 'assets') ? (
+          <div className="content" hidden={activeTab?.kind !== 'assets'}>
             <section className="asset-pane">
               <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={syncingResources || !profile || !currentProfileLoggedIn} onClick={syncResources} type="button"><RefreshCcw className={syncingResources ? 'spin' : ''} />{syncingResources ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
@@ -1099,7 +1099,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" onClick={() => void run(async () => { await backend.refreshAuth(item.name); await reloadBootstrap(item.name) })}><RefreshCcw />刷新认证</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
-        {activeTab?.kind === 'settings' ? <SettingsView backend={backend} fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
+        {workspace.tabs.some((tab) => tab.kind === 'settings') ? <SettingsView hidden={activeTab?.kind !== 'settings'} backend={backend} fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
       </section>
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
@@ -1593,7 +1593,7 @@ const settingsNavigation = [
 
 type SettingsSectionID = typeof settingsNavigation[number]['id']
 
-function SettingsView({ backend, fontFamilies, onLicense, onOpenConfig, onSave, preferences, version }: { backend: Backend; fontFamilies: string[]; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, onSave, preferences, version }: { backend: Backend; fontFamilies: string[]; hidden: boolean; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
   const [activeSection, setActiveSection] = useState<SettingsSectionID>('appearance')
   const scrollRef = useRef<HTMLDivElement>(null)
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
@@ -1621,7 +1621,7 @@ function SettingsView({ backend, fontFamilies, onLicense, onOpenConfig, onSave, 
     setActiveSection(nextSection)
   }
 
-  return <section className="full-pane settings-page">
+  return <section className="full-pane settings-page" hidden={hidden}>
     <PageHeading eyebrow="桌面偏好" title="设置">
       <button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button>
     </PageHeading>
