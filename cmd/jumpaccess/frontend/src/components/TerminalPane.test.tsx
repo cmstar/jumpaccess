@@ -84,6 +84,7 @@ const preferences: Preferences = {
   terminalWarnOnMultiLinePaste: true,
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
+  newTabPosition: 'end',
 }
 
 const disconnectedSession: SessionState = {

@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 9
+const CurrentVersion = 10
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -101,8 +101,9 @@ func (b Background) Validate() error {
 }
 
 type Tabs struct {
-	ConfirmCloseActiveSession bool `toml:"confirm_close_active_session"`
-	ShowCloseButtons          bool `toml:"show_close_buttons"`
+	NewTabPosition            string `toml:"new_tab_position"`
+	ConfirmCloseActiveSession bool   `toml:"confirm_close_active_session"`
+	ShowCloseButtons          bool   `toml:"show_close_buttons"`
 }
 
 type legacyConfig struct {
@@ -175,6 +176,7 @@ func Default() Config {
 			WarnOnMultiLinePaste: true,
 		},
 		Tabs: Tabs{
+			NewTabPosition:            "end",
 			ConfirmCloseActiveSession: true,
 			ShowCloseButtons:          true,
 		},
@@ -276,6 +278,11 @@ func decodeLegacy(data []byte, version int) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	switch c.Tabs.NewTabPosition {
+	case "end", "after_current":
+	default:
+		return fmt.Errorf("tabs.new_tab_position must be end or after_current")
+	}
 	if err := c.Terminal.Background.Validate(); err != nil {
 		return err
 	}

@@ -1,4 +1,5 @@
 export type SingletonTabKind = 'assets' | 'profiles' | 'settings'
+export type NewTabPosition = 'end' | 'after_current'
 
 export interface SingletonTab {
   id: `system:${SingletonTabKind}`
@@ -106,7 +107,7 @@ export type TabAction = {
 
 export const emptyTabWorkspace: TabWorkspace = { tabs: [], activeTabID: '' }
 
-export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace {
+export function reduceTabs(state: TabWorkspace, action: TabAction, newTabPosition: NewTabPosition = 'end'): TabWorkspace {
   if (action.type === 'connection-resolved') return { ...state, tabs: state.tabs.map((tab) => isConnectionTab(tab) && tab.sessionID === action.sessionID ? { ...tab, descriptor: { ...tab.descriptor, ...action.descriptor } } : tab) }
   if (action.type === 'sftp-directory') return { ...state, tabs: state.tabs.map((tab) => tab.kind === 'sftp' && tab.sessionID === action.sessionID ? { ...tab, directory: action.directory, permissions: action.permissions } : tab) }
   if (action.type === 'rename-alias') {
@@ -222,9 +223,17 @@ export function reduceTabs(state: TabWorkspace, action: TabAction): TabWorkspace
       descriptor: action.descriptor,
       connectionStatus: 'disconnected',
     }
-    return { tabs: [...state.tabs, tab], activeTabID: tab.id }
+    return insertTab(state, tab, newTabPosition)
   }
   const id = `system:${action.kind}` as const
   if (state.tabs.some((tab) => tab.id === id)) return { ...state, activeTabID: id }
-  return { tabs: [...state.tabs, { id, kind: action.kind }], activeTabID: id }
+  return insertTab(state, { id, kind: action.kind }, newTabPosition)
+}
+
+function insertTab(state: TabWorkspace, tab: AppTab, position: NewTabPosition): TabWorkspace {
+  const currentIndex = state.tabs.findIndex(item => item.id === state.activeTabID)
+  const index = position === 'after_current' && currentIndex >= 0 ? currentIndex + 1 : state.tabs.length
+  const tabs = [...state.tabs]
+  tabs.splice(index, 0, tab)
+  return { tabs, activeTabID: tab.id }
 }

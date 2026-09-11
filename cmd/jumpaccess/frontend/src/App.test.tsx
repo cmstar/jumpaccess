@@ -116,6 +116,7 @@ const bootstrapState: BootstrapState = {
     terminalWarnOnMultiLinePaste: true,
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
+    newTabPosition: 'end',
   },
   workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
 }
@@ -917,6 +918,56 @@ test('设置页滚动时同步导航，切换 Tab 后保留视图，关闭后重
   await user.click(screen.getByRole('button', { name: '打开设置' }))
   expect(screen.getByTestId('settings-scroll')).toHaveProperty('scrollTop', 0)
   expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: '外观' })).toHaveAttribute('aria-current', 'location')
+})
+
+test('新 Tab 打开位置默认在末尾，改为当前右侧后立即应用并保存', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const position = screen.getByRole('combobox', { name: '新 Tab 打开位置' })
+  expect(position).toHaveDisplayValue('所有 Tab 的末尾')
+  await user.selectOptions(position, 'after_current')
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ newTabPosition: 'after_current' })))
+
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
+  expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['资产', 'Profile', '设置'])
+  await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith({
+    activeTabId: 'system:profiles',
+    tabs: [{ id: 'system:assets', type: 'assets' }, { id: 'system:profiles', type: 'profiles' }, { id: 'system:settings', type: 'settings' }],
+  }))
+  await user.click(screen.getByRole('tab', { name: '设置' }))
+  await user.selectOptions(screen.getByRole('combobox', { name: '新 Tab 打开位置' }), 'end')
+  await user.click(screen.getByRole('button', { name: '关闭 Profile Tab' }))
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
+  expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['资产', '设置', 'Profile'])
+})
+
+test.each(['ssh', 'sftp'] as const)('启动读取右侧插入偏好后，新的 %s Tab 紧跟当前 Tab', async (protocol) => {
+  const backend = makeBackend({ bootstrap: vi.fn().mockResolvedValue({
+    ...bootstrapState,
+    preferences: { ...bootstrapState.preferences, newTabPosition: 'after_current' },
+    workspace: { activeTabId: 'system:assets', tabs: [
+      { id: 'system:settings', type: 'settings' },
+      { id: 'system:assets', type: 'assets' },
+      { id: 'system:profiles', type: 'profiles' },
+    ] },
+  }), getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: protocol, port: 22 }] }) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: protocol === 'ssh' ? '使用 production-web 连接' : '使用 production-web 连接 SFTP' }))
+  await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({
+    tabs: [
+      expect.objectContaining({ type: 'settings' }),
+      expect.objectContaining({ type: 'assets' }),
+      expect.objectContaining({ type: protocol }),
+      expect.objectContaining({ type: 'profiles' }),
+    ],
+  })))
+  expect(screen.getAllByRole('tab')[2]).toHaveAttribute('aria-selected', 'true')
 })
 
 test('Tab 行为设置可隐藏关闭按钮且保留鼠标中键关闭', async () => {

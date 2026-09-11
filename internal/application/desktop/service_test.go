@@ -335,6 +335,7 @@ func TestSavePreferencesWritesOnlyGUIStore(t *testing.T) {
 	service := Service{Config: configStore, Preferences: preferenceStore}
 	want := guiconfig.Default()
 	want.Appearance.Theme = "light"
+	want.Tabs.NewTabPosition = "after_current"
 
 	if err := service.SavePreferences(want); err != nil {
 		t.Fatal(err)

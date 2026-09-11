@@ -1,4 +1,5 @@
 import { defaultTerminalBackground, type TerminalBackground } from '../model/terminalBackground'
+import type { NewTabPosition } from '../model/tabs'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type TerminalRightClickAction = 'paste' | 'context_menu'
@@ -20,6 +21,7 @@ export interface Preferences {
   terminalWarnOnMultiLinePaste: boolean
   confirmCloseActiveSession: boolean
   showTabCloseButtons: boolean
+  newTabPosition: NewTabPosition
 }
 
 export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh' | 'sftp'
@@ -273,7 +275,7 @@ type GoPreferences = {
   Version: number
   Appearance: { Theme: ThemeMode }
   Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
-  Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean }
+  Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean; NewTabPosition: NewTabPosition }
 }
 
 type DesktopBinding = {
@@ -384,6 +386,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
     confirmCloseActiveSession: value.Tabs.ConfirmCloseActiveSession,
     showTabCloseButtons: value.Tabs.ShowCloseButtons,
+    newTabPosition: value.Tabs.NewTabPosition,
   }
 }
 
@@ -408,6 +411,7 @@ function fromPreferences(value: Preferences): GoPreferences {
     Tabs: {
       ConfirmCloseActiveSession: value.confirmCloseActiveSession,
       ShowCloseButtons: value.showTabCloseButtons,
+      NewTabPosition: value.newTabPosition,
     },
   }
 }

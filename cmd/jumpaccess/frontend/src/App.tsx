@@ -137,7 +137,7 @@ function startupWorkspace(state: BootstrapState): TabWorkspace {
   const currentProfile = state.profiles.find((item) => item.name === state.currentProfile)
   return currentProfile?.auth.loggedIn
     ? restored
-    : reduceTabs(restored, { type: 'open-singleton', kind: 'profiles' })
+    : reduceTabs(restored, { type: 'open-singleton', kind: 'profiles' }, state.preferences.newTabPosition)
 }
 
 function persistableWorkspace(workspace: TabWorkspace): Workspace {
@@ -366,7 +366,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const displayedQuickResults = assets.results.length > 0 ? localQuickResults : quickResults
 
   function dispatchTabs(action: TabAction) {
-    const next = reduceTabs(workspaceRef.current, action)
+    const next = reduceTabs(workspaceRef.current, action, bootstrap?.preferences.newTabPosition)
     workspaceRef.current = next
     setWorkspace(next)
   }
@@ -1679,7 +1679,13 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
           </section>
           <section className="settings-card" id="settings-tabs">
-            <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的关闭入口和确认方式。</p></div></div>
+            <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的打开位置、关闭入口和确认方式。</p></div></div>
+            <div className="terminal-style-fields">
+              <div className="terminal-style-row">
+                <div><label htmlFor="new-tab-position">新 Tab 打开位置</label><small className="setting-help" id="new-tab-position-help">控制新 Tab 在标签栏中的插入位置。</small></div>
+                <select id="new-tab-position" aria-describedby="new-tab-position-help" value={preferences.newTabPosition} onChange={(event) => update({ newTabPosition: event.target.value as Preferences['newTabPosition'] })}><option value="end">所有 Tab 的末尾</option><option value="after_current">当前 Tab 的右侧</option></select>
+              </div>
+            </div>
             <div className="setting-row"><span><strong>显示 Tab 关闭按钮</strong><small>隐藏后仍可使用鼠标中键关闭 Tab。</small></span><button aria-label="显示 Tab 关闭按钮" role="switch" aria-checked={preferences.showTabCloseButtons} className={preferences.showTabCloseButtons ? 'switch on' : 'switch'} onClick={() => update({ showTabCloseButtons: !preferences.showTabCloseButtons })}><span /></button></div>
             <div className="setting-row"><span><strong>关闭活动会话前确认</strong><small>避免误关正在运行的 SSH 终端。</small></span><button aria-label="关闭活动会话前确认" role="switch" aria-checked={preferences.confirmCloseActiveSession} className={preferences.confirmCloseActiveSession ? 'switch on' : 'switch'} onClick={() => update({ confirmCloseActiveSession: !preferences.confirmCloseActiveSession })}><span /></button></div>
           </section>

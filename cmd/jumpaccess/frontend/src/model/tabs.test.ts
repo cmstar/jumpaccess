@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyTabWorkspace, reduceTabs } from './tabs'
+import { emptyTabWorkspace, reduceTabs, type TabAction } from './tabs'
 
 const descriptor = {
   profile: 'production',
@@ -13,6 +13,36 @@ const descriptor = {
 }
 
 describe('reduceTabs', () => {
+  const openingActions: TabAction[] = [
+    { type: 'open-singleton', kind: 'profiles' },
+    { type: 'open-ssh', id: 'ssh-new', descriptor },
+    { type: 'open-sftp', id: 'sftp-new', descriptor },
+  ]
+  it.each(openingActions)('按偏好在当前 Tab 右侧插入 $type，并激活新 Tab', (action) => {
+    const assets = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'assets' })
+    const settings = reduceTabs(assets, { type: 'open-singleton', kind: 'settings' })
+    const last = reduceTabs(settings, { type: 'open-ssh', id: 'ssh-last', descriptor })
+    const middle = reduceTabs(last, { type: 'activate', id: 'system:settings' })
+    const opened = reduceTabs(middle, action, 'after_current')
+    expect(opened.tabs.map(tab => tab.id)).toEqual(['system:assets', 'system:settings', opened.activeTabID, 'ssh-last'])
+    expect(reduceTabs(middle, action).tabs.map(tab => tab.id)).toEqual(['system:assets', 'system:settings', 'ssh-last', opened.activeTabID])
+  })
+
+  it('右侧插入模式只激活已存在的单例页，不改变顺序', () => {
+    const assets = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'assets' })
+    const settings = reduceTabs(assets, { type: 'open-singleton', kind: 'settings' })
+    const reopened = reduceTabs(settings, { type: 'open-singleton', kind: 'assets' }, 'after_current')
+    expect(reopened.tabs).toEqual(settings.tabs)
+    expect(reopened.activeTabID).toBe('system:assets')
+  })
+
+  it('右侧插入模式在空工作区、当前 Tab 为末尾或缺失时追加到末尾', () => {
+    const first = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'assets' }, 'after_current')
+    const second = reduceTabs(first, { type: 'open-singleton', kind: 'settings' }, 'after_current')
+    const third = reduceTabs({ ...second, activeTabID: '' }, { type: 'open-singleton', kind: 'profiles' }, 'after_current')
+    expect(third.tabs.map(tab => tab.id)).toEqual(['system:assets', 'system:settings', 'system:profiles'])
+  })
+
   it('opens each singleton tab once and focuses the existing tab when reopened', () => {
     const opened = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'profiles' })
     const reopened = reduceTabs(opened, { type: 'open-singleton', kind: 'profiles' })
