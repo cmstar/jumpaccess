@@ -14,7 +14,7 @@ func TestTerminalStyleDefaultsAndLegacyCompatibility(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if value.Version != CurrentVersion || value.Terminal.LineHeight != 1 || value.Terminal.CursorStyle != "block" || !value.Terminal.CursorBlink || !value.Terminal.ShowScrollbar {
+			if value.Version != CurrentVersion || value.Terminal.LineHeight != 1 || value.Terminal.CursorStyle != "block" || !value.Terminal.CursorBlink || value.Terminal.ScrollbarVisibility != "active" {
 				t.Fatalf("unexpected terminal defaults: %#v", value.Terminal)
 			}
 		})
@@ -59,5 +59,24 @@ func TestTerminalCursorStyleValidation(t *testing.T) {
 		if err := value.Validate(); err == nil || !strings.Contains(err.Error(), "terminal.cursor_style") {
 			t.Fatalf("style %q: expected cursor style error, got %v", style, err)
 		}
+	}
+}
+
+func TestTerminalScrollbarVisibilityValidation(t *testing.T) {
+	for _, mode := range []string{"always", "active", "hidden"} {
+		value, err := Decode([]byte(fmt.Sprintf("[terminal]\nscrollbar_visibility = %q\n", mode)))
+		if err != nil || value.Terminal.ScrollbarVisibility != mode {
+			t.Fatalf("mode %s: decode failed: %v", mode, err)
+		}
+	}
+	for _, mode := range []string{"", "true", "auto", "ALWAYS"} {
+		value := Default()
+		value.Terminal.ScrollbarVisibility = mode
+		if err := value.Validate(); err == nil || !strings.Contains(err.Error(), "terminal.scrollbar_visibility") {
+			t.Fatalf("mode %q: expected validation error, got %v", mode, err)
+		}
+	}
+	if _, err := Decode([]byte("[terminal]\nshow_scrollbar = true\n")); err == nil {
+		t.Fatal("obsolete show_scrollbar field must be rejected")
 	}
 }

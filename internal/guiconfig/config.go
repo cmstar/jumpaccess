@@ -66,7 +66,7 @@ type Terminal struct {
 	LineHeight           float64    `toml:"line_height"`
 	CursorStyle          string     `toml:"cursor_style"`
 	CursorBlink          bool       `toml:"cursor_blink"`
-	ShowScrollbar        bool       `toml:"show_scrollbar"`
+	ScrollbarVisibility  string     `toml:"scrollbar_visibility"`
 	RightClickAction     string     `toml:"right_click_action"`
 	WarnOnMultiLinePaste bool       `toml:"warn_on_multi_line_paste"`
 }
@@ -170,7 +170,7 @@ func Default() Config {
 			LineHeight:           1,
 			CursorStyle:          "block",
 			CursorBlink:          true,
-			ShowScrollbar:        true,
+			ScrollbarVisibility:  "active",
 			RightClickAction:     TerminalRightClickPaste,
 			WarnOnMultiLinePaste: true,
 		},
@@ -301,6 +301,11 @@ func (c Config) Validate() error {
 	}
 	if math.IsNaN(c.Terminal.LineHeight) || c.Terminal.LineHeight < 1 || c.Terminal.LineHeight > 2 {
 		return fmt.Errorf("terminal.line_height must be between 1 and 2")
+	}
+	switch c.Terminal.ScrollbarVisibility {
+	case "always", "active", "hidden":
+	default:
+		return fmt.Errorf("terminal.scrollbar_visibility must be always, active, or hidden")
 	}
 	switch c.Terminal.CursorStyle {
 	case "block", "bar", "underline", "quarter_block":

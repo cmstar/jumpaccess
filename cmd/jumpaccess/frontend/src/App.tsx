@@ -67,6 +67,7 @@ import {
   type SFTPState,
   type TerminalRightClickAction,
   type TerminalCursorStyle,
+  type TerminalScrollbarVisibility,
   type ThemeMode,
   type Workspace,
   wailsBackend,
@@ -1651,8 +1652,8 @@ function SettingsView({ backend, fontFamilies, onLicense, onOpenConfig, onSave, 
                   <div className="terminal-cursor-blink"><label htmlFor="terminal-cursor-blink">闪烁</label><button id="terminal-cursor-blink" type="button" aria-label="光标闪烁" role="switch" aria-checked={preferences.terminalCursorBlink} className={preferences.terminalCursorBlink ? 'switch on' : 'switch'} onClick={() => update({ terminalCursorBlink: !preferences.terminalCursorBlink })}><span /></button></div>
                 </div>
               </div>
+              <div className="terminal-style-row"><label htmlFor="terminal-scrollbar-visibility">显示滚动条</label><select id="terminal-scrollbar-visibility" value={preferences.terminalScrollbarVisibility} onChange={(event) => update({ terminalScrollbarVisibility: event.target.value as TerminalScrollbarVisibility })}><option value="always">始终显示</option><option value="active">仅活跃时显示</option><option value="hidden">隐藏</option></select></div>
             </div>
-            <div className="setting-row"><span><strong>显示滚动条</strong><small>关闭后仍可使用滚轮翻阅终端历史输出。</small></span><button type="button" aria-label="显示滚动条" role="switch" aria-checked={preferences.terminalShowScrollbar} className={preferences.terminalShowScrollbar ? 'switch on' : 'switch'} onClick={() => update({ terminalShowScrollbar: !preferences.terminalShowScrollbar })}><span /></button></div>
           </section>
           <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />
           <section className="settings-card" id="settings-terminal-behavior">

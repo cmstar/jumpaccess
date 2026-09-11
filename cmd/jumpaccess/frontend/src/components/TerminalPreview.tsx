@@ -7,8 +7,7 @@ import { terminalDisplayOptions, terminalScheme } from '../model/terminalTheme'
 import { synchronizeTerminalViewportBackground } from './terminalViewport'
 import { TerminalBackgroundSurface, useTerminalBackground } from './TerminalBackground'
 
-// 用成对的标准缓冲区切换初始化预览光标，回到普通缓冲区后再写示例；无需抢焦点或访问 xterm 私有状态。
-const sample = '\x1b[?1049h\x1b[?1049l' + [
+const sampleOutput = [
   '\x1b[32muser@jumpaccess\x1b[0m:\x1b[34m~/demo\x1b[0m $ ls',
   '\x1b[34mDocuments/\x1b[0m  \x1b[32mrun.sh\x1b[0m  README.md  \x1b[36mlatest → release\x1b[0m',
   '',
@@ -19,6 +18,10 @@ const sample = '\x1b[?1049h\x1b[?1049l' + [
   Array.from({ length: 8 }, (_, i) => `\x1b[${100 + i}m  `).join('') + '\x1b[0m  Bright',
   '\x1b[32muser@jumpaccess\x1b[0m:~ $ ',
 ].join('\r\n')
+
+// 用成对的标准缓冲区切换初始化预览光标，无需抢焦点或访问 xterm 私有状态。
+// 重复示例形成少量可滚动历史；底部仍展示完整的配色、字体和光标示例。
+const sample = '\x1b[?1049h\x1b[?1049l' + [sampleOutput, sampleOutput, sampleOutput].join('\r\n\r\n')
 
 export function TerminalPreview({ preferences, label = '终端预览' }: { preferences: Preferences; label?: string }) {
   const backgroundVisible = !!useTerminalBackground().image
@@ -33,7 +36,7 @@ export function TerminalPreview({ preferences, label = '终端预览' }: { prefe
     const display = terminalDisplayOptions(initial.current)
     const instance = new Terminal({
       ...display,
-      disableStdin: true, cursorInactiveStyle: display.cursorStyle, scrollback: 0,
+      disableStdin: true, cursorInactiveStyle: display.cursorStyle, scrollback: 100,
     })
     const addon = new TerminalFitAddon()
     terminal.current = instance
@@ -59,12 +62,12 @@ export function TerminalPreview({ preferences, label = '终端预览' }: { prefe
     Object.assign(terminal.current.options, display, { cursorInactiveStyle: display.cursorStyle })
     synchronizeTerminalViewportBackground(host.current, display.theme.background)
     try { fit.current?.fit() } catch { /* 等待可用尺寸。 */ }
-  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, preferences.terminalShowScrollbar, scheme, backgroundVisible])
+  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, preferences.terminalScrollbarVisibility, scheme, backgroundVisible])
 
   return <div aria-label={label} className="terminal-preview" role="region">
     <div className="terminal-preview-caption"><span>{label}{preferences.terminalCursorBlink ? ' · 点击预览查看光标闪烁' : ''}</span><span aria-live="polite">{scheme.name} · {preferences.terminalFontSize} px · {preferences.terminalLineHeight} 倍行高</span></div>
     <TerminalBackgroundSurface className="terminal-preview-screen" style={{ backgroundColor: scheme.theme.background }}>
-      <div className="terminal-preview-host" data-terminal-cursor-style={preferences.terminalCursorStyle} data-terminal-show-scrollbar={preferences.terminalShowScrollbar} ref={host} style={{ height: Math.max(180, preferences.terminalFontSize * preferences.terminalLineHeight * 12) }} />
+      <div className="terminal-preview-host" data-terminal-cursor-style={preferences.terminalCursorStyle} data-terminal-scrollbar-visibility={preferences.terminalScrollbarVisibility} ref={host} style={{ height: Math.max(180, preferences.terminalFontSize * preferences.terminalLineHeight * 12) }} />
     </TerminalBackgroundSurface>
   </div>
 }

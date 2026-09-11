@@ -110,7 +110,7 @@ const bootstrapState: BootstrapState = {
     terminalLineHeight: 1,
     terminalCursorStyle: 'block',
     terminalCursorBlink: true,
-    terminalShowScrollbar: true,
+    terminalScrollbarVisibility: 'active',
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
@@ -934,21 +934,21 @@ test('配色保存失败时恢复已保存方案与预览', async () => {
   expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
 })
 
-test('显示滚动条默认开启，在终端样式面板关闭并保存后可重新开启', async () => {
+test('显示滚动条下拉框按顺序提供三种模式，默认仅活跃时显示并保存选择', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
   render(<App backend={backend} />)
   await screen.findByRole('heading', { name: '资产' })
   await user.click(screen.getByRole('button', { name: '打开设置' }))
   const panel = screen.getByRole('heading', { name: '终端样式' }).closest('section')!
-  const toggle = within(panel).getByRole('switch', { name: '显示滚动条' })
-  expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await user.click(toggle)
-  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalShowScrollbar: false })))
-  expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await user.click(toggle)
-  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalShowScrollbar: true })))
-  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  const select = within(panel).getByRole('combobox', { name: '显示滚动条' })
+  expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['始终显示', '仅活跃时显示', '隐藏'])
+  expect(select).toHaveValue('active')
+  for (const terminalScrollbarVisibility of ['always', 'hidden', 'active']) {
+    await user.selectOptions(select, terminalScrollbarVisibility)
+    await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalScrollbarVisibility })))
+    expect(select).toHaveValue(terminalScrollbarVisibility)
+  }
 })
 
 test('行高与光标样式、闪烁在终端样式面板设置并保存', async () => {

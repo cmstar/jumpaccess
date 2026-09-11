@@ -23,23 +23,32 @@ const preferences: Preferences = {
   terminalBackground: { ...defaultTerminalBackground },
   version: 6, theme: 'light', terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12,
   terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true,
-  terminalShowScrollbar: true,
+  terminalScrollbarVisibility: 'active',
   terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, confirmCloseActiveSession: true, showTabCloseButtons: true,
 }
 
 beforeEach(() => { mock.options.length = 0; vi.clearAllMocks() })
 
+test.each(['终端预览', '背景图预览'])('%s 保留超过一屏的示例历史，以便展示和操作滚动条', label => {
+  render(<TerminalPreview preferences={preferences} label={label} />)
+  expect(mock.options[0].scrollback).toBeGreaterThan(0)
+  // 默认 xterm 为 24 行；即使隐藏面板尚未完成尺寸测量，也应有可滚动历史。
+  expect(mock.write.mock.calls[0][0].split('\r\n').length).toBeGreaterThan(24)
+  expect(mock.options[0].disableStdin).toBe(true)
+  expect(mock.focus).not.toHaveBeenCalled()
+})
+
 test('预览同步滚动条开关且不重建终端', () => {
-  const view = (terminalShowScrollbar: boolean) => <TerminalPreview preferences={{ ...preferences, terminalShowScrollbar }} />
-  const { rerender } = render(view(true))
+  const view = (terminalScrollbarVisibility: 'always' | 'active' | 'hidden') => <TerminalPreview preferences={{ ...preferences, terminalScrollbarVisibility }} />
+  const { rerender } = render(view('active'))
   const host = screen.getByRole('region', { name: '终端预览' }).querySelector('.terminal-preview-host')!
-  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'true')
+  expect(host).toHaveAttribute('data-terminal-scrollbar-visibility', 'active')
   mock.fit.mockClear()
-  rerender(view(false))
-  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'false')
+  rerender(view('hidden'))
+  expect(host).toHaveAttribute('data-terminal-scrollbar-visibility', 'hidden')
   expect(mock.fit).toHaveBeenCalled()
-  rerender(view(true))
-  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'true')
+  rerender(view('active'))
+  expect(host).toHaveAttribute('data-terminal-scrollbar-visibility', 'active')
   expect(mock.options).toHaveLength(1)
   expect(mock.write).toHaveBeenCalledTimes(1)
 })

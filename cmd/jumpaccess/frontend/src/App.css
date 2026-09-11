@@ -1910,19 +1910,40 @@ details > summary::-webkit-details-marker {
 .terminal-preview-host .xterm { height: 100%; }
 .terminal-preview-loading { min-height: 238px; color: var(--muted); font-size: .7rem; }
 
-/* xterm 6 同时保留原生 viewport 和自绘滚动条，两者均隐藏整个槽位。 */
-:is(.terminal-host, .terminal-preview-host)[data-terminal-show-scrollbar="false"] .xterm-viewport {
+/* xterm 6 使用自绘滚动条；去掉遗留原生视口的槽位与箭头，避免叠加。 */
+:is(.terminal-host, .terminal-preview-host) {
+  --terminal-scrollbar-width: 7px;
+}
+
+:is(.terminal-host, .terminal-preview-host) .xterm-viewport {
   scrollbar-width: none;
 }
 
-:is(.terminal-host, .terminal-preview-host)[data-terminal-show-scrollbar="false"] .xterm-viewport::-webkit-scrollbar {
+:is(.terminal-host, .terminal-preview-host) .xterm-viewport::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
 }
 
-:is(.terminal-host, .terminal-preview-host)[data-terminal-show-scrollbar="false"] .xterm-scrollable-element > .scrollbar.vertical {
+:is(.terminal-host, .terminal-preview-host) .xterm-scrollable-element > .scrollbar.vertical {
+  background-color: var(--terminal-scrollbar-track);
+}
+
+/* xterm 内联指定 14px，以实际样式宽度覆盖槽位和滑块，尺寸适配器读取同一变量。 */
+:is(.terminal-host, .terminal-preview-host) .xterm-scrollable-element > .scrollbar.vertical,
+:is(.terminal-host, .terminal-preview-host) .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  width: var(--terminal-scrollbar-width) !important;
+}
+
+:is(.terminal-host, .terminal-preview-host)[data-terminal-scrollbar-visibility="hidden"] .xterm-scrollable-element > .scrollbar.vertical {
   display: none;
+}
+
+/* 始终显示时覆盖 xterm 的闲置隐藏状态；active 模式保留原有交互和淡出逻辑。 */
+:is(.terminal-host, .terminal-preview-host)[data-terminal-scrollbar-visibility="always"] .xterm-scrollable-element > .scrollbar.vertical {
+  opacity: 1;
+  pointer-events: auto;
+  transition: none;
 }
 
 /* xterm DOM 行的 line-height 等于实际字符格高。保留原生 border 闪烁，只定制贴底厚度；不影响普通下划线。 */

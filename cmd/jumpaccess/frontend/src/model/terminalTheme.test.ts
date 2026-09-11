@@ -74,6 +74,17 @@ test('共用渲染参数包含行高、光标样式和关闭的闪烁设置', ()
   expect(terminalDisplayOptions(preferences)).toMatchObject({ lineHeight: 1.5, cursorStyle: 'bar', cursorBlink: false })
 })
 
+test.each(terminalSchemes)('$id 的滚动滑块使用普通文字颜色和 50% 透明度，背景图不改变滑块颜色', scheme => {
+  const preferences = { terminalColorScheme: scheme.id, terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1, terminalCursorStyle: 'block' as const, terminalCursorBlink: true }
+  for (const backgroundVisible of [false, true]) {
+    expect(terminalDisplayOptions(preferences, backgroundVisible).theme).toMatchObject({
+      scrollbarSliderBackground: `${scheme.theme.foreground.slice(0, 7)}80`,
+      scrollbarSliderHoverBackground: `${scheme.theme.foreground.slice(0, 7)}80`,
+      scrollbarSliderActiveBackground: `${scheme.theme.foreground.slice(0, 7)}80`,
+    })
+  }
+})
+
 test('底部四分之一方块映射到 xterm 下划线，不传入不支持的光标值', () => {
   const preferences = { terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1.5, terminalCursorStyle: 'quarter_block' as const, terminalCursorBlink: true }
   expect(terminalDisplayOptions(preferences)).toMatchObject({ cursorStyle: 'underline', cursorBlink: true })

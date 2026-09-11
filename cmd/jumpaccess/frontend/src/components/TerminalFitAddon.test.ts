@@ -10,6 +10,7 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: class {
 test('隐藏整个滚动条后回收预留宽度，重新开启时恢复原有列数', () => {
   const host = document.createElement('div')
   host.style.width = '800px'
+  host.style.setProperty('--terminal-scrollbar-width', '7px')
   const element = document.createElement('div')
   element.style.padding = '0px'
   const screen = document.createElement('div')
@@ -22,12 +23,14 @@ test('隐藏整个滚动条后回收预留宽度，重新开启时恢复原有�
   const addon = new TerminalFitAddon()
   addon.activate(terminal)
   try {
-    host.dataset.terminalShowScrollbar = 'true'
-    expect(addon.proposeDimensions()).toEqual({ cols: 98, rows: 20 })
-    host.dataset.terminalShowScrollbar = 'false'
+    host.dataset.terminalScrollbarVisibility = 'active'
+    expect(addon.proposeDimensions()).toEqual({ cols: 99, rows: 20 })
+    host.dataset.terminalScrollbarVisibility = 'always'
+    expect(addon.proposeDimensions()).toEqual({ cols: 99, rows: 20 })
+    host.dataset.terminalScrollbarVisibility = 'hidden'
     expect(addon.proposeDimensions()).toEqual({ cols: 100, rows: 20 })
     expect(terminal.options.scrollback).toBe(10000)
-    host.dataset.terminalShowScrollbar = 'true'
-    expect(addon.proposeDimensions()).toEqual({ cols: 98, rows: 20 })
+    host.dataset.terminalScrollbarVisibility = 'active'
+    expect(addon.proposeDimensions()).toEqual({ cols: 99, rows: 20 })
   } finally { host.remove() }
 })

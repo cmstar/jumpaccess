@@ -11,10 +11,10 @@ test.each(['block', 'bar', 'underline', 'quarter_block'])('Wails 偏好映射双
     Tabs: { ConfirmCloseActiveSession: true, ShowCloseButtons: true },
   }
   const save = vi.fn().mockResolvedValue(undefined)
-  Object.assign(preferences.Terminal, { ShowScrollbar: false })
+  Object.assign(preferences.Terminal, { ScrollbarVisibility: 'hidden' })
   vi.stubGlobal('go', { main: { desktopApp: { Bootstrap: vi.fn().mockResolvedValue({ preferences }), SavePreferences: save } } })
   const state = await wailsBackend.bootstrap()
-  expect(state.preferences).toMatchObject({ terminalShowScrollbar: false })
+  expect(state.preferences).toMatchObject({ terminalScrollbarVisibility: 'hidden' })
   expect(state.preferences).toMatchObject({ terminalLineHeight: 1.25, terminalCursorStyle: style, terminalCursorBlink: false })
   await wailsBackend.savePreferences(state.preferences)
   expect(save).toHaveBeenCalledWith(preferences)

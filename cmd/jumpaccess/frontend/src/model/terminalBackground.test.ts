@@ -13,7 +13,8 @@ test('完整图块居中，长边按终端尺寸缩放，区域不足时完整�
 
 test('图片只使默认背景透明，保留 ANSI、选区、光标及反色需要的底色 RGB', () => {
   const preferences = { terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1, terminalCursorStyle: 'block' as const, terminalCursorBlink: true }
-  const base = terminalScheme('nord').theme
+  const base = terminalDisplayOptions(preferences, false).theme
+  expect(base).toMatchObject(terminalScheme('nord').theme)
   const options = terminalDisplayOptions(preferences, true)
   expect(options.allowTransparency).toBe(true)
   expect(options.theme).toEqual({ ...base, background: `${base.background}00` })

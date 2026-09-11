@@ -24,6 +24,10 @@ export function terminalScheme(id: string): TerminalScheme {
 // 预览和会话使用同一组渲染参数；UI 的应用主题不参与终端配色。
 export function terminalDisplayOptions(preferences: Pick<Preferences, 'terminalColorScheme' | 'terminalFontFamily' | 'terminalFontSize' | 'terminalLineHeight' | 'terminalCursorStyle' | 'terminalCursorBlink'>, backgroundVisible = false) {
   const theme = { ...terminalScheme(preferences.terminalColorScheme).theme }
+  const scrollbarThumb = `${theme.foreground.slice(0, 7)}80`
+  theme.scrollbarSliderBackground = scrollbarThumb
+  theme.scrollbarSliderHoverBackground = scrollbarThumb
+  theme.scrollbarSliderActiveBackground = scrollbarThumb
   if (backgroundVisible) theme.background = `${theme.background.slice(0, 7)}00`
   return {
     // 创建时启用，后续开关背景只更新 theme，不重建终端或会话。

@@ -106,7 +106,7 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 	want.Terminal.LineHeight = 1.25
 	want.Terminal.CursorStyle = "quarter_block"
 	want.Terminal.CursorBlink = false
-	want.Terminal.ShowScrollbar = false
+	want.Terminal.ScrollbarVisibility = "hidden"
 	want.Terminal.RightClickAction = TerminalRightClickContextMenu
 	want.Terminal.WarnOnMultiLinePaste = false
 	want.Tabs.ConfirmCloseActiveSession = false
@@ -134,7 +134,7 @@ func TestStoreRoundTripsDesktopPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded := string(data)
-	for _, field := range []string{"line_height = 1.25", "cursor_style = \"quarter_block\"", "cursor_blink = false", "show_scrollbar = false"} {
+	for _, field := range []string{"line_height = 1.25", "cursor_style = \"quarter_block\"", "cursor_blink = false", "scrollbar_visibility = \"hidden\""} {
 		if !strings.Contains(encoded, field) {
 			t.Fatalf("missing terminal style field %q", field)
 		}
