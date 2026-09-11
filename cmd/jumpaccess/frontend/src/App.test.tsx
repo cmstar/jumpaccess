@@ -114,6 +114,7 @@ const bootstrapState: BootstrapState = {
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
+    terminalCopyOnEnter: true,
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
     newTabPosition: 'end',
@@ -1174,6 +1175,14 @@ test('鼠标右键与字号使用一致的横向布局并可切换为上下文�
   await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
     terminalWarnOnMultiLinePaste: false,
   })))
+
+  const copySwitch = within(behaviorPanel).getByRole('switch', { name: '选中文本时按回车复制' })
+  expect(copySwitch).toHaveAttribute('aria-checked', 'true')
+  await user.click(copySwitch)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalCopyOnEnter: false })))
+  expect(copySwitch).toHaveAttribute('aria-checked', 'false')
+  await user.click(copySwitch)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalCopyOnEnter: true })))
 })
 
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {

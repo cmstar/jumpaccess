@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 10
+const CurrentVersion = 11
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -69,6 +69,7 @@ type Terminal struct {
 	ScrollbarVisibility  string     `toml:"scrollbar_visibility"`
 	RightClickAction     string     `toml:"right_click_action"`
 	WarnOnMultiLinePaste bool       `toml:"warn_on_multi_line_paste"`
+	CopyOnEnter          bool       `toml:"copy_on_enter"`
 }
 
 // Background 只作用于 GUI SSH 终端内容区域。
@@ -174,6 +175,7 @@ func Default() Config {
 			ScrollbarVisibility:  "active",
 			RightClickAction:     TerminalRightClickPaste,
 			WarnOnMultiLinePaste: true,
+			CopyOnEnter:          true,
 		},
 		Tabs: Tabs{
 			NewTabPosition:            "end",

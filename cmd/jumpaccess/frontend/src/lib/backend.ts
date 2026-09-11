@@ -19,6 +19,7 @@ export interface Preferences {
   terminalColorScheme: string
   terminalRightClickAction: TerminalRightClickAction
   terminalWarnOnMultiLinePaste: boolean
+  terminalCopyOnEnter: boolean
   confirmCloseActiveSession: boolean
   showTabCloseButtons: boolean
   newTabPosition: NewTabPosition
@@ -274,7 +275,7 @@ export interface Backend {
 type GoPreferences = {
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
+  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean; NewTabPosition: NewTabPosition }
 }
 
@@ -384,6 +385,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalColorScheme: value.Terminal.ColorScheme,
     terminalRightClickAction: value.Terminal.RightClickAction,
     terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
+    terminalCopyOnEnter: value.Terminal.CopyOnEnter,
     confirmCloseActiveSession: value.Tabs.ConfirmCloseActiveSession,
     showTabCloseButtons: value.Tabs.ShowCloseButtons,
     newTabPosition: value.Tabs.NewTabPosition,
@@ -407,6 +409,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       ColorScheme: value.terminalColorScheme,
       RightClickAction: value.terminalRightClickAction,
       WarnOnMultiLinePaste: value.terminalWarnOnMultiLinePaste,
+      CopyOnEnter: value.terminalCopyOnEnter,
     },
     Tabs: {
       ConfirmCloseActiveSession: value.confirmCloseActiveSession,

@@ -1669,7 +1669,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
           </section>
           <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />
           <section className="settings-card" id="settings-terminal-behavior">
-            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标与粘贴操作。</p></div></div>
+            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标、复制与粘贴操作。</p></div></div>
             <div className="terminal-style-fields">
               <div className="terminal-style-row">
                 <div><label htmlFor="terminal-right-click">鼠标右键</label><small className="setting-help" id="terminal-right-click-help">打开上下文菜单后，右键提供复制和粘贴操作。</small></div>
@@ -1677,6 +1677,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
               </div>
             </div>
             <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
+            <div className="setting-row"><span><strong>选中文本时按回车复制</strong><small id="terminal-copy-on-enter-help">按回车复制选中文本并取消选择，不向终端发送回车。</small></span><button aria-label="选中文本时按回车复制" aria-describedby="terminal-copy-on-enter-help" role="switch" aria-checked={preferences.terminalCopyOnEnter} className={preferences.terminalCopyOnEnter ? 'switch on' : 'switch'} onClick={() => update({ terminalCopyOnEnter: !preferences.terminalCopyOnEnter })}><span /></button></div>
           </section>
           <section className="settings-card" id="settings-tabs">
             <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的打开位置、关闭入口和确认方式。</p></div></div>

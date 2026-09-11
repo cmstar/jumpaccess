@@ -42,6 +42,7 @@ vi.mock('@xterm/xterm', () => ({
     focus() {}
     getSelection() { return terminalMock.selection }
     hasSelection() { return terminalMock.selection.length > 0 }
+    clearSelection() { terminalMock.selection = ''; terminalMock.selectionHandler?.() }
     input(data: string) { terminalMock.inputs.push(data); terminalMock.dataHandler?.(data) }
     paste(data: string) { terminalMock.pasted.push(data) }
     dispose() {}
@@ -82,6 +83,7 @@ const preferences: Preferences = {
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,
+  terminalCopyOnEnter: true,
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
   newTabPosition: 'end',
@@ -99,6 +101,151 @@ const disconnectedSession: SessionState = {
 }
 
 const activeSession: SessionState = { ...disconnectedSession, status: 'active' }
+
+// 模拟 xterm：仅当按键被放行时，才进入现有的 SSH 输入通道。
+function pressEnter(type = 'keydown', init: KeyboardEventInit = {}) {
+  const event = new KeyboardEvent(type, { key: 'Enter', cancelable: true, ...init })
+  let allowed: boolean | undefined
+  act(() => {
+    allowed = terminalMock.keyHandler?.(event)
+    if (allowed && type === 'keydown') terminalMock.dataHandler?.('\r')
+  })
+  return { event, allowed }
+}
+
+function setupEnterCopy(session = activeSession, transferBusy = false) {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
+  const onReconnect = vi.fn()
+  const onActionsChange = vi.fn()
+  const view = (enabled: boolean) => <TerminalPane backend={backend} onReconnect={onReconnect} onActionsChange={onActionsChange} output="" preferences={{ ...preferences, terminalCopyOnEnter: enabled }} session={session} transferBusy={transferBusy} />
+  const rendered = render(view(true))
+  return { ...rendered, view, backend, writeText, onReconnect, onActionsChange }
+}
+
+test('有选区时 Enter 复制并取消选区，无选区时正常发送回车', async () => {
+  const { backend, writeText, onActionsChange } = setupEnterCopy()
+  terminalMock.selection = '第一行\nsecond line'
+  const { event, allowed } = pressEnter()
+  expect(allowed).toBe(false)
+  expect(event.defaultPrevented).toBe(true)
+  await waitFor(() => expect(terminalMock.selection).toBe(''))
+  expect(writeText).toHaveBeenCalledWith('第一行\nsecond line')
+  expect(onActionsChange.mock.calls.at(-1)?.[0]?.canCopy).toBe(false)
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+  pressEnter('keyup')
+  expect(pressEnter().allowed).toBe(true)
+  expect(backend.writeSSHSession).toHaveBeenCalledExactlyOnceWith(activeSession.id, '\r')
+})
+
+test('复制回车的 keypress 和长按重复事件在松键前全部拦截', async () => {
+  const { backend, writeText, rerender, view } = setupEnterCopy()
+  terminalMock.selection = 'selected'
+  pressEnter()
+  await waitFor(() => expect(terminalMock.selection).toBe(''))
+  rerender(view(false))
+  expect(pressEnter('keypress').allowed).toBe(false)
+  expect(pressEnter('keydown', { repeat: true }).allowed).toBe(false)
+  expect(pressEnter('keyup').allowed).toBe(false)
+  expect(writeText).toHaveBeenCalledTimes(1)
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+  expect(pressEnter().allowed).toBe(true)
+})
+
+test('回车复制开关立即作用于已有终端，关闭后保留选区并放行回车', async () => {
+  const { rerender, view, backend, writeText } = setupEnterCopy()
+  const instances = terminalMock.instances
+  terminalMock.selection = 'selected'
+  rerender(view(false))
+  expect(terminalMock.instances).toBe(instances)
+  expect(terminalMock.selection).toBe('selected')
+  expect(pressEnter().allowed).toBe(true)
+  expect(writeText).not.toHaveBeenCalled()
+  expect(backend.writeSSHSession).toHaveBeenCalledTimes(1)
+  rerender(view(true))
+  expect(pressEnter().allowed).toBe(false)
+  await waitFor(() => expect(terminalMock.selection).toBe(''))
+  expect(terminalMock.instances).toBe(instances)
+})
+
+test.each(['rejected', 'unavailable'])('剪贴板 %s 时保留选区且不发送回车', async (failure) => {
+  const { backend, writeText } = setupEnterCopy()
+  if (failure === 'rejected') writeText.mockRejectedValue(new Error('denied'))
+  else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+  terminalMock.selection = 'selected'
+  await act(async () => { expect(pressEnter().allowed).toBe(false) })
+  expect(terminalMock.selection).toBe('selected')
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+})
+
+test.each([
+  { ctrlKey: true }, { altKey: true }, { shiftKey: true }, { metaKey: true },
+  { isComposing: true }, { keyCode: 229 },
+])('组合键或输入法确认不触发回车复制：%j', (init) => {
+  const { writeText } = setupEnterCopy()
+  terminalMock.selection = 'selected'
+  expect(pressEnter('keydown', init).allowed).toBe(true)
+  expect(terminalMock.selection).toBe('selected')
+  expect(writeText).not.toHaveBeenCalled()
+})
+
+test('composition 期间不复制，结束后普通 Enter 恢复复制', async () => {
+  const { container, writeText } = setupEnterCopy()
+  const host = container.querySelector('.terminal-host')!
+  terminalMock.selection = 'selected'
+  fireEvent.compositionStart(host)
+  expect(pressEnter().allowed).toBe(true)
+  expect(writeText).not.toHaveBeenCalled()
+  fireEvent.compositionEnd(host)
+  expect(pressEnter().allowed).toBe(false)
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+})
+
+test('断线后优先复制选区，松键后的下一次回车才重连', async () => {
+  const { onReconnect } = setupEnterCopy(disconnectedSession)
+  terminalMock.selection = 'history'
+  pressEnter()
+  await waitFor(() => expect(terminalMock.selection).toBe(''))
+  expect(onReconnect).not.toHaveBeenCalled()
+  pressEnter('keydown', { repeat: true })
+  expect(onReconnect).not.toHaveBeenCalled()
+  pressEnter('keyup')
+  pressEnter()
+  expect(onReconnect).toHaveBeenCalledTimes(1)
+})
+
+test('文件传输期间允许回车复制历史文本但不发送输入', async () => {
+  const { backend, writeText } = setupEnterCopy(activeSession, true)
+  terminalMock.selection = 'history'
+  pressEnter()
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('history'))
+  pressEnter('keyup')
+  expect(pressEnter().allowed).toBe(false)
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+})
+
+test('异步复制完成不清除用户后来重新建立的同文选区', async () => {
+  const { writeText } = setupEnterCopy()
+  let finish!: () => void
+  writeText.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+  terminalMock.selection = 'same text'
+  pressEnter()
+  act(() => terminalMock.selectionHandler?.())
+  await act(async () => finish())
+  expect(terminalMock.selection).toBe('same text')
+})
+
+test('复制期间终端卸载，迟到的剪贴板结果不再修改终端', async () => {
+  const { writeText, unmount } = setupEnterCopy()
+  let finish!: () => void
+  writeText.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+  terminalMock.selection = 'history'
+  pressEnter()
+  unmount()
+  await act(async () => finish())
+  expect(terminalMock.selection).toBe('history')
+})
 
 test('启用和关闭背景图不重建终端，保留选区及输入通道', async () => {
   let loaded: (() => void) | null = null

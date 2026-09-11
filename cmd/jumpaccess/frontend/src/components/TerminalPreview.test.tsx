@@ -24,7 +24,7 @@ const preferences: Preferences = {
   version: 6, theme: 'light', terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12,
   terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true,
   terminalScrollbarVisibility: 'active',
-  terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
+  terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
 }
 
 beforeEach(() => { mock.options.length = 0; vi.clearAllMocks() })

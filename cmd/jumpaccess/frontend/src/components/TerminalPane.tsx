@@ -83,6 +83,8 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const reconnectRef = useRef(onReconnect)
   const rightClickActionRef = useRef(preferences.terminalRightClickAction)
   const warnOnMultiLinePasteRef = useRef(preferences.terminalWarnOnMultiLinePaste)
+  const copyOnEnterRef = useRef(preferences.terminalCopyOnEnter)
+  const selectionRevisionRef = useRef(0)
   const statusRef = useRef(session.status)
   const transferBusyRef = useRef(transferBusy)
   transferBusyRef.current = transferBusy
@@ -95,6 +97,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   reconnectRef.current = onReconnect
   rightClickActionRef.current = preferences.terminalRightClickAction
   warnOnMultiLinePasteRef.current = preferences.terminalWarnOnMultiLinePaste
+  copyOnEnterRef.current = preferences.terminalCopyOnEnter
   statusRef.current = session.status
 
   function closePasteWarning(refocus: boolean) {
@@ -145,17 +148,22 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     sendPastedText(pending.text, pending.sessionID)
   }
 
-  async function copySelection() {
+  async function copySelection(clearOnSuccess = false) {
     const terminal = terminalRef.current
     const selection = terminal?.getSelection() ?? ''
+    const revision = selectionRevisionRef.current
     setContextMenu(null)
-    if (!terminal || !selection) return
+    if (!terminal || !selection || !navigator.clipboard?.writeText) return
     try {
-      await navigator.clipboard?.writeText(selection)
+      await navigator.clipboard.writeText(selection)
+      // 异步复制不能清除后来建立的选区，也不能操作已卸载的终端。
+      if (clearOnSuccess && terminalRef.current === terminal && selectionRevisionRef.current === revision && terminal.getSelection() === selection) {
+        terminal.clearSelection()
+      }
     } catch {
       // Clipboard access can be denied by the host WebView; leave the selection intact.
     } finally {
-      terminal.focus()
+      if (!clearOnSuccess && terminalRef.current === terminal) terminal.focus()
     }
   }
 
@@ -185,7 +193,10 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       copy: copySelection,
       paste: requestPaste,
     })
-    const selectionChanged = terminal.onSelectionChange(reportActions)
+    const selectionChanged = terminal.onSelectionChange(() => {
+      selectionRevisionRef.current += 1
+      reportActions()
+    })
     reportActions()
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault()
@@ -231,7 +242,33 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
         // WebView may report a zero-sized host while switching views; the next resize retries.
       }
     }
+    let copyEnterHeld = false
+    let composing = false
+    const onCompositionStart = () => { composing = true }
+    const onCompositionEnd = () => { composing = false }
+    const onBlur = () => { composing = false }
+    host.addEventListener('compositionstart', onCompositionStart, true)
+    host.addEventListener('compositionend', onCompositionEnd, true)
+    host.addEventListener('blur', onBlur, true)
     terminal.attachCustomKeyEventHandler((event) => {
+      if (event.key === 'Enter') {
+        // 新的独立按键也会复位，兼容切换窗口时丢失 keyup 的情况。
+        if (event.type === 'keydown' && !event.repeat) copyEnterHeld = false
+        if (copyEnterHeld) {
+          if (event.type === 'keyup') copyEnterHeld = false
+          event.preventDefault()
+          return false
+        }
+        const plainEnter = !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey
+        // keyCode 229 兼容部分 WebView 在输入法确认时未设置 isComposing 的情况。
+        const isComposing = composing || event.isComposing || event.keyCode === 229
+        if (copyOnEnterRef.current && event.type === 'keydown' && plainEnter && !isComposing && terminal.hasSelection()) {
+          copyEnterHeld = true
+          event.preventDefault()
+          void copySelection(true)
+          return false
+        }
+      }
       if (transferBusyRef.current) return false
       if (event.type === 'keydown' && event.key === 'Insert' && !event.altKey && !event.metaKey) {
         if (event.ctrlKey && !event.shiftKey) {
@@ -271,6 +308,9 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       observer.disconnect()
       host.removeEventListener('contextmenu', onContextMenu)
       host.removeEventListener('paste', onPaste, true)
+      host.removeEventListener('compositionstart', onCompositionStart, true)
+      host.removeEventListener('compositionend', onCompositionEnd, true)
+      host.removeEventListener('blur', onBlur, true)
       selectionChanged.dispose()
       osc7.dispose()
       input.dispose()
