@@ -205,6 +205,61 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
   }
 }
 
+test.each(['ssh', 'sftp'] as const)('%s Tab 悬停按自己的 Profile 和组织显示名称，恢复后也不展示账号 ID', async (type) => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, workspace: {
+      activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }, {
+        id: 'restored', type, profile: 'staging', organization: 'org-1',
+        target: 'asset-1', assetId: 'asset-1', assetName: 'restored-server', account: 'account-1',
+      }],
+    } }),
+    listOrganizations: vi.fn(async (profile) => [{ id: 'org-1', name: profile === 'staging' ? '测试中心' : '研发中心' }]),
+    getAsset: vi.fn(async (request) => ({ ...assetDetail, accounts: [{
+      id: 'account-1', name: request.profile === 'staging' ? '部署账号' : '生产账号', username: 'deploy', alias: '',
+    }] })),
+  })
+  render(<App backend={backend} />)
+  const tab = await screen.findByRole('tab', { name: 'restored-server' })
+  fireEvent.mouseEnter(tab)
+  await waitFor(() => expect(tab).toHaveAttribute('title', expect.stringContaining('Organization: 测试中心')))
+  expect(tab).toHaveAttribute('title', expect.stringContaining('Account: 部署账号'))
+  expect(tab.getAttribute('title')).not.toMatch(/org-1|account-1|生产账号|研发中心/)
+  expect(backend.getAsset).toHaveBeenCalledWith({ profile: 'staging', organization: 'org-1', asset: 'asset-1' })
+  expect(backend.startSSHSession).not.toHaveBeenCalled()
+  expect(backend.startSFTPSession).not.toHaveBeenCalled()
+})
+
+test('Tab 名称查询失败时不退回 ID，再次悬停重试并复用成功结果', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, workspace: { activeTabId: 'restored', tabs: [{
+      id: 'restored', type: 'ssh', profile: 'staging', organization: 'org-2',
+      target: 'asset-2', assetId: 'asset-2', assetName: 'restored-server', account: 'account-3',
+    }] } }),
+    listOrganizations: vi.fn(async (profile) => {
+      if (profile === 'staging') throw new Error('offline')
+      return [{ id: 'org-1', name: '研发中心' }]
+    }),
+    getAsset: vi.fn(async (request) => {
+      if (request.profile === 'staging') throw new Error('offline')
+      return assetDetail
+    }),
+  })
+  render(<App backend={backend} />)
+  const tab = await screen.findByRole('tab', { name: 'restored-server' })
+  await waitFor(() => expect(backend.listOrganizations).toHaveBeenCalledWith('staging'))
+  await waitFor(() => expect(tab).toHaveAttribute('title', expect.stringContaining('Account: 名称暂不可用')))
+  expect(tab.getAttribute('title')).not.toMatch(/org-2|account-3/)
+  vi.mocked(backend.listOrganizations).mockResolvedValue([{ id: 'org-2', name: '运维中心' }])
+  vi.mocked(backend.getAsset).mockResolvedValue({ ...assetDetail, id: 'asset-2', accounts: [{ id: 'account-3', name: '', username: 'ops', alias: '' }] })
+  fireEvent.mouseEnter(tab)
+  await waitFor(() => expect(tab).toHaveAttribute('title', expect.stringContaining('Organization: 运维中心')))
+  await waitFor(() => expect(tab).toHaveAttribute('title', expect.stringContaining('Account: ops')))
+  const calls = [vi.mocked(backend.listOrganizations).mock.calls.length, vi.mocked(backend.getAsset).mock.calls.length]
+  fireEvent.mouseLeave(tab)
+  fireEvent.mouseEnter(tab)
+  expect([vi.mocked(backend.listOrganizations).mock.calls.length, vi.mocked(backend.getAsset).mock.calls.length]).toEqual(calls)
+})
+
 test('恢复空工作区时显示起始页而不自动创建资产 Tab', async () => {
   const backend = makeBackend({
     bootstrap: vi.fn().mockResolvedValue({

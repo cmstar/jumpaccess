@@ -48,6 +48,7 @@ import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
 import { TerminalBackgroundProvider, TerminalBackgroundSurface } from './components/TerminalBackground'
 import { TerminalBackgroundSettings } from './components/TerminalBackgroundSettings'
 import { terminalScheme } from './model/terminalTheme'
+import { type TabDisplayNames, useTabDisplayNames } from './model/useTabDisplayNames'
 import {
   type Account,
   type Alias,
@@ -166,15 +167,15 @@ function tabTitle(tab: AppTab): string {
   return { assets: '资产', profiles: 'Profile', settings: '设置' }[tab.kind]
 }
 
-function tabTooltip(tab: SSHTab | SFTPTab): string {
+function tabTooltip(tab: SSHTab | SFTPTab, names: TabDisplayNames): string {
   const descriptor = tab.descriptor
   return [
     descriptor.alias ? `Alias: ${descriptor.alias}` : '',
     `Asset: ${descriptor.assetName || descriptor.target}`,
     descriptor.assetID ? `ID: ${descriptor.assetID}` : '',
     `Profile: ${descriptor.profile}`,
-    `Organization: ${descriptor.organization}`,
-    descriptor.account ? `Account: ${descriptor.account}` : '',
+    `Organization: ${names.organization}`,
+    descriptor.account ? `Account: ${names.account}` : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -1073,6 +1074,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   return (
     <TerminalBackgroundProvider backend={backend} settings={bootstrap.preferences.terminalBackground}><main className={`app-shell ${navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'windows'}`}>
       <TitleBar
+        backend={backend}
         activeTabID={workspace.activeTabID}
         auth={currentAuth}
         onActivate={(id) => dispatchTabs({ type: 'activate', id })}
@@ -1147,7 +1149,8 @@ function tabIcon(tab: AppTab) {
   return <TerminalSquare />
 }
 
-function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+function TitleBar({ backend, activeTabID, auth, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+  backend: Backend
   activeTabID: string
   auth: ReturnType<typeof authPresentation>
   onActivate: (id: string) => void
@@ -1161,6 +1164,7 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, 
   showTabCloseButtons: boolean
   tabs: AppTab[]
 }) {
+  const tabDisplayNames = useTabDisplayNames(backend, tabs)
   const mac = navigator.platform.toLowerCase().includes('mac')
   const runtime = window.runtime
   const [maximized, setMaximized] = useState(false)
@@ -1244,14 +1248,18 @@ function TitleBar({ activeTabID, auth, onActivate, onClose, onMinimize, onMove, 
           aria-selected={tab.id === activeTabID}
           className="tab-activate"
           onClick={() => onActivate(tab.id)}
+          onMouseEnter={() => { if (isConnectionTab(tab)) tabDisplayNames.load(tab) }}
+          onFocus={() => { if (isConnectionTab(tab)) tabDisplayNames.load(tab) }}
           onKeyDown={(event) => activateFromKeyboard(event, index)}
           role="tab"
           tabIndex={tab.id === activeTabID ? 0 : -1}
-          title={isConnectionTab(tab) ? tabTooltip(tab) : tabTitle(tab)}
+          title={isConnectionTab(tab) ? tabTooltip(tab, tabDisplayNames.names(tab)) : tabTitle(tab)}
           type="button"
         >
-          {tabIcon(tab)}<span className="tab-primary">{tabTitle(tab)}</span>
-          {tab.kind === 'ssh' && tab.descriptor.alias && tab.descriptor.assetName ? <small>{tab.descriptor.assetName}</small> : null}
+          {tabIcon(tab)}<span className="tab-labels">
+            <span className="tab-primary">{tabTitle(tab)}</span>
+            {tab.kind === 'ssh' && tab.descriptor.alias && tab.descriptor.assetName ? <small>{tab.descriptor.assetName}</small> : null}
+          </span>
         </button>
         {showTabCloseButtons ? <button aria-label={`关闭 ${tabTitle(tab)} Tab`} className="tab-close" onClick={() => onClose(tab)} title="关闭 Tab" type="button"><X /></button> : null}
         {tab.id !== activeTabID && tabs[index + 1] && tabs[index + 1].id !== activeTabID

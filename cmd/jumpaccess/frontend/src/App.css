@@ -89,10 +89,11 @@
 }
 
 .workspace-tab {
+  container: workspace-tab / inline-size;
   position: relative;
   display: flex;
   width: 220px;
-  min-width: 132px;
+  min-width: 44px;
   max-width: 228px;
   height: 38px;
   flex: 0 1 220px;
@@ -151,8 +152,18 @@
   flex: 0 0 auto;
 }
 
+.tab-labels {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  align-items: baseline;
+}
+
 .tab-primary {
   min-width: 0;
+  max-width: 100%;
+  flex: 0 0 auto;
   overflow: hidden;
   font-size: .6rem;
   font-weight: 650;
@@ -162,11 +173,18 @@
 
 .tab-activate small {
   min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   color: var(--subtle);
   font-size: .5rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tab-labels small::before {
+  display: inline-block;
+  width: 7px;
+  content: '';
 }
 
 .tab-close {
@@ -190,6 +208,30 @@
 .tab-close svg {
   width: 12px;
   height: 12px;
+}
+
+@container workspace-tab (max-width: 80px) {
+  .tab-activate {
+    gap: 3px;
+    padding-inline: 2px;
+  }
+
+  .tab-close {
+    width: 20px;
+    margin-right: 2px;
+  }
+}
+
+@container workspace-tab (max-width: 60px) {
+  .tab-activate {
+    justify-content: center;
+    gap: 0;
+  }
+
+  .tab-labels {
+    width: 0;
+    flex: 0 0 0;
+  }
 }
 
 .titlebar-drag-region {
@@ -3190,7 +3232,6 @@ details > summary::-webkit-details-marker {
   body { overflow: hidden; }
   .titlebar-brand { display: none; }
   .tab-strip { max-width: 46vw; }
-  .workspace-tab { min-width: 108px; }
   .titlebar-actions .titlebar-button:first-child { display: none; }
   .window-controls button { width: 40px; }
   .sidebar { display: none; }
