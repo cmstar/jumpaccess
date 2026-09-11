@@ -592,6 +592,62 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
   await user.click(screen.getByRole('button', { name: '立即同步' }))
   await waitFor(() => expect(vi.mocked(backend.listAssets).mock.calls.length).toBeGreaterThan(callsBeforeRefresh))
   expect(screen.getByText(/最近同步/)).toBeInTheDocument()
+  expect(backend.listOrganizations).toHaveBeenCalledTimes(1)
+})
+
+test.each(['加载失败', '返回空列表', '未选择组织'])('立即同步在组织列表%s后重试并填充选项', async (scenario) => {
+  const listOrganizations = vi.fn().mockResolvedValue([{ id: 'org-1', name: '研发中心' }])
+  if (scenario === '返回空列表') listOrganizations.mockResolvedValueOnce([])
+  else listOrganizations.mockRejectedValueOnce(new Error('组织网络不可用'))
+  const backend = makeBackend({
+    listOrganizations,
+    ...(scenario === '未选择组织' ? {
+      bootstrap: vi.fn().mockResolvedValue({
+        ...bootstrapState,
+        currentOrganization: '',
+        profiles: bootstrapState.profiles.map((item) => ({ ...item, organization: '' })),
+      }),
+    } : {}),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  if (scenario !== '返回空列表') expect(await screen.findByRole('alert')).toHaveTextContent('组织网络不可用')
+  const sync = await screen.findByRole('button', { name: '立即同步' })
+  expect(sync).toBeEnabled()
+  const assetCalls = vi.mocked(backend.listAssets).mock.calls.length
+  await user.click(sync)
+
+  await waitFor(() => expect(listOrganizations).toHaveBeenCalledTimes(2))
+  expect(listOrganizations).toHaveBeenLastCalledWith('production')
+  await user.click(screen.getByRole('button', { name: /^当前 Organization：/ }))
+  expect(await screen.findByRole('option', { name: /^研发中心/ })).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  if (scenario === '未选择组织') expect(backend.listAssets).not.toHaveBeenCalled()
+  else expect(vi.mocked(backend.listAssets).mock.calls.length).toBeGreaterThan(assetCalls)
+})
+
+test('组织重试期间保持同步中，失败后可以再次同步', async () => {
+  let rejectRetry!: (reason: Error) => void
+  const listOrganizations = vi.fn()
+    .mockRejectedValueOnce(new Error('组织网络不可用'))
+    .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRetry = reject }))
+    .mockResolvedValue([{ id: 'org-1', name: '研发中心' }])
+  const backend = makeBackend({ listOrganizations })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  await screen.findByRole('alert')
+  await user.click(await screen.findByRole('button', { name: '立即同步' }))
+  await waitFor(() => expect(listOrganizations).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(backend.listAssets).toHaveBeenCalledTimes(2))
+  expect(screen.getByRole('button', { name: '同步中…' })).toBeDisabled()
+  await act(async () => rejectRetry(new Error('组织重试失败')))
+  expect(await screen.findByRole('alert')).toHaveTextContent('组织重试失败')
+  await user.click(await screen.findByRole('button', { name: '立即同步' }))
+
+  expect(await screen.findByRole('button', { name: '当前 Organization：研发中心' })).toBeInTheDocument()
+  expect(listOrganizations).toHaveBeenCalledTimes(3)
 })
 
 test('资产详情不显示 Gateway 主机密钥提示', async () => {

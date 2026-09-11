@@ -283,6 +283,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const [profile, setProfile] = useState('')
   const [organization, setOrganization] = useState('')
   const [organizations, setOrganizations] = useState<Organization[]>([])
+  const [organizationRefreshKey, setOrganizationRefreshKey] = useState(0)
+  const [organizationsLoading, setOrganizationsLoading] = useState(false)
   const [assets, setAssets] = useState<AssetPage>({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
   const [details, setDetails] = useState<Record<string, AssetDetail>>({})
   const [selectedAssetID, setSelectedAssetID] = useState('')
@@ -347,6 +349,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   const preferences = bootstrap?.preferences
   const currentProfile = bootstrap?.profiles.find((item) => item.name === profile)
   const currentProfileLoggedIn = currentProfile?.auth.loggedIn === true
+  const syncingResources = refreshing || organizationsLoading
   const currentAuth = authPresentation(currentProfile?.auth)
   const selectedAsset = assets.results.find((asset) => asset.id === selectedAssetID) ?? assets.results[0]
   const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
@@ -503,16 +506,19 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }, [search])
 
   useEffect(() => {
+    setOrganizations([])
     if (!profile || !currentProfileLoggedIn) {
-      setOrganizations([])
+      setOrganizationsLoading(false)
       return
     }
     let cancelled = false
+    setOrganizationsLoading(true)
     backend.listOrganizations(profile)
       .then((values) => !cancelled && setOrganizations(values))
       .catch((reason) => !cancelled && setError(errorMessage(reason)))
+      .finally(() => !cancelled && setOrganizationsLoading(false))
     return () => { cancelled = true }
-  }, [backend, currentProfileLoggedIn, profile])
+  }, [backend, currentProfileLoggedIn, profile, organizationRefreshKey])
 
   useEffect(() => {
     if (!profile || !organization || !currentProfileLoggedIn) {
@@ -630,6 +636,12 @@ export default function App({ backend = wailsBackend }: AppProps) {
     } catch (reason) {
       setError(errorMessage(reason))
     }
+  }
+
+  function syncResources() {
+    setError('')
+    if (organizations.length === 0) setOrganizationRefreshKey((value) => value + 1)
+    setRefreshKey((value) => value + 1)
   }
 
   async function addProfile(name: string, url: string) {
@@ -1072,7 +1084,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         {activeTab?.kind === 'assets' ? (
           <div className="content">
             <section className="asset-pane">
-              <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={refreshing || !organization} onClick={() => setRefreshKey((value) => value + 1)} type="button"><RefreshCcw className={refreshing ? 'spin' : ''} />{refreshing ? '同步中…' : '立即同步'}</button></div></PageHeading>
+              <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={syncingResources || !profile || !currentProfileLoggedIn} onClick={syncResources} type="button"><RefreshCcw className={syncingResources ? 'spin' : ''} />{syncingResources ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
                 <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
                 <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onConnectSFTP={() => void connectAsset(asset, 'sftp')} onConnectAliasSFTP={(alias) => void connectAlias(asset, alias, 'sftp')} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
