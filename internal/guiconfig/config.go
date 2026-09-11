@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 8
+const CurrentVersion = 9
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -66,6 +66,7 @@ type Terminal struct {
 	LineHeight           float64    `toml:"line_height"`
 	CursorStyle          string     `toml:"cursor_style"`
 	CursorBlink          bool       `toml:"cursor_blink"`
+	ShowScrollbar        bool       `toml:"show_scrollbar"`
 	RightClickAction     string     `toml:"right_click_action"`
 	WarnOnMultiLinePaste bool       `toml:"warn_on_multi_line_paste"`
 }
@@ -169,6 +170,7 @@ func Default() Config {
 			LineHeight:           1,
 			CursorStyle:          "block",
 			CursorBlink:          true,
+			ShowScrollbar:        true,
 			RightClickAction:     TerminalRightClickPaste,
 			WarnOnMultiLinePaste: true,
 		},

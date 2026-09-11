@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FitAddon } from '@xterm/addon-fit'
+import { TerminalFitAddon } from './TerminalFitAddon'
 import { Terminal } from '@xterm/xterm'
 import { ClipboardCopy, ClipboardPaste, TriangleAlert, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
@@ -175,7 +175,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       convertEol: false,
       scrollback: 10_000,
     })
-    const fit = new FitAddon()
+    const fit = new TerminalFitAddon()
     terminal.loadAddon(fit)
     terminal.open(host)
     synchronizeTerminalViewportBackground(host, theme.background)
@@ -292,7 +292,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     Object.assign(terminal.options, display)
     synchronizeTerminalViewportBackground(host, display.theme.background)
     fitRef.current?.()
-  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, session.id, backgroundVisible])
+  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, preferences.terminalShowScrollbar, session.id, backgroundVisible])
 
   useEffect(() => {
     setContextMenu(null)
@@ -347,7 +347,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const hasSelection = terminalRef.current?.hasSelection() ?? false
   const canPaste = session.status === 'active'
   return <div className="terminal-pane" ref={paneRef}>
-    <div className="terminal-host" data-terminal-cursor-style={preferences.terminalCursorStyle} ref={hostRef} aria-label={`${session.title} SSH 终端`} />
+    <div className="terminal-host" data-terminal-cursor-style={preferences.terminalCursorStyle} data-terminal-show-scrollbar={preferences.terminalShowScrollbar} ref={hostRef} aria-label={`${session.title} SSH 终端`} />
     {contextMenu ? <div
       aria-label="终端上下文菜单"
       className="terminal-context-menu"

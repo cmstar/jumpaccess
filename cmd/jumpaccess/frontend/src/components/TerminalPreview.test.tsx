@@ -23,10 +23,26 @@ const preferences: Preferences = {
   terminalBackground: { ...defaultTerminalBackground },
   version: 6, theme: 'light', terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12,
   terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true,
+  terminalShowScrollbar: true,
   terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, confirmCloseActiveSession: true, showTabCloseButtons: true,
 }
 
 beforeEach(() => { mock.options.length = 0; vi.clearAllMocks() })
+
+test('预览同步滚动条开关且不重建终端', () => {
+  const view = (terminalShowScrollbar: boolean) => <TerminalPreview preferences={{ ...preferences, terminalShowScrollbar }} />
+  const { rerender } = render(view(true))
+  const host = screen.getByRole('region', { name: '终端预览' }).querySelector('.terminal-preview-host')!
+  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'true')
+  mock.fit.mockClear()
+  rerender(view(false))
+  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'false')
+  expect(mock.fit).toHaveBeenCalled()
+  rerender(view(true))
+  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'true')
+  expect(mock.options).toHaveLength(1)
+  expect(mock.write).toHaveBeenCalledTimes(1)
+})
 
 test.each(['block', 'bar', 'underline'] as const)('预览初始使用 %s 光标并尊重关闭闪烁', (style) => {
   render(<TerminalPreview preferences={{ ...preferences, terminalCursorStyle: style, terminalCursorBlink: false }} />)

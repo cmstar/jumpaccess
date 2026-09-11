@@ -13,6 +13,7 @@ export interface Preferences {
   terminalLineHeight: number
   terminalCursorStyle: TerminalCursorStyle
   terminalCursorBlink: boolean
+  terminalShowScrollbar: boolean
   terminalColorScheme: string
   terminalRightClickAction: TerminalRightClickAction
   terminalWarnOnMultiLinePaste: boolean
@@ -270,7 +271,7 @@ export interface Backend {
 type GoPreferences = {
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
+  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ShowScrollbar: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean }
 }
 
@@ -376,6 +377,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalLineHeight: value.Terminal.LineHeight,
     terminalCursorStyle: value.Terminal.CursorStyle,
     terminalCursorBlink: value.Terminal.CursorBlink,
+    terminalShowScrollbar: value.Terminal.ShowScrollbar,
     terminalColorScheme: value.Terminal.ColorScheme,
     terminalRightClickAction: value.Terminal.RightClickAction,
     terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
@@ -397,6 +399,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       LineHeight: value.terminalLineHeight,
       CursorStyle: value.terminalCursorStyle,
       CursorBlink: value.terminalCursorBlink,
+      ShowScrollbar: value.terminalShowScrollbar,
       ColorScheme: value.terminalColorScheme,
       RightClickAction: value.terminalRightClickAction,
       WarnOnMultiLinePaste: value.terminalWarnOnMultiLinePaste,

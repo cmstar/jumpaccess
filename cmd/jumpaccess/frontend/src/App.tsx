@@ -1631,7 +1631,7 @@ function SettingsView({ backend, fontFamilies, onLicense, onOpenConfig, onSave, 
             </div>
           </section>
           <section className="settings-card" id="settings-terminal-style">
-            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>配色、字体、行高和光标只影响终端内容。选择后自动保存并生效。</p></div></div>
+            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>配色、字体、行高、光标和滚动条只影响终端内容。选择后自动保存并生效。</p></div></div>
             <Suspense fallback={<div className="terminal-preview-loading">正在加载终端预览…</div>}><TerminalPreview preferences={preferences} /></Suspense>
             <div className="terminal-style-fields">
               <TerminalSchemeSelect value={preferences.terminalColorScheme} onChange={(terminalColorScheme) => update({ terminalColorScheme })} />
@@ -1652,6 +1652,7 @@ function SettingsView({ backend, fontFamilies, onLicense, onOpenConfig, onSave, 
                 </div>
               </div>
             </div>
+            <div className="setting-row"><span><strong>显示滚动条</strong><small>关闭后仍可使用滚轮翻阅终端历史输出。</small></span><button type="button" aria-label="显示滚动条" role="switch" aria-checked={preferences.terminalShowScrollbar} className={preferences.terminalShowScrollbar ? 'switch on' : 'switch'} onClick={() => update({ terminalShowScrollbar: !preferences.terminalShowScrollbar })}><span /></button></div>
           </section>
           <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />
           <section className="settings-card" id="settings-terminal-behavior">

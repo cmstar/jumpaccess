@@ -1910,6 +1910,21 @@ details > summary::-webkit-details-marker {
 .terminal-preview-host .xterm { height: 100%; }
 .terminal-preview-loading { min-height: 238px; color: var(--muted); font-size: .7rem; }
 
+/* xterm 6 同时保留原生 viewport 和自绘滚动条，两者均隐藏整个槽位。 */
+:is(.terminal-host, .terminal-preview-host)[data-terminal-show-scrollbar="false"] .xterm-viewport {
+  scrollbar-width: none;
+}
+
+:is(.terminal-host, .terminal-preview-host)[data-terminal-show-scrollbar="false"] .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+:is(.terminal-host, .terminal-preview-host)[data-terminal-show-scrollbar="false"] .xterm-scrollable-element > .scrollbar.vertical {
+  display: none;
+}
+
 /* xterm DOM 行的 line-height 等于实际字符格高。保留原生 border 闪烁，只定制贴底厚度；不影响普通下划线。 */
 :is(.terminal-host, .terminal-preview-host)[data-terminal-cursor-style="quarter_block"] .xterm-rows .xterm-cursor.xterm-cursor-underline {
   box-sizing: border-box;

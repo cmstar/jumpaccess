@@ -78,6 +78,7 @@ const preferences: Preferences = {
   terminalLineHeight: 1,
   terminalCursorStyle: 'block',
   terminalCursorBlink: true,
+  terminalShowScrollbar: true,
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,
@@ -118,6 +119,29 @@ test('启用和关闭背景图不重建终端，保留选区及输入通道', as
     expect(terminalMock.options?.theme?.background).toBe('#2e3440')
     expect(terminalMock.instances).toBe(1)
   } finally { vi.unstubAllGlobals() }
+})
+
+test('滚动条开关即时生效，保留终端历史、选区及输入通道', () => {
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
+  const view = (terminalShowScrollbar: boolean) => <TerminalPane backend={backend} output="history" preferences={{ ...preferences, terminalShowScrollbar }} session={activeSession} />
+  const { rerender } = render(view(true))
+  const host = screen.getByLabelText('production-web SSH 终端')
+  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'true')
+  act(() => terminalMock.writeCallbacks.forEach(callback => callback()))
+  const writes = terminalMock.writeCallbacks.length
+  terminalMock.selection = 'history'
+  vi.mocked(backend.resizeSSHSession).mockClear()
+  rerender(view(false))
+  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'false')
+  expect(terminalMock.instances).toBe(1)
+  expect(terminalMock.writeCallbacks).toHaveLength(writes)
+  expect(terminalMock.selection).toBe('history')
+  expect(backend.resizeSSHSession).toHaveBeenCalled()
+  act(() => terminalMock.dataHandler?.('pwd\r'))
+  expect(backend.writeSSHSession).toHaveBeenCalledWith('session-1', 'pwd\r')
+  rerender(view(true))
+  expect(host).toHaveAttribute('data-terminal-show-scrollbar', 'true')
+  expect(terminalMock.instances).toBe(1)
 })
 
 test('ZMODEM 传输期间暂停终端输入，完成后恢复', () => {

@@ -14,7 +14,7 @@ func TestTerminalStyleDefaultsAndLegacyCompatibility(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if value.Version != CurrentVersion || value.Terminal.LineHeight != 1 || value.Terminal.CursorStyle != "block" || !value.Terminal.CursorBlink {
+			if value.Version != CurrentVersion || value.Terminal.LineHeight != 1 || value.Terminal.CursorStyle != "block" || !value.Terminal.CursorBlink || !value.Terminal.ShowScrollbar {
 				t.Fatalf("unexpected terminal defaults: %#v", value.Terminal)
 			}
 		})

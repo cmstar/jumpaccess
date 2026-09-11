@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import { TerminalFitAddon } from './TerminalFitAddon'
 import '@xterm/xterm/css/xterm.css'
 import type { Preferences } from '../lib/backend'
 import { terminalDisplayOptions, terminalScheme } from '../model/terminalTheme'
@@ -24,7 +24,7 @@ export function TerminalPreview({ preferences, label = '终端预览' }: { prefe
   const backgroundVisible = !!useTerminalBackground().image
   const host = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | null>(null)
-  const fit = useRef<FitAddon | null>(null)
+  const fit = useRef<TerminalFitAddon | null>(null)
   const initial = useRef(preferences)
   const scheme = terminalScheme(preferences.terminalColorScheme)
 
@@ -35,7 +35,7 @@ export function TerminalPreview({ preferences, label = '终端预览' }: { prefe
       ...display,
       disableStdin: true, cursorInactiveStyle: display.cursorStyle, scrollback: 0,
     })
-    const addon = new FitAddon()
+    const addon = new TerminalFitAddon()
     terminal.current = instance
     fit.current = addon
     instance.loadAddon(addon)
@@ -59,12 +59,12 @@ export function TerminalPreview({ preferences, label = '终端预览' }: { prefe
     Object.assign(terminal.current.options, display, { cursorInactiveStyle: display.cursorStyle })
     synchronizeTerminalViewportBackground(host.current, display.theme.background)
     try { fit.current?.fit() } catch { /* 等待可用尺寸。 */ }
-  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, scheme, backgroundVisible])
+  }, [preferences.terminalColorScheme, preferences.terminalFontFamily, preferences.terminalFontSize, preferences.terminalLineHeight, preferences.terminalCursorStyle, preferences.terminalCursorBlink, preferences.terminalShowScrollbar, scheme, backgroundVisible])
 
   return <div aria-label={label} className="terminal-preview" role="region">
     <div className="terminal-preview-caption"><span>{label}{preferences.terminalCursorBlink ? ' · 点击预览查看光标闪烁' : ''}</span><span aria-live="polite">{scheme.name} · {preferences.terminalFontSize} px · {preferences.terminalLineHeight} 倍行高</span></div>
     <TerminalBackgroundSurface className="terminal-preview-screen" style={{ backgroundColor: scheme.theme.background }}>
-      <div className="terminal-preview-host" data-terminal-cursor-style={preferences.terminalCursorStyle} ref={host} style={{ height: Math.max(180, preferences.terminalFontSize * preferences.terminalLineHeight * 12) }} />
+      <div className="terminal-preview-host" data-terminal-cursor-style={preferences.terminalCursorStyle} data-terminal-show-scrollbar={preferences.terminalShowScrollbar} ref={host} style={{ height: Math.max(180, preferences.terminalFontSize * preferences.terminalLineHeight * 12) }} />
     </TerminalBackgroundSurface>
   </div>
 }

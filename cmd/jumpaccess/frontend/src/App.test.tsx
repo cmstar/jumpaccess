@@ -110,6 +110,7 @@ const bootstrapState: BootstrapState = {
     terminalLineHeight: 1,
     terminalCursorStyle: 'block',
     terminalCursorBlink: true,
+    terminalShowScrollbar: true,
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
@@ -931,6 +932,23 @@ test('配色保存失败时恢复已保存方案与预览', async () => {
   await screen.findByText('cannot save preferences')
   expect(screen.getByRole('combobox', { name: '配色方案 Nord' })).toBeVisible()
   expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
+})
+
+test('显示滚动条默认开启，在终端样式面板关闭并保存后可重新开启', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const panel = screen.getByRole('heading', { name: '终端样式' }).closest('section')!
+  const toggle = within(panel).getByRole('switch', { name: '显示滚动条' })
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await user.click(toggle)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalShowScrollbar: false })))
+  expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await user.click(toggle)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalShowScrollbar: true })))
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
 })
 
 test('行高与光标样式、闪烁在终端样式面板设置并保存', async () => {
