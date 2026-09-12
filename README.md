@@ -217,4 +217,6 @@ npm run screenshots
 
 脚本会自行启动并关闭本地演示服务和无界面浏览器。图片统一输出到仓库的 `docs/screenshots` 目录；不同系统的字体渲染可能略有差异。
 
+截图包含[快速连接搜索结果](docs/screenshots/quick-connect.png)：打开快速连接，输入 `prod`，展示匹配的多个别名和资产、登录账号及 SSH/SFTP 入口。
+
 截图不在 Agent 工作流程中，UI 发生变更后，需人工执行截图命令，或主动告知 Agent 执行截图，否则不会自动生成新的UI截图。

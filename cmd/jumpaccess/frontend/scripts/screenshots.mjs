@@ -79,6 +79,23 @@ try {
   await capture('assets-dark.png')
 
   await start()
+  await page.getByRole('button', { name: '新建连接', exact: true }).click()
+  const quickDialog = page.getByRole('dialog', { name: '快速连接', exact: true })
+  await quickDialog.getByRole('combobox', { name: '搜索资产或别名', exact: true }).fill('prod')
+  await quickDialog.getByText('（deploy）', { exact: true }).waitFor()
+  await quickDialog.getByText('（dba）', { exact: true }).waitFor()
+  const quickTargets = await quickDialog.locator('.quick-result-text strong').allTextContents()
+  const expectedQuickTargets = ['web', 'ops', 'web-any', 'prod-db', 'prod-web-01']
+  if (JSON.stringify(quickTargets) !== JSON.stringify(expectedQuickTargets)) throw new Error('快速连接截图应展示 prod 搜索得到的多个别名和资产结果。')
+  for (const target of expectedQuickTargets) {
+    for (const protocol of ['SSH', 'SFTP']) {
+      if (!await quickDialog.getByRole('button', { name: `${target}：连接 ${protocol}`, exact: true }).isEnabled()) throw new Error('快速连接截图中的账号与协议必须加载完成，并展示可用的 SSH/SFTP 入口。')
+    }
+  }
+  if (await quickDialog.getByRole('row', { selected: true }).count() !== 1) throw new Error('快速连接截图必须保留一个选中结果。')
+  await capture('quick-connect.png')
+
+  await start()
   await page.getByRole('button', { name: /^打开 Profile，/ }).click()
   await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor()
   const overviewCards = page.getByRole('article')
