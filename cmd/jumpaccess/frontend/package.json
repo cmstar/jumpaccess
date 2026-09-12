@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "demo": "vite --mode demo --host 127.0.0.1",
+    "screenshots": "node ./scripts/screenshots.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node ./scripts/ensure-dist-placeholder.mjs",
     "preview": "vite preview",
@@ -26,6 +28,7 @@
     "@types/react-dom": "19.1.7",
     "@vitejs/plugin-react": "5.0.2",
     "jsdom": "30.0.1",
+    "playwright": "1.63.0",
     "typescript": "5.9.2",
     "vite": "7.3.6",
     "vitest": "4.1.11"

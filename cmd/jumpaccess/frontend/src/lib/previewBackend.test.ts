@@ -5,13 +5,13 @@ afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
 
 test('预览资产同时提供 SSH 与 SFTP 连接入口所需的协议', async () => {
   const { previewBackend } = await import('./previewBackend')
-  const detail = await previewBackend.getAsset({ profile: 'production', organization: 'org-dev', asset: '7f3c91bd' })
+  const detail = await previewBackend.getAsset({ profile: 'office', organization: 'org-dev', asset: '7f3c91bd' })
   expect(detail.protocols).toContainEqual({ name: 'sftp', port: 22 })
 })
 
 test('预览 SFTP 会话独立于 SSH，目录候选不可用时回到 home', async () => {
   const { previewBackend } = await import('./previewBackend')
-  const request = { profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' }
+  const request = { profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' }
   const first = await previewBackend.startSFTPSession({ ...request, directory: '/missing' })
   const second = await previewBackend.startSFTPSession(request)
   expect(first.directory).toBe('/home/deploy')
@@ -24,7 +24,7 @@ test('预览 SFTP 会话独立于 SSH，目录候选不可用时回到 home', as
 
 test('预览支持创建、重命名和删除目录并刷新文件列表', async () => {
   const { previewBackend: backend } = await import('./previewBackend')
-  const session = await backend.startSFTPSession({ profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
+  const session = await backend.startSFTPSession({ profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
   await backend.makeSFTPDirectory(session.id, '/home/deploy/new')
   await backend.renameSFTPEntry(session.id, '/home/deploy/new', 'renamed')
   expect((await backend.readSFTPDirectory(session.id, '/home/deploy')).entries.map((item) => item.name)).toContain('renamed')
@@ -36,7 +36,7 @@ test('预览支持创建、重命名和删除目录并刷新文件列表', async
 test('预览文件选择器返回示例路径，上传队列推进后更新远程目录', async () => {
   vi.useFakeTimers()
   const { previewBackend: backend } = await import('./previewBackend')
-  const session = await backend.startSFTPSession({ profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
+  const session = await backend.startSFTPSession({ profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
   const files = await backend.chooseSFTPUploadFiles()
   expect(files).toEqual(['/preview/uploads/notes.txt', '/preview/uploads/release.zip'])
   expect(await backend.chooseSFTPUploadDirectory()).toBe('/preview/uploads/release')
@@ -56,7 +56,7 @@ test('预览文件选择器返回示例路径，上传队列推进后更新远�
 test('预览同名冲突保留两者时生成新名称并保留原文件', async () => {
   vi.useFakeTimers()
   const { previewBackend: backend } = await import('./previewBackend')
-  const session = await backend.startSFTPSession({ profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
+  const session = await backend.startSFTPSession({ profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
   const [transfer] = await backend.startSFTPTransfer({ sessionId: session.id, direction: 'upload', sources: ['/preview/uploads/notes.txt'], destination: session.directory })
   await vi.advanceTimersByTimeAsync(200)
   expect((await backend.listSFTPTransfers(session.id))[0]).toMatchObject({ status: 'conflict', conflict: { destination: '/home/deploy/notes.txt' } })
@@ -69,7 +69,7 @@ test('预览同名冲突保留两者时生成新名称并保留原文件', async
 test('预览冲突决策可应用到整批并清理已结束任务', async () => {
   vi.useFakeTimers()
   const { previewBackend: backend } = await import('./previewBackend')
-  const session = await backend.startSFTPSession({ profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
+  const session = await backend.startSFTPSession({ profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
   const [first] = await backend.startSFTPTransfer({ sessionId: session.id, direction: 'upload', sources: ['/preview/uploads/notes.txt', '/preview/uploads/notes.txt'], destination: session.directory })
   await vi.advanceTimersByTimeAsync(200)
   await backend.resolveSFTPConflict(first.id, 'skip', true)
@@ -81,7 +81,7 @@ test('预览冲突决策可应用到整批并清理已结束任务', async () =>
 test('预览取消任务停止进度，重试从头完成', async () => {
   vi.useFakeTimers()
   const { previewBackend: backend } = await import('./previewBackend')
-  const session = await backend.startSFTPSession({ profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
+  const session = await backend.startSFTPSession({ profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
   const [transfer] = await backend.startSFTPTransfer({ sessionId: session.id, direction: 'upload', sources: ['/preview/uploads/release.zip'], destination: session.directory })
   await vi.advanceTimersByTimeAsync(500)
   await backend.cancelSFTPTransfer(transfer.id)
@@ -96,7 +96,7 @@ test('预览取消任务停止进度，重试从头完成', async () => {
 test('预览文件夹上传下载保留内容，失败任务保留原因并允许重试', async () => {
   vi.useFakeTimers()
   const { previewBackend: backend } = await import('./previewBackend')
-  const session = await backend.startSFTPSession({ profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
+  const session = await backend.startSFTPSession({ profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' })
   await backend.startSFTPTransfer({ sessionId: session.id, direction: 'upload', sources: ['/preview/uploads/release'], destination: session.directory })
   await vi.advanceTimersByTimeAsync(2_000)
   expect((await backend.readSFTPDirectory(session.id, '/home/deploy/release')).entries.map((entry) => entry.name)).toContain('README.md')
@@ -112,7 +112,7 @@ test('预览文件夹上传下载保留内容，失败任务保留原因并允�
 test('预览覆盖在完成后替换内容，关闭会话只取消自己的传输', async () => {
   vi.useFakeTimers()
   const { previewBackend: backend } = await import('./previewBackend')
-  const request = { profile: 'production', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' }
+  const request = { profile: 'office', organization: 'org-dev', target: '7f3c91bd', account: 'account-deploy' }
   const first = await backend.startSFTPSession(request)
   const second = await backend.startSFTPSession(request)
   const [overwrite] = await backend.startSFTPTransfer({ sessionId: first.id, direction: 'upload', sources: ['/preview/uploads/notes.txt'], destination: first.directory })

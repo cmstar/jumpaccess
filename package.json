@@ -1,0 +1,8 @@
+{
+  "name": "jumpaccess-tools",
+  "private": true,
+  "scripts": {
+    "demo": "npm --prefix cmd/jumpaccess/frontend run demo --",
+    "screenshots": "npm --prefix cmd/jumpaccess/frontend run screenshots --"
+  }
+}
