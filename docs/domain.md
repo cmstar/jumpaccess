@@ -24,6 +24,8 @@ Alias 固定归属于 Profile，必须定位一个 Asset，Account 可为空。O
 
 ## 关键流程
 
+GUI 的 Profile 卡片在右上角提供“启用”按钮，当前 Profile 显示“使用中”；底部保留认证、编辑和删除操作，空间不足时换行。卡片不展示 Organization。资产页切换组织时仍立即保存到对应 Profile，启动时加载当前 Profile 上次选择的组织；重新启用其他 Profile 时恢复它自己的组织选择，不自动选取组织列表第一项。
+
 ### 登录与续期
 
 1. 用户选择 Profile 并执行认证命令。

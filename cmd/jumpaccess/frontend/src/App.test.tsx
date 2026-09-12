@@ -2065,6 +2065,57 @@ test('GUI 认证错误引导到 Profile 页面而不是 CLI', async () => {
   expect(alert).not.toHaveTextContent('jumpctl')
 })
 
+test('Profile 顶部启用按钮切换使用状态，卡片不展示 Organization', async () => {
+  const state = { ...bootstrapState, profiles: [...bootstrapState.profiles, { ...bootstrapState.profiles[0], name: 'staging', url: 'https://staging.example.test' }] }
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue(state),
+    listOrganizations: vi.fn(async (profile) => [{ id: 'org-1', name: profile === 'production' ? '研发中心' : '测试中心' }]),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
+  const production = screen.getByRole('heading', { name: 'production' }).closest('article')!
+  const staging = screen.getByRole('heading', { name: 'staging' }).closest('article')!
+  expect(within(production).getByText('使用中')).toBeInTheDocument()
+  expect(within(production).queryByText('Organization')).not.toBeInTheDocument()
+  expect(within(staging).queryByText('Organization')).not.toBeInTheDocument()
+  expect(within(staging).queryByText('org-1')).not.toBeInTheDocument()
+  const enable = within(staging).getByRole('button', { name: '启用' })
+  expect(enable.closest('.profile-card-top')).not.toBeNull()
+  expect(staging.querySelector('.profile-card-actions')).not.toContainElement(enable)
+  await user.click(enable)
+  expect(backend.useProfile).toHaveBeenCalledWith('staging')
+  expect(await within(staging).findByText('使用中')).toBeInTheDocument()
+  expect(within(production).queryByText('Organization')).not.toBeInTheDocument()
+  await user.click(within(production).getByRole('button', { name: '启用' }))
+  expect(await within(production).findByText('使用中')).toBeInTheDocument()
+  expect(within(staging).queryByText('Organization')).not.toBeInTheDocument()
+})
+
+test('资产页切换组织后持久化，重新启动按上次选择加载资产', async () => {
+  let savedState = structuredClone(bootstrapState)
+  const backend = makeBackend({
+    bootstrap: vi.fn(async () => structuredClone(savedState)),
+    listOrganizations: vi.fn().mockResolvedValue([{ id: 'org-1', name: '研发中心' }, { id: 'org-2', name: '测试中心' }]),
+    setOrganization: vi.fn(async (profile, organization) => {
+      savedState = { ...savedState, currentOrganization: organization, profiles: savedState.profiles.map(item => item.name === profile ? { ...item, organization } : item) }
+    }),
+  })
+  const user = userEvent.setup()
+  const first = render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '当前 Organization：研发中心' }))
+  await user.click(screen.getByRole('option', { name: /测试中心/ }))
+  await waitFor(() => expect(backend.setOrganization).toHaveBeenCalledWith('production', 'org-2'))
+  await waitFor(() => expect(backend.listAssets).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'production', organization: 'org-2' })))
+  first.unmount()
+  vi.mocked(backend.listAssets).mockClear()
+  render(<App backend={backend} />)
+  expect(await screen.findByRole('button', { name: '当前 Organization：测试中心' })).toBeInTheDocument()
+  await waitFor(() => expect(backend.listAssets).toHaveBeenCalledWith(expect.objectContaining({ profile: 'production', organization: 'org-2' })))
+  expect(vi.mocked(backend.listAssets).mock.calls.every(([request]) => request.organization === 'org-2')).toBe(true)
+})
+
 test('新建并登录 Profile 后保持原来的当前 Profile', async () => {
   const addedProfile = {
     name: 'staging',
@@ -2104,8 +2155,8 @@ test('新建并登录 Profile 后保持原来的当前 Profile', async () => {
 
   const productionCard = (await screen.findByRole('heading', { name: 'production' })).closest('article')!
   const stagingCard = screen.getByRole('heading', { name: 'staging' }).closest('article')!
-  expect(within(productionCard).getByText('当前')).toBeInTheDocument()
-  expect(within(stagingCard).getByRole('button', { name: '设为当前' })).toBeInTheDocument()
+  expect(within(productionCard).getByText('使用中')).toBeInTheDocument()
+  expect(within(stagingCard).getByRole('button', { name: '启用' })).toBeInTheDocument()
 })
 
 test('重复的 Profile 名称错误显示在创建弹窗内', async () => {
@@ -2163,6 +2214,7 @@ test('编辑 Profile URL 后保留 Profile，并要求重新登录', async () =>
 
   await waitFor(() => expect(backend.updateProfileURL).toHaveBeenCalledWith('production', 'https://new-jump.example.test'))
   expect(await screen.findByText('https://new-jump.example.test')).toBeInTheDocument()
+  expect(within(card).queryByText('研发中心')).not.toBeInTheDocument()
   expect(within(card).getByText('需要登录')).toBeInTheDocument()
   expect(backend.startLogin).not.toHaveBeenCalled()
   expect(screen.getByRole('status')).toHaveTextContent('production 地址已更新，旧认证已清除，请重新登录。')

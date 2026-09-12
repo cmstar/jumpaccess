@@ -1858,18 +1858,23 @@ details > summary::-webkit-details-marker {
 
 .profile-card dl > div {
   display: flex;
+  gap: 10px;
   min-height: 30px;
   align-items: center;
   justify-content: space-between;
 }
 
 .profile-card dt {
+  flex-shrink: 0;
   color: var(--muted);
   font-size: .65rem;
 }
 
 .profile-card dd {
   display: flex;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 5px;
   margin: 0;
@@ -1886,7 +1891,7 @@ details > summary::-webkit-details-marker {
 
 .profile-card-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 5px;
   padding-top: 14px;
 }
