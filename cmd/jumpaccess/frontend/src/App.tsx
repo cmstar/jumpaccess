@@ -1200,7 +1200,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       {aliasEditor ? <EditAliasDialog alias={aliasEditor.alias} asset={aliasEditor.asset} onCancel={() => setAliasEditor(null)} onSave={(name) => void renameAliasForAsset(aliasEditor.alias, name)} /> : null}
       {pendingAliasDeletion ? <DeleteAliasDialog alias={pendingAliasDeletion} onCancel={() => setPendingAliasDeletion(null)} onConfirm={() => void deleteAlias(pendingAliasDeletion)} /> : null}
       {pendingConnection ? <AccountDialog asset={pendingConnection.asset} accounts={details[pendingConnection.asset.id]?.accounts ?? []} onCancel={() => setPendingConnection(null)} onChoose={(account) => void run(() => startConnection(pendingConnection.asset, pendingConnection.target, pendingConnection.alias, account.id || account.username, pendingConnection.protocol))} /> : null}
-      {quickOpen ? <QuickConnectDialog assets={displayedQuickResults.filter((asset) => supportsProtocol(details[asset.id], 'ssh'))} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
+      {quickOpen && !pendingConnection ? <QuickConnectDialog assets={displayedQuickResults} details={details} detailError={(asset) => detailErrors[`${profile}\0${organization}\0${asset.id}`]} onRetry={(asset) => run(async () => { await ensureDetail(asset) })} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={connectAsset} onConnectAlias={connectAlias} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
       {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); showInfo(`${loginAttempt.profile} 登录成功`); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
@@ -1855,9 +1855,15 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
   </section>
 }
 
-function Modal({ children, description, onClose, title }: { children: ReactNode; description?: string; onClose: () => void; title: string }) {
+function Modal({ children, description, onClose, title, closeOnEscape = false, className = '' }: { children: ReactNode; description?: string; onClose: () => void; title: string; closeOnEscape?: boolean; className?: string }) {
   const titleID = `dialog-${title.replace(/\s/g, '-')}`
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby={titleID}><button className="modal-close icon-button" aria-label="关闭" onClick={onClose}><X /></button><header><h2 id={titleID}>{title}</h2>{description ? <p>{description}</p> : null}</header>{children}</section></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleID} onKeyDown={(event) => {
+    if (closeOnEscape && event.key === 'Escape' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    }
+  }}><button className="modal-close icon-button" aria-label="关闭" onClick={onClose}><X /></button><header><h2 id={titleID}>{title}</h2>{description ? <p>{description}</p> : null}</header>{children}</section></div>
 }
 
 function DisconnectSessionDialog({ onCancel, onConfirm, tab }: { onCancel: () => void; onConfirm: () => void; tab: SSHTab }) {
@@ -1905,11 +1911,134 @@ function AliasDialog({ asset, detail, onCancel, onEnsure, onSave }: { asset: Ass
 }
 
 function AccountDialog({ accounts, asset, onCancel, onChoose }: { accounts: Account[]; asset: Asset; onCancel: () => void; onChoose: (account: Account) => void }) {
-  return <Modal title="选择连接账号" description={`请选择本次连接 ${asset.name} 使用的 Account。`} onClose={onCancel}><div className="prompt-account-list">{accounts.map((account) => <button key={account.id || account.username} onClick={() => onChoose(account)}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name || 'JumpServer 授权账号'}</small></span></button>)}</div><div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button></div></Modal>
+  const buttons = useRef<(HTMLButtonElement | null)[]>([])
+  return <Modal title="选择连接账号" description={`请选择本次连接 ${asset.name} 使用的 Account。`} onClose={onCancel} closeOnEscape>
+    <div className="prompt-account-list">{accounts.map((account, index) => <button autoFocus={index === 0} ref={(node) => { buttons.current[index] = node }} key={account.id || account.username} onKeyDown={(event) => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      event.preventDefault()
+      buttons.current[(index + (event.key === 'ArrowDown' ? 1 : accounts.length - 1)) % accounts.length]?.focus()
+    }} onClick={() => onChoose(account)}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name || 'JumpServer 授权账号'}</small></span></button>)}</div>
+    <div className="dialog-actions"><button className="button secondary" onClick={onCancel}>取消</button></div>
+  </Modal>
 }
 
-function QuickConnectDialog({ assets, onCancel, onConnectAlias, onConnectAsset, query, setQuery }: { assets: Asset[]; onCancel: () => void; onConnectAlias: (asset: Asset, alias: Alias) => void; onConnectAsset: (asset: Asset) => void; query: string; setQuery: (value: string) => void }) {
-  return <Modal title="快速连接" description="搜索当前 Profile 中的 Asset 或 Alias。" onClose={onCancel}><label className="quick-search"><Search /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、地址、Asset ID 或 Alias" /></label><div className="quick-results">{assets.flatMap((asset) => asset.aliases.map((alias) => <button key={`alias-${alias.name}`} onClick={() => onConnectAlias(asset, alias)}><span className="quick-icon"><Tags /></span><span><strong>{alias.name}</strong><small>{asset.name} · {asset.address}</small></span><em>{alias.account || '连接时询问'}</em></button>))}{assets.map((asset) => <button key={asset.id} onClick={() => onConnectAsset(asset)}><span className="quick-icon"><Server /></span><span><strong>{asset.name}</strong><small>{asset.address} · {asset.type}</small></span><em>Asset</em></button>)}{assets.length === 0 ? <div className="quick-empty"><Search />没有匹配结果</div> : null}</div></Modal>
+type QuickResult = { key: string; asset: Asset; alias?: Alias }
+
+function QuickConnectDialog({ assets, details, detailError, onRetry, onCancel, onConnectAlias, onConnectAsset, query, setQuery }: {
+  assets: Asset[]
+  details: Record<string, AssetDetail>
+  detailError: (asset: Asset) => string | undefined
+  onRetry: (asset: Asset) => Promise<void>
+  onCancel: () => void
+  onConnectAlias: (asset: Asset, alias: Alias, protocol: 'ssh' | 'sftp') => Promise<void>
+  onConnectAsset: (asset: Asset, protocol: 'ssh' | 'sftp') => Promise<void>
+  query: string
+  setQuery: (value: string) => void
+}) {
+  const [selection, setSelection] = useState({ query, key: '' })
+  const [busy, setBusy] = useState(false)
+  const connecting = useRef(false)
+  const rows = useRef<(HTMLDivElement | null)[]>([])
+  const needle = query.trim().toLowerCase()
+  const matchesAsset = (asset: Asset) => [asset.id, asset.name, asset.address].some((value) => value.toLowerCase().includes(needle))
+  const visibleAssets = assets.filter((asset) => !details[asset.id] || supportsProtocol(details[asset.id], 'ssh') || supportsProtocol(details[asset.id], 'sftp'))
+  const results: QuickResult[] = [
+    ...visibleAssets.flatMap((asset) => asset.aliases.filter((alias) => matchesAsset(asset) || alias.name.toLowerCase().includes(needle)).map((alias) => ({ key: `alias-${asset.id}-${alias.name}`, asset, alias }))),
+    ...visibleAssets.filter(matchesAsset).map((asset) => ({ key: `asset-${asset.id}`, asset })),
+  ]
+  const selectedIndex = Math.max(0, selection.query === query ? results.findIndex((item) => item.key === selection.key) : 0)
+  const selected = results[selectedIndex]
+
+  useEffect(() => {
+    rows.current[selectedIndex]?.scrollIntoView?.({ block: 'nearest' })
+  }, [selectedIndex, selected?.key, query])
+
+  function accountStatus(item: QuickResult): { label: string; available: boolean } {
+    const detail = details[item.asset.id]
+    if (!detail) return { label: detailError(item.asset) ? '账号与协议加载失败' : '加载账号与协议…', available: false }
+    const binding = item.alias?.account
+    const account = binding
+      ? detail.accounts.find((account) => account.id === binding || account.username === binding)
+      : detail.accounts.length === 1 ? detail.accounts[0] : undefined
+    if (item.alias?.account && !account) return { label: '绑定账号不可用', available: false }
+    if (!detail.accounts.length) return { label: '没有可用账号', available: false }
+    if (!account) return { label: '连接时选择账号', available: true }
+    const username = account.username || account.alias
+    return { label: username ? `（${username}）` : '登录账号未提供', available: true }
+  }
+
+  function unavailable(item: QuickResult, protocol: 'ssh' | 'sftp'): string {
+    const status = accountStatus(item)
+    if (!status.available) return status.label
+    return supportsProtocol(details[item.asset.id], protocol) ? '' : `未授权 ${protocol.toUpperCase()}`
+  }
+
+  async function connect(item: QuickResult, protocol: 'ssh' | 'sftp') {
+    setSelection({ query, key: item.key })
+    if (connecting.current || unavailable(item, protocol)) return
+    connecting.current = true
+    setBusy(true)
+    try {
+      if (item.alias) await onConnectAlias(item.asset, item.alias, protocol)
+      else await onConnectAsset(item.asset, protocol)
+    } finally {
+      connecting.current = false
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    // 点击弹窗空白处后焦点可能回到 body，因此在捕获阶段处理整个弹窗的快捷键。
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey) return
+      if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) return
+      const dialogs = document.querySelectorAll('[role="dialog"]')
+      if (!dialogs[dialogs.length - 1]?.classList.contains('quick-connect-modal')) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.key === 'Escape') onCancel()
+      else if (event.key === 'Enter') {
+        if (selected && !event.repeat) void connect(selected, event.shiftKey ? 'sftp' : 'ssh')
+      } else if (results.length) {
+        const next = (selectedIndex + (event.key === 'ArrowDown' ? 1 : results.length - 1)) % results.length
+        setSelection({ query, key: results[next].key })
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  })
+
+  return <Modal title="快速连接" className="quick-connect-modal" onClose={onCancel} closeOnEscape>
+      <label className="quick-search"><Search /><input autoFocus role="combobox" aria-label="搜索资产或别名" aria-expanded="true" aria-haspopup="grid" aria-controls="quick-results" aria-activedescendant={selected ? `quick-result-${selectedIndex}` : undefined} aria-describedby="quick-keyboard-help" value={query} onChange={(event) => { setSelection({ query: event.target.value, key: '' }); setQuery(event.target.value) }} placeholder="名称、地址、Asset ID 或 Alias" /></label>
+      <div className="quick-results" id="quick-results" role="grid" aria-label="连接目标" aria-busy={busy}>
+        {results.map((item, index) => {
+          const name = item.alias?.name || item.asset.name
+          const status = accountStatus(item)
+          return <div className="quick-result" role="row" aria-selected={index === selectedIndex} id={`quick-result-${index}`} ref={(node) => { rows.current[index] = node }} key={item.key} onClick={() => void connect(item, 'ssh')}>
+            <div className="quick-result-body" role="gridcell">
+              <span className="quick-icon">{item.alias ? <Tags /> : <Server />}</span>
+              <span className="quick-result-text" title={[name, item.alias ? item.asset.name : '', item.asset.address, status.label].filter(Boolean).join(' ')}>
+                <strong>{name}</strong>
+                {item.alias ? <span className="quick-result-meta"> {item.asset.name}</span> : null}
+                <span className="quick-result-meta"> {item.asset.address}</span>
+                <span className="quick-result-meta"> {status.label}</span>
+              </span>
+            </div>
+            <div className="quick-result-actions" role="gridcell">
+              {(['ssh', 'sftp'] as const).map((protocol) => <button key={protocol} className="button secondary small" type="button" aria-label={`${name}：连接 ${protocol.toUpperCase()}`} title={unavailable(item, protocol) || `连接 ${protocol.toUpperCase()}`} disabled={busy || !!unavailable(item, protocol)} onFocus={() => setSelection({ query, key: item.key })} onClick={(event) => { event.stopPropagation(); void connect(item, protocol) }}>{protocol === 'ssh' ? <TerminalSquare /> : <FolderOpen />}{protocol.toUpperCase()}</button>)}
+              {!details[item.asset.id] && detailError(item.asset) ? <button className="button secondary small" onClick={(event) => { event.stopPropagation(); void onRetry(item.asset) }}>重试</button> : null}
+            </div>
+          </div>
+        })}
+      </div>
+      {results.length === 0 ? <div className="quick-empty" role="status"><Search />没有匹配结果</div> : null}
+      <p className="quick-keyboard-help" id="quick-keyboard-help">{busy ? '正在准备连接…' : <>
+        <span><kbd>↑↓</kbd> 选择</span>
+        <span><kbd>Enter</kbd> SSH</span>
+        <span><kbd>Shift+Enter</kbd> SFTP</span>
+        <span><kbd>Esc</kbd> 关闭</span>
+      </>}</p>
+  </Modal>
 }
 
 function ProfileDialog({ onCancel, onSave }: { onCancel: () => void; onSave: (name: string, url: string) => Promise<void> }) {

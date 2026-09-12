@@ -3099,7 +3099,7 @@ details > summary::-webkit-details-marker {
 }
 
 .prompt-account-list > button,
-.quick-results > button {
+.quick-result {
   display: flex;
   width: 100%;
   align-items: center;
@@ -3113,15 +3113,14 @@ details > summary::-webkit-details-marker {
 }
 
 .prompt-account-list > button:hover,
-.quick-results > button:hover {
+.quick-result:hover,
+.quick-result[aria-selected="true"] {
   border-color: rgb(31 159 115 / 40%);
   background: var(--accent-soft);
 }
 
 .prompt-account-list strong,
-.prompt-account-list small,
-.quick-results strong,
-.quick-results small {
+.prompt-account-list small {
   display: block;
 }
 
@@ -3130,8 +3129,7 @@ details > summary::-webkit-details-marker {
   font-size: .65rem;
 }
 
-.prompt-account-list small,
-.quick-results small {
+.prompt-account-list small {
   margin-top: 3px;
   color: var(--muted);
   font-size: .6rem;
@@ -3141,15 +3139,82 @@ details > summary::-webkit-details-marker {
   margin-top: 17px;
 }
 
-.quick-results > button > span:nth-child(2) {
+.modal.quick-connect-modal {
+  width: min(750px, 100%);
+}
+
+.quick-results {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.quick-result-body {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   min-width: 0;
   flex: 1;
 }
 
-.quick-results em {
+.quick-result {
+  min-width: 0;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.quick-result-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .65rem;
+}
+
+.quick-result-meta {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.quick-result-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.quick-result-actions .button {
+  padding: 6px 8px;
+}
+
+.quick-result-actions .button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.quick-keyboard-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 12px 0 0;
   color: var(--muted);
   font-size: .6rem;
-  font-style: normal;
+}
+
+.quick-keyboard-help > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.quick-keyboard-help kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font: inherit;
 }
 
 .quick-icon {
