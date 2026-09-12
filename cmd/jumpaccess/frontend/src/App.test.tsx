@@ -838,6 +838,78 @@ test('切换 Profile 后忽略原 Profile 尚未完成的同步结果', async ()
   expect(screen.queryByText('staging 资产同步成功')).not.toBeInTheDocument()
 })
 
+test.each([
+  { type: 'MySQL', category: 'Database', protocols: [{ name: 'mysql', port: 3306 }], message: 'JumpAccess 暂不支持 MYSQL 协议。', ssh: false },
+  { type: 'Windows', category: 'Host', protocols: [{ name: 'rdp', port: 3389 }, { name: 'SSH', port: 22 }], message: 'JumpAccess 暂不支持 RDP 协议。', ssh: true },
+  { type: 'Linux', category: 'Host', protocols: [], message: '当前没有可用的授权协议。', ssh: false },
+])('资产详情展示 $type 的授权协议及能力边界', async ({ type, category, protocols, message, ssh }) => {
+  const asset = { ...assetPage.results[0], type, category }
+  const backend = makeBackend({
+    listAssets: vi.fn().mockResolvedValue({ ...assetPage, results: [asset] }),
+    getAsset: vi.fn().mockResolvedValue({ ...assetDetail, ...asset, protocols }),
+  })
+  render(<App backend={backend} />)
+  const pane = within(await screen.findByRole('complementary', { name: '资产详情' }))
+  expect(await pane.findByText(message)).toBeInTheDocument()
+  expect(pane.getByRole('img', { name: `${type} 资产` })).toBeInTheDocument()
+  for (const protocol of protocols) expect(pane.getByText(`${protocol.name.toUpperCase()} : ${protocol.port}`)).toBeInTheDocument()
+  expect(!!pane.queryByRole('button', { name: `连接 ${asset.name}` })).toBe(ssh)
+  expect(pane.queryByRole('button', { name: `使用 SFTP 连接 ${asset.name}` })).not.toBeInTheDocument()
+  expect(backend.startSSHSession).not.toHaveBeenCalled()
+})
+
+test('资产详情区分加载失败与无授权协议，并可重试', async () => {
+  const backend = makeBackend({ getAsset: vi.fn().mockRejectedValueOnce(new Error('连接中断')).mockResolvedValue(assetDetail) })
+  render(<App backend={backend} />)
+  const pane = within(await screen.findByRole('complementary', { name: '资产详情' }))
+  expect(await pane.findByText('资产详情加载失败')).toBeInTheDocument()
+  expect(pane.queryByText('当前没有可用的授权协议。')).not.toBeInTheDocument()
+  await userEvent.click(pane.getByRole('button', { name: '重新加载资产详情' }))
+  expect(await pane.findByText('SSH : 22')).toBeInTheDocument()
+  expect(pane.queryByText('资产详情加载失败')).not.toBeInTheDocument()
+})
+
+test('详情管理全部 Alias，与列表同步新增、编辑、账号绑定和确认删除', async () => {
+  const created = { ...assetPage.results[0].aliases[0], name: 'detail-new' }
+  const backend = makeBackend({
+    createAlias: vi.fn().mockResolvedValue(created),
+    renameAlias: vi.fn().mockResolvedValue({ ...created, name: 'detail-renamed' }),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  const row = within(await screen.findByTestId('asset-row-asset-1'))
+  const pane = within(screen.getByRole('complementary', { name: '资产详情' }))
+  expect(pane.getByText('production-web')).toBeInTheDocument()
+  expect(pane.getByText('web-any')).toBeInTheDocument()
+  await user.click(pane.getByRole('button', { name: '添加 Alias' }))
+  let dialog = within(await screen.findByRole('dialog', { name: '创建 Alias' }))
+  await user.type(dialog.getByLabelText('Alias 名称'), 'detail-new')
+  await user.click(dialog.getByRole('button', { name: '保存 Alias' }))
+  expect(await pane.findByText('detail-new')).toBeInTheDocument()
+  expect(row.getByText('detail-new')).toBeInTheDocument()
+  await user.click(pane.getByRole('button', { name: '详情：编辑 detail-new' }))
+  dialog = within(await screen.findByRole('dialog', { name: '编辑 Alias' }))
+  await user.clear(dialog.getByLabelText('Alias 名称'))
+  await user.type(dialog.getByLabelText('Alias 名称'), 'detail-renamed')
+  await user.click(dialog.getByRole('button', { name: '保存 Alias' }))
+  expect(await row.findByText('detail-renamed')).toBeInTheDocument()
+  expect(pane.queryByText('detail-new')).not.toBeInTheDocument()
+  await user.selectOptions(pane.getByLabelText('详情：detail-renamed 默认账号'), 'account-2')
+  await waitFor(() => expect(row.getByLabelText('detail-renamed 默认账号')).toHaveDisplayValue('ops'))
+  await user.click(pane.getByRole('button', { name: '详情：删除 detail-renamed' }))
+  dialog = within(await screen.findByRole('dialog', { name: '删除 Alias' }))
+  await user.click(dialog.getByRole('button', { name: '取消' }))
+  expect(backend.deleteAlias).not.toHaveBeenCalled()
+  expect(pane.getByText('detail-renamed')).toBeInTheDocument()
+  await user.click(pane.getByRole('button', { name: '详情：删除 detail-renamed' }))
+  dialog = within(await screen.findByRole('dialog', { name: '删除 Alias' }))
+  await user.click(dialog.getByRole('button', { name: '确认删除 detail-renamed' }))
+  await waitFor(() => expect(pane.queryByText('detail-renamed')).not.toBeInTheDocument())
+  expect(row.queryByText('detail-renamed')).not.toBeInTheDocument()
+  expect(row.getByText('production-web')).toBeInTheDocument()
+  expect(pane.getByText('production-web')).toBeInTheDocument()
+})
+
 test('资产详情不显示 Gateway 主机密钥提示', async () => {
   render(<App backend={makeBackend()} />)
 
@@ -846,14 +918,16 @@ test('资产详情不显示 Gateway 主机密钥提示', async () => {
   expect(screen.queryByText('严格校验 Gateway 主机密钥')).not.toBeInTheDocument()
 })
 
-test('资产详情中的 Asset ID 使用保留开头的可收缩文本元素', async () => {
-  render(<App backend={makeBackend()} />)
+test('资产详情中的 Asset ID 右对齐并保留可收缩文本和复制按钮', async () => {
+  render(<><style>{appStyles}</style><App backend={makeBackend()} /></>)
 
   const copyButton = await screen.findByRole('button', { name: '复制 Asset ID' })
   const value = copyButton.parentElement?.querySelector('.asset-id-text')
 
   expect(value).toHaveTextContent('asset-1')
   expect(value).toHaveAttribute('title', 'asset-1')
+  expect(getComputedStyle(value!)).toHaveProperty('textAlign', 'right')
+  expect(getComputedStyle(copyButton.parentElement!)).toHaveProperty('justifyContent', 'flex-end')
 })
 
 test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接', async () => {
@@ -1607,9 +1681,9 @@ test('顶部上下文选择器和资产菜单点击外部后关闭', async () =>
   expect(screen.queryByRole('group', { name: '当前页 Alias 筛选' })).not.toBeInTheDocument()
 
   await user.click(screen.getByLabelText('prod-web-01 更多操作'))
-  expect(screen.getByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: '创建 Alias' })).toBeInTheDocument()
   await user.click(heading)
-  expect(screen.queryByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: '创建 Alias' })).not.toBeInTheDocument()
 })
 
 test('Profile 和 Organization 上下文只在资产界面显示', async () => {
@@ -1706,7 +1780,8 @@ test('创建 Alias 后局部更新并保留已有账号显示缓存', async () =
   await user.selectOptions(within(dialog).getByLabelText('默认账号'), 'account-2')
   await user.click(within(dialog).getByRole('button', { name: '保存 Alias' }))
 
-  expect(await screen.findByText('new-alias')).toBeInTheDocument()
+  expect(await within(screen.getByTestId('asset-row-asset-2')).findByText('new-alias')).toBeInTheDocument()
+  expect(within(screen.getByRole('complementary', { name: '资产详情' })).getByText('new-alias')).toBeInTheDocument()
   expect(screen.getByLabelText('production-web 默认账号')).toHaveDisplayValue('deploy')
   expect(backend.listAssets).toHaveBeenCalledTimes(callsBeforeCreate)
 })
@@ -2227,15 +2302,39 @@ test('从资产选择账号后建立独立 SFTP Tab，Tab 名称不附加协议'
   expect(backend.startSFTPSession).toHaveBeenCalledWith({ profile: 'production', organization: 'org-1', target: 'asset-1', account: 'account-2', directory: '' })
 })
 
-test('资产与别名的连接菜单只展示各自授权协议', async () => {
+test.each(['ssh', 'sftp'] as const)('资产行在更多按钮前直接提供连接入口，并用所选账号建立 %s 连接', async (protocol) => {
+  const backend = makeBackend({ getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'ssh', port: 22 }, { name: 'sftp', port: 22 }] }) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  const row = within(await screen.findByTestId('asset-row-asset-1'))
+  const ssh = await row.findByRole('button', { name: 'prod-web-01：连接 SSH' })
+  const sftp = row.getByRole('button', { name: 'prod-web-01：连接 SFTP' })
+  const more = row.getByRole('button', { name: 'prod-web-01 更多操作' })
+  expect(Array.from(more.parentElement!.querySelectorAll(':scope > button'))).toEqual([ssh, sftp, more])
+  await user.click(more)
+  const menu = screen.getByRole('menu')
+  expect(within(menu).queryByRole('menuitem', { name: /连接/ })).not.toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: '创建 Alias' })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: '复制地址' })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: '复制 Asset ID' })).toBeInTheDocument()
+  await user.click(protocol === 'ssh' ? ssh : sftp)
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  const dialog = await screen.findByRole('dialog', { name: '选择连接账号' })
+  await user.click(within(dialog).getByRole('button', { name: /ops/ }))
+  await waitFor(() => expect(protocol === 'ssh' ? backend.startSSHSession : backend.startSFTPSession).toHaveBeenCalledWith(expect.objectContaining({ target: 'asset-1', account: 'account-2' })))
+})
+
+test('资产行与别名只展示各自授权的连接协议，菜单保留其他操作', async () => {
   const backend = makeBackend({ getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }) })
   render(<App backend={backend} />)
   await screen.findByText('SFTP : 22')
   expect(screen.queryByRole('button', { name: '使用 production-web 连接' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '使用 production-web 连接 SFTP' })).toBeInTheDocument()
+  const row = within(screen.getByTestId('asset-row-asset-1'))
+  expect(row.queryByRole('button', { name: 'prod-web-01：连接 SSH' })).not.toBeInTheDocument()
+  expect(row.getByRole('button', { name: 'prod-web-01：连接 SFTP' })).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'prod-web-01 更多操作' }))
-  expect(screen.queryByRole('menuitem', { name: '从操作菜单连接 prod-web-01' })).not.toBeInTheDocument()
-  expect(screen.getByRole('menuitem', { name: '从操作菜单使用 SFTP 连接 prod-web-01' })).toBeInTheDocument()
+  expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: /连接/ })).not.toBeInTheDocument()
 })
 
 test('SSH 发起 SFTP 固定原会话身份并只读取一次工作目录', async () => {

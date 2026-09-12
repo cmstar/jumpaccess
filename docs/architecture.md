@@ -46,6 +46,8 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 资产页和设置页的组件生命周期跟随对应 Tab 是否存在；切换时通过 `hidden` 隐藏页面并保留 DOM、滚动位置及设置导航状态，关闭 Tab 才卸载。不活跃页面不占布局或参与键盘焦点导航，临时视图状态不写入 `gui.toml`。
 
+桌面 Asset DTO 同时保留类型、类别的稳定标识与显示名称；`AssetIcon` 只根据这些元数据选择图标，连接入口仍由授权协议决定。资产列表与详情复用 `AssetAliasItem` 和既有 Alias 应用操作，详情不维护独立的别名副本。详情加载失败在相应资产内显示并允许重试，与无授权协议状态区分。
+
 新 Tab 的插入位置由 Tab reducer 统一处理，桌面前端传入当前 GUI 偏好 `tabs.new_tab_position`：`end` 追加到末尾，`after_current` 插入当前 Tab 右侧。单例页和 SSH/SFTP 页共用该规则；已存在单例页的激活及工作区恢复不重排 Tab。
 
 终端当前使用 xterm DOM 渲染器。产品光标值 `quarter_block` 在共用渲染参数中映射为原生 `underline`，预览和会话宿主通过限定 CSS 将其加粗为字符格高度的约 25%，沿用原生光标颜色与闪烁。此适配依赖 DOM 光标结构；将来切换 Canvas/WebGL 渲染器或升级 xterm 时，必须重新验证或补充对应实现，不能直接把产品自定义值传给 xterm。

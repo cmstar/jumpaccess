@@ -453,13 +453,22 @@ func organizationForAlias(alias projectconfig.Alias, fallback string) string {
 }
 
 func assetView(asset jumpserver.Asset, aliases []AliasView) AssetView {
+	typeLabel, categoryLabel := asset.Type.Label, asset.Category.Label
+	if typeLabel == "" {
+		typeLabel = asset.Type.Value
+	}
+	if categoryLabel == "" {
+		categoryLabel = asset.Category.Value
+	}
 	return AssetView{
-		ID:       asset.ID,
-		Name:     asset.Name,
-		Address:  asset.Address,
-		Type:     asset.Type.Label,
-		Category: asset.Category.Label,
-		Aliases:  aliases,
+		ID:            asset.ID,
+		Name:          asset.Name,
+		Address:       asset.Address,
+		Type:          typeLabel,
+		Category:      categoryLabel,
+		TypeValue:     asset.Type.Value,
+		CategoryValue: asset.Category.Value,
+		Aliases:       aliases,
 	}
 }
 

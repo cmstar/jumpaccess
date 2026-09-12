@@ -86,6 +86,8 @@ export interface Asset {
   address: string
   type: string
   category: string
+  typeValue?: string
+  categoryValue?: string
   aliases: Alias[]
 }
 

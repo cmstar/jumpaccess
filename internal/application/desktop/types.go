@@ -39,12 +39,14 @@ type AliasView struct {
 }
 
 type AssetView struct {
-	ID       string      `json:"id"`
-	Name     string      `json:"name"`
-	Address  string      `json:"address"`
-	Type     string      `json:"type"`
-	Category string      `json:"category"`
-	Aliases  []AliasView `json:"aliases"`
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Address       string      `json:"address"`
+	Type          string      `json:"type"`
+	Category      string      `json:"category"`
+	TypeValue     string      `json:"typeValue"`
+	CategoryValue string      `json:"categoryValue"`
+	Aliases       []AliasView `json:"aliases"`
 }
 
 type AssetPage struct {

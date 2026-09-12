@@ -39,6 +39,7 @@ import {
 } from 'lucide-react'
 
 import './App.css'
+import { AssetIcon } from './components/AssetIcon'
 import { NotificationProvider, useNotifications } from './components/Notifications'
 import { useCopyText } from './components/useCopyText'
 import { DeveloperSettings } from './components/DeveloperSettings'
@@ -310,6 +311,9 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const [organizationsLoading, setOrganizationsLoading] = useState(false)
   const [assets, setAssets] = useState<AssetPage>({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
   const [details, setDetails] = useState<Record<string, AssetDetail>>({})
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
+  const detailContext = useRef('')
+  detailContext.current = `${profile}\0${organization}`
   const [selectedAssetID, setSelectedAssetID] = useState('')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -592,6 +596,12 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     const wanted = [...new Map([...assets.results, ...(quickOpen ? quickResults : [])].map((asset) => [asset.id, asset])).values()].filter((asset) => !details[asset.id])
     if (!wanted.length) return
     let cancelled = false
+    const context = `${profile}\0${organization}`
+    setDetailErrors((current) => {
+      const next = { ...current }
+      wanted.forEach((asset) => { delete next[`${context}\0${asset.id}`] })
+      return next
+    })
     void Promise.allSettled(wanted.map((asset) => backend.getAsset({ profile, organization, asset: asset.id })))
       .then((results) => {
         if (cancelled) return
@@ -600,8 +610,13 @@ function AppContent({ backend = wailsBackend }: AppProps) {
           results.forEach((result) => { if (result.status === 'fulfilled') next[result.value.id] = result.value })
           return next
         })
-        const failure = results.find((result) => result.status === 'rejected')
-        if (failure?.status === 'rejected') showError(errorMessage(failure.reason))
+        setDetailErrors((current) => {
+          const next = { ...current }
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') next[`${context}\0${wanted[index].id}`] = errorMessage(result.reason)
+          })
+          return next
+        })
       })
     return () => { cancelled = true }
   }, [backend, currentProfileLoggedIn, assets.results, organization, profile, quickOpen, quickResults, refreshKey])
@@ -731,9 +746,17 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   async function ensureDetail(asset: Asset): Promise<AssetDetail> {
     const cached = details[asset.id]
     if (cached) return cached
-    const detail = await backend.getAsset({ profile, organization, asset: asset.id })
-    setDetails((current) => ({ ...current, [detail.id]: detail }))
-    return detail
+    const context = `${profile}\0${organization}`
+    const key = `${context}\0${asset.id}`
+    setDetailErrors((current) => { const next = { ...current }; delete next[key]; return next })
+    try {
+      const detail = await backend.getAsset({ profile, organization, asset: asset.id })
+      if (detailContext.current === context) setDetails((current) => ({ ...current, [detail.id]: detail }))
+      return detail
+    } catch (reason) {
+      setDetailErrors((current) => ({ ...current, [key]: errorMessage(reason) }))
+      throw reason
+    }
   }
 
   async function connectAsset(asset: Asset, protocol: 'ssh' | 'sftp' = 'ssh') {
@@ -1155,13 +1178,13 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         {workspace.tabs.some((tab) => tab.kind === 'assets') ? (
           <div className="content" hidden={activeTab?.kind !== 'assets'}>
             <section className="asset-pane">
-              <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并直接建立 SSH 会话。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={syncingResources || !profile || !currentProfileLoggedIn} onClick={syncResources} type="button"><RefreshCcw className={syncingResources ? 'spin' : ''} />{syncingResources ? '同步中…' : '立即同步'}</button></div></PageHeading>
+              <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并建立已授权的 SSH 或 SFTP 连接。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={syncingResources || !profile || !currentProfileLoggedIn} onClick={syncResources} type="button"><RefreshCcw className={syncingResources ? 'spin' : ''} />{syncingResources ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
                 <div className="asset-toolbar"><label className="search-box"><Search /><input ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
                 <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onConnectSFTP={() => void connectAsset(asset, 'sftp')} onConnectAliasSFTP={(alias) => void connectAlias(asset, alias, 'sftp')} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
             </section>
-            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onConnectSFTP={() => void connectAsset(selectedAsset, 'sftp')} onCopy={(value) => void copyText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
+            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} error={detailErrors[`${profile}\0${organization}\0${selectedAsset.id}`]} onRetry={() => void ensureDetail(selectedAsset).catch(() => undefined)} onConnect={() => void connectAsset(selectedAsset)} onConnectSFTP={() => void connectAsset(selectedAsset, 'sftp')} onCopy={(value) => void copyText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnectAlias={(alias) => void connectAlias(selectedAsset, alias)} onConnectAliasSFTP={(alias) => void connectAlias(selectedAsset, alias, 'sftp')} onEditAlias={(alias) => setAliasEditor({ asset: selectedAsset, alias })} onDeleteAlias={setPendingAliasDeletion} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
           </div>
         ) : null}
 
@@ -1469,11 +1492,26 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onConnectS
   onSelect: () => void
   selected: boolean
 }) {
-  return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={(event) => { if (!isAssetRowControl(event.target)) onSelect() }}><td><div className="asset-identity"><div className="server-glyph"><Server /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td><div className="inline-alias-stack">{asset.aliases.map((alias) => {
-    const knownAccounts = detail?.accounts ?? []
-    const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
-    return <div className="inline-alias-item" key={alias.name}><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select>{supportsProtocol(detail, 'ssh') ? <button className="icon-button" aria-label={`使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button> : null}{supportsProtocol(detail, 'sftp') ? <button className="icon-button" aria-label={`使用 ${alias.name} 连接 SFTP`} title="连接 SFTP" onClick={() => onConnectAliasSFTP(alias)}><FolderOpen /></button> : null}<button className="icon-button" aria-label={`编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
-  })}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td><AssetRowActions asset={asset} detail={detail} onConnectSFTP={onConnectSFTP} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
+  return <tr className={selected ? 'asset-row selected' : 'asset-row'} data-testid={`asset-row-${asset.id}`} onClick={(event) => { if (!isAssetRowControl(event.target)) onSelect() }}><td><div className="asset-identity"><div className="server-glyph"><AssetIcon asset={asset} /></div><div><strong>{asset.name}</strong><span>{asset.address}</span></div></div></td><td><span className="type-label">{asset.type || asset.category || 'Asset'}</span></td><td><div className="inline-alias-stack">{asset.aliases.map((alias) => <AssetAliasItem key={alias.name} alias={alias} detail={detail} onBind={onBind} onConnectAlias={onConnectAlias} onConnectAliasSFTP={onConnectAliasSFTP} onEditAlias={onEditAlias} onDeleteAlias={onDeleteAlias} onEnsureDetail={onEnsureDetail} />)}{asset.aliases.length === 0 ? <button className="inline-add-alias" aria-label="创建 Alias" onClick={onCreateAlias}><Plus />创建 Alias</button> : null}</div></td><td><AssetRowActions asset={asset} detail={detail} onConnectSFTP={onConnectSFTP} onConnect={onConnect} onCreateAlias={onCreateAlias} /></td></tr>
+}
+
+interface AliasActions {
+  onBind: (alias: Alias, account: string) => void
+  onConnectAlias: (alias: Alias) => void
+  onConnectAliasSFTP: (alias: Alias) => void
+  onEditAlias: (alias: Alias) => void
+  onDeleteAlias: (alias: Alias) => void
+}
+
+function AssetAliasItem({ alias, detail, labelPrefix = '', onBind, onConnectAlias, onConnectAliasSFTP, onEditAlias, onDeleteAlias, onEnsureDetail }: AliasActions & {
+  alias: Alias
+  detail?: AssetDetail
+  labelPrefix?: string
+  onEnsureDetail?: () => void
+}) {
+  const knownAccounts = detail?.accounts ?? []
+  const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
+  return <div className="inline-alias-item"><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${labelPrefix}${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select>{supportsProtocol(detail, 'ssh') ? <button className="icon-button" aria-label={`${labelPrefix}使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button> : null}{supportsProtocol(detail, 'sftp') ? <button className="icon-button" aria-label={`${labelPrefix}使用 ${alias.name} 连接 SFTP`} title="连接 SFTP" onClick={() => onConnectAliasSFTP(alias)}><FolderOpen /></button> : null}<button className="icon-button" aria-label={`${labelPrefix}编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`${labelPrefix}删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
 }
 
 function AssetRowActions({ asset, detail, onConnect, onConnectSFTP, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCreateAlias: () => void }) {
@@ -1484,11 +1522,45 @@ function AssetRowActions({ asset, detail, onConnect, onConnectSFTP, onCreateAlia
     setOpen(false)
     action()
   }
-  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu">{supportsProtocol(detail, 'ssh') ? <button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button> : null}{supportsProtocol(detail, 'sftp') ? <button aria-label={`从操作菜单使用 SFTP 连接 ${asset.name}`} onClick={() => act(onConnectSFTP)} role="menuitem"><FolderOpen />连接 SFTP</button> : null}<button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void copyText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void copyText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
+  return <div className="row-actions" ref={root}>
+    {supportsProtocol(detail, 'ssh') ? <button aria-label={`${asset.name}：连接 SSH`} className="icon-button" onClick={() => act(onConnect)} title="连接 SSH" type="button"><TerminalSquare /></button> : null}
+    {supportsProtocol(detail, 'sftp') ? <button aria-label={`${asset.name}：连接 SFTP`} className="icon-button" onClick={() => act(onConnectSFTP)} title="连接 SFTP" type="button"><FolderOpen /></button> : null}
+    <button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} title="更多操作" type="button"><MoreHorizontal /></button>
+    {open ? <div className="popover right" role="menu"><button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void copyText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void copyText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}
+  </div>
 }
 
-function AssetDetailPane({ asset, detail, onConnect, onConnectSFTP, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
-  return <aside className="detail-pane"><div className="detail-overline">资产详情</div><div className="detail-title"><div className="detail-icon"><Server /></div><div><h2>{asset.name}</h2><p>{asset.type || asset.category}</p></div></div><dl className="asset-metadata"><div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div><div><dt>协议</dt><dd>{detail?.protocols.map((protocol) => <span className="badge outline" key={protocol.name}>{protocol.name.toUpperCase()} : {protocol.port}</span>) ?? '加载中…'}</dd></div><div><dt>Asset ID</dt><dd className="mono asset-id-value"><span className="asset-id-text" title={asset.id}>{asset.id}</span><button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div></dl><div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : '加载中…'}</span></div><ShieldCheck /></div><div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}</div><div className="connect-actions">{detail?.protocols.some((protocol) => protocol.name.toLowerCase() === 'ssh') ? <button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button> : null}{detail?.protocols.some((protocol) => protocol.name.toLowerCase() === 'sftp') ? <button className="button primary large" aria-label={`使用 SFTP 连接 ${asset.name}`} onClick={onConnectSFTP}><FolderOpen />连接 SFTP</button> : null}{asset.aliases.length === 0 ? <button className="button secondary large icon-only" aria-label="为资产创建 Alias" onClick={onCreateAlias}><Tags /></button> : null}</div></aside>
+function AssetDetailPane({ asset, detail, error, onRetry, onConnect, onConnectSFTP, onCopy, onCreateAlias, ...aliasActions }: AliasActions & {
+  asset: Asset
+  detail?: AssetDetail
+  error?: string
+  onRetry: () => void
+  onConnect: () => void
+  onConnectSFTP: () => void
+  onCopy: (value: string) => void
+  onCreateAlias: () => void
+}) {
+  const unsupported = [...new Set(detail?.protocols.filter((protocol) => !['ssh', 'sftp'].includes(protocol.name.toLowerCase())).map((protocol) => protocol.name.toUpperCase()) ?? [])]
+  const failed = !detail && !!error
+  return <aside className="detail-pane" aria-label="资产详情">
+    <div className="detail-overline">资产详情</div>
+    <div className="detail-title"><div className="detail-icon"><AssetIcon asset={asset} /></div><div><h2>{asset.name}</h2><p>{[asset.category, asset.type].filter((value, index, values) => value && values.indexOf(value) === index).join(' / ')}</p></div></div>
+    <dl className="asset-metadata">
+      <div><dt>地址</dt><dd>{asset.address}<button aria-label="复制地址" onClick={() => onCopy(asset.address)}><Copy /></button></dd></div>
+      <div><dt>授权协议</dt><dd className="asset-protocols">{detail ? detail.protocols.length ? detail.protocols.map((protocol) => <span className="badge outline" key={`${protocol.name}:${protocol.port}`}>{protocol.name.toUpperCase()} : {protocol.port}</span>) : '无' : failed ? '加载失败' : '加载中…'}</dd></div>
+      <div><dt>Asset ID</dt><dd className="mono asset-id-value"><span className="asset-id-text" title={asset.id}>{asset.id}</span><button aria-label="复制 Asset ID" onClick={() => onCopy(asset.id)}><Copy /></button></dd></div>
+    </dl>
+    {failed ? <div className="asset-protocol-notice" role="alert"><strong>资产详情加载失败</strong><p>{error}</p><button className="button secondary small" aria-label="重新加载资产详情" onClick={onRetry}><RotateCcw />重试</button></div> : null}
+    {unsupported.length ? <div className="asset-protocol-notice"><p>JumpAccess 暂不支持 {unsupported.join('、')} 协议。</p><small>当前支持 SSH 和 SFTP，可继续查看资产和管理 Alias。</small></div> : null}
+    {detail && detail.protocols.length === 0 ? <div className="asset-protocol-notice"><p>当前没有可用的授权协议。</p><small>请联系管理员检查资产授权。</small></div> : null}
+    <div className="detail-section-heading"><div><h3>可用账号</h3><span>{detail ? `${detail.accounts.length} 个` : failed ? '加载失败' : '加载中…'}</span></div><ShieldCheck /></div>
+    <div className="account-list">{detail?.accounts.map((account) => <div className="account-card" key={account.id || account.username}><span className="account-icon"><KeyRound /></span><span><strong>{accountLabel(account)}</strong><small>{account.name && account.name !== account.username ? account.name : 'JumpServer 授权账号'}</small></span></div>)}{detail?.accounts.length === 0 ? <p className="detail-empty-alias">当前没有可用账号</p> : null}</div>
+    <div className="connect-actions">{supportsProtocol(detail, 'ssh') ? <button className="button primary large" aria-label={`连接 ${asset.name}`} onClick={onConnect}><TerminalSquare />连接 SSH</button> : null}{supportsProtocol(detail, 'sftp') ? <button className="button primary large" aria-label={`使用 SFTP 连接 ${asset.name}`} onClick={onConnectSFTP}><FolderOpen />连接 SFTP</button> : null}</div>
+    <section className="detail-alias-section" aria-label="资产 Alias">
+      <div className="detail-section-heading"><div><h3>本地 Alias</h3><span>{asset.aliases.length} 个</span></div><button className="button ghost small" aria-label="添加 Alias" onClick={onCreateAlias}><Plus />添加</button></div>
+      <div className="inline-alias-stack detail-alias-list">{asset.aliases.map((alias) => <AssetAliasItem key={alias.name} alias={alias} detail={detail} labelPrefix="详情：" onEnsureDetail={detail ? undefined : onRetry} {...aliasActions} />)}{asset.aliases.length === 0 ? <p className="detail-empty-alias">尚未配置 Alias</p> : null}</div>
+    </section>
+  </aside>
 }
 
 function TerminalFontInput({ families, onChange, value }: { families: string[]; onChange: (value: string) => void; value: string }) {

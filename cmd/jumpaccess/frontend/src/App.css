@@ -802,7 +802,7 @@ kbd {
   min-width: 0;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 380px;
   overflow: hidden;
 }
 
@@ -1132,7 +1132,7 @@ details > summary::-webkit-details-marker {
 .asset-table-card th:first-child { width: 37%; }
 .asset-table-card th:nth-child(2) { width: 12%; }
 .asset-table-card th:nth-child(3) { width: 36%; }
-.asset-table-card th:last-child { width: 42px; }
+.asset-table-card th:last-child { width: 114px; }
 
 .asset-table-card td {
   height: auto;
@@ -1228,6 +1228,7 @@ details > summary::-webkit-details-marker {
 
 .inline-alias-item {
   display: flex;
+  flex-wrap: wrap;
   min-height: 35px;
   align-items: center;
   justify-content: space-between;
@@ -1260,6 +1261,8 @@ details > summary::-webkit-details-marker {
 .inline-alias-actions {
   display: flex;
   min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
 }
@@ -1344,8 +1347,15 @@ details > summary::-webkit-details-marker {
   width: 11px;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
 .row-actions > .icon-button {
-  margin: auto;
+  flex: 0 0 auto;
 }
 
 .row-actions:has(.popover) {
@@ -1480,7 +1490,7 @@ details > summary::-webkit-details-marker {
 .asset-metadata > div {
   display: grid;
   min-height: 34px;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   align-items: center;
 }
 
@@ -1503,15 +1513,11 @@ details > summary::-webkit-details-marker {
   white-space: nowrap;
 }
 
-.asset-id-value {
-  justify-content: flex-start;
-}
-
 .asset-id-value > .asset-id-text {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  text-align: left;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1519,6 +1525,33 @@ details > summary::-webkit-details-marker {
 .asset-id-value > button {
   flex: 0 0 auto;
 }
+
+.asset-metadata dd.asset-protocols {
+  flex-wrap: wrap;
+  padding-block: 5px;
+  white-space: normal;
+}
+
+.asset-protocol-notice {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font-size: .65rem;
+  overflow-wrap: anywhere;
+}
+
+.asset-protocol-notice p { margin: 0 0 6px; }
+.asset-protocol-notice strong { display: block; margin-bottom: 6px; }
+.asset-protocol-notice small { color: var(--muted); font-size: .6rem; }
+.detail-alias-section { margin-top: 18px; border-top: 1px solid var(--border); }
+.detail-alias-list .inline-alias-item { align-items: stretch; flex-direction: column; padding: 9px; }
+.detail-alias-list .inline-alias-name { white-space: normal; overflow-wrap: anywhere; }
+.detail-alias-list .inline-alias-actions { flex-wrap: wrap; }
+.detail-alias-list .inline-alias-actions select { flex: 1; max-width: none; min-width: 0; }
+.detail-empty-alias { margin: 0; color: var(--muted); font-size: .65rem; }
 
 .asset-metadata dd button {
   padding: 3px;
