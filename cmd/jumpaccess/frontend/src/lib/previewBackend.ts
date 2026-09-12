@@ -42,7 +42,7 @@ const details = new Map<string, AssetDetail>(assets.map((asset) => [asset.id, {
 }]))
 
 let state: BootstrapState = {
-  version: '0.1.0-dev',
+  version: 'dev',
   currentProfile: 'production',
   currentOrganization: 'org-dev',
   profiles: [

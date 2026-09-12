@@ -2,6 +2,7 @@ import { lazy, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, Suspens
 import {
   Activity,
   Boxes,
+  Bug,
   ChevronDown,
   Clock3,
   ClipboardCopy,
@@ -38,6 +39,9 @@ import {
 } from 'lucide-react'
 
 import './App.css'
+import { NotificationProvider, useNotifications } from './components/Notifications'
+import { useCopyText } from './components/useCopyText'
+import { DeveloperSettings } from './components/DeveloperSettings'
 import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
 import { SFTPPane } from './components/SFTPPane'
@@ -268,7 +272,25 @@ function AliasFilterMenu({ onChange, value }: { onChange: (value: AliasFilter) =
   return <div className="filter-menu" ref={root}><button aria-expanded={open} aria-haspopup="true" aria-label="筛选" className="button secondary" onClick={() => setOpen((current) => !current)} type="button"><SlidersHorizontal />筛选{value !== 'all' ? <em>1</em> : null}<ChevronDown /></button>{open ? <div className="popover filter-popover" role="group" aria-label="当前页 Alias 筛选"><strong>当前页 Alias 状态</strong>{([['all', '全部'], ['with-alias', '已有 Alias'], ['without-alias', '未创建 Alias']] as const).map(([filter, label]) => <label key={filter}><input type="radio" name="alias-filter" checked={value === filter} onChange={() => { onChange(filter); setOpen(false) }} />{label}</label>)}</div> : null}</div>
 }
 
-export default function App({ backend = wailsBackend }: AppProps) {
+export default function App(props: AppProps) {
+  return <NotificationProvider><AppContent {...props} /></NotificationProvider>
+}
+
+function AppContent({ backend = wailsBackend }: AppProps) {
+  const { showInfo, showWarning, showError } = useNotifications()
+  const copyText = useCopyText()
+  const manualSync = useRef<{ profile: string; pending: Set<'organizations' | 'assets'>; failed: boolean; emptyOrganizations: boolean; hasOrganization: boolean } | null>(null)
+
+  function finishSyncPart(sync: typeof manualSync.current, part: 'organizations' | 'assets') {
+    if (!sync || manualSync.current !== sync) return
+    sync.pending.delete(part)
+    if (sync.pending.size) return
+    manualSync.current = null
+    if (sync.failed) return
+    if (sync.emptyOrganizations) showWarning(`${sync.profile} 同步完成，但没有可用的 Organization。`)
+    else if (!sync.hasOrganization) showInfo(`${sync.profile} Organization 同步成功，请选择 Organization 后查看资产。`)
+    else showInfo(`${sync.profile} 资产同步成功`)
+  }
   const searchRef = useRef<HTMLInputElement>(null)
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
   const [workspace, setWorkspace] = useState<TabWorkspace>(emptyTabWorkspace)
@@ -325,7 +347,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
     return controller
   }
   const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
-  const [error, setError] = useState('')
+  const [startupError, setStartupError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
   const [aliasEditor, setAliasEditor] = useState<{ asset: Asset; alias: Alias } | null>(null)
   const [pendingAliasDeletion, setPendingAliasDeletion] = useState<Alias | null>(null)
@@ -435,7 +457,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         setSessionLatencies({})
         workspaceReady.current = true
       })
-      .catch((reason) => !cancelled && setError(errorMessage(reason)))
+      .catch((reason) => !cancelled && setStartupError(errorMessage(reason)))
     const offState = backend.onSessionState((event) => {
       if (event.status === 'active') void transferFor(event.id)?.probe()
       if (event.status === 'closed' || event.status === 'failed') {
@@ -496,7 +518,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
     workspaceSaveQueue.current = workspaceSaveQueue.current
       .catch(() => undefined)
       .then(() => backend.saveWorkspace(snapshot))
-      .catch((reason) => setError(errorMessage(reason)))
+      .catch((reason) => showError(errorMessage(reason)))
   }, [backend, workspace])
 
   useEffect(() => {
@@ -514,12 +536,25 @@ export default function App({ backend = wailsBackend }: AppProps) {
       return
     }
     let cancelled = false
+    const sync = manualSync.current
     setOrganizationsLoading(true)
     backend.listOrganizations(profile)
-      .then((values) => !cancelled && setOrganizations(values))
-      .catch((reason) => !cancelled && setError(errorMessage(reason)))
-      .finally(() => !cancelled && setOrganizationsLoading(false))
-    return () => { cancelled = true }
+      .then((values) => {
+        if (cancelled) return
+        setOrganizations(values)
+        if (sync) sync.emptyOrganizations = values.length === 0
+      })
+      .catch((reason) => {
+        if (cancelled) return
+        if (sync) sync.failed = true
+        showError(errorMessage(reason))
+      })
+      .finally(() => {
+        if (cancelled) return
+        setOrganizationsLoading(false)
+        finishSyncPart(sync, 'organizations')
+      })
+    return () => { cancelled = true; if (manualSync.current === sync) manualSync.current = null }
   }, [backend, currentProfileLoggedIn, profile, organizationRefreshKey])
 
   useEffect(() => {
@@ -529,18 +564,27 @@ export default function App({ backend = wailsBackend }: AppProps) {
       return
     }
     let cancelled = false
+    const sync = manualSync.current
     setRefreshing(true)
     backend.listAssets({ profile, organization, search: debouncedSearch, offset, limit: pageSize })
-      .then((page) => {
+      .then(async (page) => {
         if (cancelled) return
         setAssets(page)
         setLastSynced(new Date())
         setSelectedAssetID((current) => page.results.some((asset) => asset.id === current) ? current : (page.results[0]?.id ?? ''))
-        void syncProfileAuth(profile).catch((reason) => !cancelled && setError(errorMessage(reason)))
+        await syncProfileAuth(profile)
       })
-      .catch((reason) => !cancelled && setError(errorMessage(reason)))
-      .finally(() => !cancelled && setRefreshing(false))
-    return () => { cancelled = true }
+      .catch((reason) => {
+        if (cancelled) return
+        if (sync) sync.failed = true
+        showError(errorMessage(reason))
+      })
+      .finally(() => {
+        if (cancelled) return
+        setRefreshing(false)
+        finishSyncPart(sync, 'assets')
+      })
+    return () => { cancelled = true; if (manualSync.current === sync) manualSync.current = null }
   }, [backend, currentProfileLoggedIn, debouncedSearch, offset, organization, profile, refreshKey])
 
   useEffect(() => {
@@ -557,7 +601,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
           return next
         })
         const failure = results.find((result) => result.status === 'rejected')
-        if (failure?.status === 'rejected') setError(errorMessage(failure.reason))
+        if (failure?.status === 'rejected') showError(errorMessage(failure.reason))
       })
     return () => { cancelled = true }
   }, [backend, currentProfileLoggedIn, assets.results, organization, profile, quickOpen, quickResults, refreshKey])
@@ -618,7 +662,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
     const timer = window.setTimeout(() => {
       backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
         .then(setQuickResults)
-        .catch((reason) => setError(errorMessage(reason)))
+        .catch((reason) => showError(errorMessage(reason)))
     }, 160)
     return () => window.clearTimeout(timer)
   }, [assets.results.length, backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
@@ -633,21 +677,28 @@ export default function App({ backend = wailsBackend }: AppProps) {
 
   async function run(action: () => Promise<void>) {
     try {
-      setError('')
       await action()
     } catch (reason) {
-      setError(errorMessage(reason))
+      showError(errorMessage(reason))
     }
   }
 
   function syncResources() {
-    setError('')
+    if (syncingResources || !profile || !currentProfileLoggedIn) return
+    if (!organization && organizations.length > 0) {
+      showWarning('请先选择 Organization，再同步资产。')
+      return
+    }
+    manualSync.current = {
+      profile,
+      pending: new Set([...(organizations.length === 0 ? ['organizations' as const] : []), ...(organization ? ['assets' as const] : [])]),
+      failed: false, emptyOrganizations: false, hasOrganization: !!organization,
+    }
     if (organizations.length === 0) setOrganizationRefreshKey((value) => value + 1)
     setRefreshKey((value) => value + 1)
   }
 
   async function addProfile(name: string, url: string) {
-    setError('')
     await backend.addProfile(name, url)
     setProfileDialog(false)
     void run(async () => {
@@ -657,7 +708,6 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }
 
   async function updateProfileURL(item: ProfileSummary, url: string) {
-    setError('')
     await backend.updateProfileURL(item.name, url)
     if (item.name === profile) {
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
@@ -666,6 +716,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
       setLastSynced(null)
     }
     setEditingProfile(null)
+    showWarning(`${item.name} 地址已更新，旧认证已清除，请重新登录。`)
     void run(() => reloadBootstrap())
   }
 
@@ -730,7 +781,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
     dispatchTabs({ type: protocol === 'ssh' ? 'open-ssh' : 'open-sftp', id: tabID, descriptor })
     if (protocol === 'ssh') await beginSSHConnection(tabID, descriptor, false)
     else await beginSFTPConnection(tabID, descriptor)
-    void syncProfileAuth(profile).catch((reason) => setError(errorMessage(reason)))
+    void syncProfileAuth(profile).catch((reason) => showError(errorMessage(reason)))
     setPendingConnection(null)
     setQuickOpen(false)
   }
@@ -1016,7 +1067,8 @@ export default function App({ backend = wailsBackend }: AppProps) {
     try {
       await run(async () => {
         await backend.refreshAuth(name)
-        await reloadBootstrap(name)
+        await reloadBootstrap()
+        showInfo(`${name} 认证刷新成功`)
       })
     } finally {
       setRefreshingProfiles((current) => {
@@ -1028,7 +1080,6 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }
 
   async function logoutProfile(item: ProfileSummary) {
-    setError('')
     await backend.logout(item.name)
     if (item.name === profile) {
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
@@ -1038,6 +1089,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
     }
     await reloadBootstrap()
     setPendingProfileLogout(null)
+    showInfo(`${item.name} 已退出登录`)
   }
 
   async function savePreferences(next: Preferences) {
@@ -1054,7 +1106,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
         if (preferenceRevision.current === revision) {
           setBootstrap((current) => current ? { ...current, preferences: confirmedPreferences.current! } : current)
         }
-        setError(errorMessage(reason))
+        showError(errorMessage(reason))
       }
     })
     preferenceSaveQueue.current = save
@@ -1068,7 +1120,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
   }
 
   if (!bootstrap) {
-    return <main className="loading-shell"><div className="brand-mark"><AppLogo /></div><h1>JumpAccess</h1><p>{error || '正在连接桌面服务…'}</p></main>
+    return <main className="loading-shell"><div className="brand-mark"><AppLogo /></div><h1>JumpAccess</h1><p>{startupError || '正在连接桌面服务…'}</p></main>
   }
 
   return (
@@ -1097,7 +1149,6 @@ export default function App({ backend = wailsBackend }: AppProps) {
           </div>
         </header> : null}
 
-        {error ? <div className="error-banner" role="alert"><ShieldAlert /><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div> : null}
 
         {!activeTab ? <StartPage onAction={(action) => action === 'quick' ? setQuickOpen(true) : openSingleton(action)} /> : null}
 
@@ -1110,14 +1161,14 @@ export default function App({ backend = wailsBackend }: AppProps) {
                 <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onConnectSFTP={() => void connectAsset(asset, 'sftp')} onConnectAliasSFTP={(alias) => void connectAlias(asset, alias, 'sftp')} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
             </section>
-            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onConnectSFTP={() => void connectAsset(selectedAsset, 'sftp')} onCopy={(value) => void navigator.clipboard?.writeText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
+            {selectedAsset ? <AssetDetailPane asset={selectedAsset} detail={selectedDetail} onConnect={() => void connectAsset(selectedAsset)} onConnectSFTP={() => void connectAsset(selectedAsset, 'sftp')} onCopy={(value) => void copyText(value)} onCreateAlias={() => setAliasAsset(selectedAsset)} /> : <aside className="detail-pane empty-detail"><Server /><span>选择一项资产查看详情</span></aside>}
           </div>
         ) : null}
 
         {workspace.tabs.filter((tab): tab is SFTPTab => tab.kind === 'sftp').map((tab) => <div className="sftp-tab-content" hidden={tab.id !== workspace.activeTabID} key={tab.id}><SFTPPane active={tab.id === workspace.activeTabID} backend={backend} tab={tab} onReconnect={() => void beginSFTPConnection(tab.id, tab.descriptor)} onDisconnect={() => void requestSFTPClose(tab, true)} /></div>)}
         {activeTab?.kind === 'ssh' ? <SSHView backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onRestart={() => void restartSSHConnection(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
-        {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void navigator.clipboard?.writeText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" disabled={refreshingProfiles.has(item.name)} onClick={() => void refreshProfileAuth(item.name)}><RefreshCcw className={refreshingProfiles.has(item.name) ? 'spin' : ''} />{refreshingProfiles.has(item.name) ? '刷新中…' : '刷新认证'}</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
+        {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点、认证状态和默认 Organization。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">当前</span> : <span className="badge outline">备用</span>}</div><h2>{item.name}</h2><dl><div><dt>Organization</dt><dd>{organizations.find((org) => org.id === item.organization)?.name || item.organization || '未设置'}</dd></div><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void copyText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.name !== profile ? <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>设为当前</button> : null}{item.auth.loggedIn ? <><button className="button ghost small" disabled={refreshingProfiles.has(item.name)} onClick={() => void refreshProfileAuth(item.name)}><RefreshCcw className={refreshingProfiles.has(item.name) ? 'spin' : ''} />{refreshingProfiles.has(item.name) ? '刷新中…' : '刷新认证'}</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
         {workspace.tabs.some((tab) => tab.kind === 'settings') ? <SettingsView hidden={activeTab?.kind !== 'settings'} backend={backend} fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
       </section>
@@ -1129,7 +1180,7 @@ export default function App({ backend = wailsBackend }: AppProps) {
       {quickOpen ? <QuickConnectDialog assets={displayedQuickResults.filter((asset) => supportsProtocol(details[asset.id], 'ssh'))} onCancel={() => { setQuickOpen(false); setQuickQuery('') }} onConnectAsset={(asset) => void connectAsset(asset)} onConnectAlias={(asset, alias) => void connectAlias(asset, alias)} query={quickQuery} setQuery={setQuickQuery} /> : null}
       {profileDialog ? <ProfileDialog onCancel={() => setProfileDialog(false)} onSave={addProfile} /> : null}
       {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
-      {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
+      {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); showInfo(`${loginAttempt.profile} 登录成功`); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
       {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
       {pendingQuit ? <Modal title="停止传输并退出？" description="仍有未完成的文件传输。退出会停止这些任务。" onClose={() => setPendingQuit(false)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingQuit(false)}>取消</button><button className="button primary danger" onClick={() => void run(async () => { await workspaceSaveQueue.current; await preferenceSaveQueue.current; await backend.confirmQuit(); setPendingQuit(false) })}>停止并退出</button></div></Modal> : null}
@@ -1324,6 +1375,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
   preferences: Preferences
   tab: SSHTab
 }) {
+  const copyText = useCopyText()
   const [terminalActions, setTerminalActions] = useState<TerminalActions | null>(null)
   const terminalTheme = terminalScheme(preferences.terminalColorScheme).theme
   const descriptor = tab.descriptor
@@ -1376,7 +1428,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
       <div className="terminal-toolbar-actions">
         <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
         <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions || transfer?.busy} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
-        <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void navigator.clipboard?.writeText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
+        <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void copyText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
         <span aria-hidden="true" className="terminal-action-separator" />
         <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={!canConnectSFTP || status !== 'active'} onClick={onConnectSFTP} title={canConnectSFTP && status === 'active' ? '连接SFTP' : '连接SFTP （当前不可用）'} type="button"><FolderOpen /></button>
         <ZmodemToolbar key={session.id} active={status === 'active'} state={transfer} onCommand={onTransferCommand} />
@@ -1425,13 +1477,14 @@ function AssetRow({ asset, detail, onBind, onConnect, onConnectAlias, onConnectS
 }
 
 function AssetRowActions({ asset, detail, onConnect, onConnectSFTP, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCreateAlias: () => void }) {
+  const copyText = useCopyText()
   const [open, setOpen] = useState(false)
   const root = useDismissiblePopover(open, () => setOpen(false))
   const act = (action: () => void) => {
     setOpen(false)
     action()
   }
-  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu">{supportsProtocol(detail, 'ssh') ? <button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button> : null}{supportsProtocol(detail, 'sftp') ? <button aria-label={`从操作菜单使用 SFTP 连接 ${asset.name}`} onClick={() => act(onConnectSFTP)} role="menuitem"><FolderOpen />连接 SFTP</button> : null}<button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void navigator.clipboard?.writeText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
+  return <div className="row-actions" ref={root}><button aria-expanded={open} aria-haspopup="menu" aria-label={`${asset.name} 更多操作`} className="icon-button" onClick={() => setOpen((current) => !current)} type="button"><MoreHorizontal /></button>{open ? <div className="popover right" role="menu">{supportsProtocol(detail, 'ssh') ? <button aria-label={`从操作菜单连接 ${asset.name}`} onClick={() => act(onConnect)} role="menuitem"><TerminalSquare />连接 SSH</button> : null}{supportsProtocol(detail, 'sftp') ? <button aria-label={`从操作菜单使用 SFTP 连接 ${asset.name}`} onClick={() => act(onConnectSFTP)} role="menuitem"><FolderOpen />连接 SFTP</button> : null}<button onClick={() => act(onCreateAlias)} role="menuitem"><Plus />创建 Alias</button><button onClick={() => act(() => void copyText(asset.address))} role="menuitem"><Copy />复制地址</button><button onClick={() => act(() => void copyText(asset.id))} role="menuitem"><Copy />复制 Asset ID</button></div> : null}</div>
 }
 
 function AssetDetailPane({ asset, detail, onConnect, onConnectSFTP, onCopy, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCopy: (value: string) => void; onCreateAlias: () => void }) {
@@ -1615,11 +1668,15 @@ const settingsNavigation = [
   { id: 'terminal-behavior', label: '终端行为', icon: SlidersHorizontal },
   { id: 'tabs', label: 'Tab 行为', icon: PanelTopClose },
   { id: 'about', label: '关于 JumpAccess', icon: AppLogo },
+  { id: 'debug', label: '开发调试', icon: Bug },
 ] as const
 
 type SettingsSectionID = typeof settingsNavigation[number]['id']
 
 function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, onSave, preferences, version }: { backend: Backend; fontFamilies: string[]; hidden: boolean; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+  // 本地编译默认版本为 dev；发布流程注入 tag 版本，包括预发布版本。
+  const developmentBuild = version === 'dev'
+  const navigation = settingsNavigation.filter(item => item.id !== 'debug' || developmentBuild)
   const [activeSection, setActiveSection] = useState<SettingsSectionID>('appearance')
   const scrollRef = useRef<HTMLDivElement>(null)
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
@@ -1634,13 +1691,13 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
     if (!scrollContainer) return
     if (scrollContainer.scrollHeight > scrollContainer.clientHeight
       && scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 8) {
-      setActiveSection(settingsNavigation.at(-1)!.id)
+      setActiveSection(navigation.at(-1)!.id)
       return
     }
 
     const threshold = scrollContainer.scrollTop + Math.min(64, Math.max(24, scrollContainer.clientHeight * .12))
-    let nextSection: SettingsSectionID = settingsNavigation[0].id
-    for (const { id } of settingsNavigation) {
+    let nextSection: SettingsSectionID = navigation[0].id
+    for (const { id } of navigation) {
       const section = scrollContainer.querySelector<HTMLElement>(`#settings-${id}`)
       if (section && section.offsetTop <= threshold) nextSection = id
     }
@@ -1653,7 +1710,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
     </PageHeading>
     <div className="settings-layout">
       <nav aria-label="设置导航" className="settings-nav">
-        {settingsNavigation.map(({ icon: Icon, id, label }) => <button
+        {navigation.map(({ icon: Icon, id, label }) => <button
           aria-controls={`settings-${id}`}
           aria-current={activeSection === id ? 'location' : undefined}
           key={id}
@@ -1719,6 +1776,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
           <section className="settings-card about-settings-card" id="settings-about">
             <div className="settings-card-title about-settings-inline"><AppLogo labelled className="about-app-logo" /><div><h2>关于 JumpAccess</h2><p>Desktop · {version}</p></div><button className="button secondary small" onClick={onLicense}>查看许可证</button></div>
           </section>
+          {developmentBuild ? <DeveloperSettings /> : null}
         </div>
       </div>
     </div>

@@ -88,6 +88,12 @@ docs/               # 长期项目知识
 - CLI 文档和代码使用通用 `ProxyCommand` 术语，不增加 Tabby 专用标志、配置字段或包。
 - 错误信息和日志不得包含 Token、密码、Cookie、私钥或完整敏感响应。
 
+## GUI 公共提示
+
+开发调试分组位于 `cmd/jumpaccess/frontend/src/components/DeveloperSettings.tsx`，后续界面演示可在该组件内按功能添加 `settings-group`。`SettingsView` 仅在后端 Bootstrap 版本精确为 `dev` 时渲染该分组，并使用同一判断过滤导航和滚动定位列表。源码默认 `main.version = "dev"`，本地默认 `wails build` 保留此值；tag 发布工作流通过 `-ldflags "-X main.version=<version>"` 注入版本后隐藏入口，无需运行时访问 Git，也不根据 Vite 开发服务器状态判断。此开关只控制入口，不作为安全边界或编译期代码剔除机制。
+
+全局提示由 `cmd/jumpaccess/frontend/src/components/Notifications.tsx` 的 `NotificationProvider` 在 `App` 外层挂载，各子组件通过 `useNotifications()` 的 `showInfo`、`showWarning`、`showError` 复用，无需逐层传递回调。浮层经 Portal 挂到 `document.body`，共用明暗主题，位于标题栏下方且高于 Modal；容器空白区域不拦截指针，长文本换行，过多提示可滚动。`useCopyText()` 统一普通文本复制及其结果反馈，不在提示中回显复制内容。表单和会话内的上下文错误继续由原组件管理，不重复弹出全局提示。测试使用模拟计时器验证自动关闭、暂停和卸载清理，使用可控 Promise 验证异步完成、失败及过期结果隔离。
+
 ## 测试约定
 
 ZMODEM 修改需验证全字节二进制数据、分片握手和 UTF-8、双端真实协议收发、原生选择取消、断连后迟到的选择结果、下载文件名边界和同名文件保护、分块输出确认与关闭解锁。`go test -race ./internal/application/sshsession ./internal/application/zmodemfiles ./internal/sshclient` 检查核心并发边界；前端测试不使用真实账号或生产文件。用户本机还需使用实际 `lrzsz` 和 JumpServer 验证策略兼容性。

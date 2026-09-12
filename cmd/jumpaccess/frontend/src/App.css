@@ -797,40 +797,6 @@ kbd {
   box-shadow: 0 0 0 3px rgb(165 175 169 / 12%);
 }
 
-.error-banner {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  min-height: 38px;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 18px;
-  color: #9d434a;
-  border-bottom: 1px solid #f1c7ca;
-  background: #fff0f1;
-  font-size: .7rem;
-}
-
-.dark .error-banner {
-  color: #f2a5aa;
-  border-color: #593538;
-  background: #332225;
-}
-
-.error-banner svg {
-  width: 14px;
-}
-
-.error-banner button {
-  margin-left: auto;
-  color: inherit;
-  background: transparent;
-}
-
-.error-banner button svg {
-  width: 13px;
-}
-
 .content {
   display: grid;
   min-width: 0;
@@ -1929,6 +1895,13 @@ details > summary::-webkit-details-marker {
   color: var(--text);
   font-size: .7rem;
   font-weight: 650;
+}
+
+.settings-debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .terminal-preview {

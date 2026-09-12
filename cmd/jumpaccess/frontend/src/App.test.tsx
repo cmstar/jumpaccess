@@ -334,6 +334,7 @@ test.each(['成功', '刷新失败', '状态加载失败'])('刷新认证期间�
   await user.click(busy)
   expect(backend.refreshAuth).toHaveBeenCalledTimes(1)
   expect(backend.refreshAuth).toHaveBeenCalledWith('production')
+  expect(screen.queryByText('production 认证刷新成功')).not.toBeInTheDocument()
 
   if (outcome === '刷新失败') await act(async () => rejectRefresh(new Error('认证刷新失败')))
   else {
@@ -345,8 +346,13 @@ test.each(['成功', '刷新失败', '状态加载失败'])('刷新认证期间�
   const ready = await screen.findByRole('button', { name: '刷新认证' })
   expect(ready).toBeEnabled()
   expect(ready.querySelector('svg')).not.toHaveClass('spin')
-  if (outcome === '成功') expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  else expect(screen.getByRole('alert')).toHaveTextContent(outcome === '刷新失败' ? '认证刷新失败' : '状态加载失败')
+  if (outcome === '成功') {
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('production 认证刷新成功')
+  } else {
+    expect(screen.getByRole('alert')).toHaveTextContent(outcome === '刷新失败' ? '认证刷新失败' : '状态加载失败')
+    expect(screen.queryByText('production 认证刷新成功')).not.toBeInTheDocument()
+  }
 })
 
 test('刷新认证状态按 Profile 独立保存，切换 Tab 后仍保持忙碌', async () => {
@@ -709,10 +715,12 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
   await waitFor(() => expect(backend.listAssets).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'production-web', offset: 0 })))
 
   const callsBeforeRefresh = vi.mocked(backend.listAssets).mock.calls.length
+  expect(screen.queryByText('production 资产同步成功')).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '立即同步' }))
   await waitFor(() => expect(vi.mocked(backend.listAssets).mock.calls.length).toBeGreaterThan(callsBeforeRefresh))
   expect(screen.getByText(/最近同步/)).toBeInTheDocument()
   expect(backend.listOrganizations).toHaveBeenCalledTimes(1)
+  expect(await screen.findByText('production 资产同步成功')).toBeInTheDocument()
 })
 
 test.each(['加载失败', '返回空列表', '未选择组织'])('立即同步在组织列表%s后重试并填充选项', async (scenario) => {
@@ -732,7 +740,10 @@ test.each(['加载失败', '返回空列表', '未选择组织'])('立即同步�
   const user = userEvent.setup()
   render(<App backend={backend} />)
 
-  if (scenario !== '返回空列表') expect(await screen.findByRole('alert')).toHaveTextContent('组织网络不可用')
+  if (scenario !== '返回空列表') {
+    expect(await screen.findByRole('alert')).toHaveTextContent('组织网络不可用')
+    await user.click(screen.getByRole('button', { name: '关闭错误提示' }))
+  }
   const sync = await screen.findByRole('button', { name: '立即同步' })
   expect(sync).toBeEnabled()
   const assetCalls = vi.mocked(backend.listAssets).mock.calls.length
@@ -758,16 +769,73 @@ test('组织重试期间保持同步中，失败后可以再次同步', async ()
   render(<App backend={backend} />)
 
   await screen.findByRole('alert')
+  await user.click(screen.getByRole('button', { name: '关闭错误提示' }))
   await user.click(await screen.findByRole('button', { name: '立即同步' }))
   await waitFor(() => expect(listOrganizations).toHaveBeenCalledTimes(2))
   await waitFor(() => expect(backend.listAssets).toHaveBeenCalledTimes(2))
   expect(screen.getByRole('button', { name: '同步中…' })).toBeDisabled()
+  expect(screen.queryByText('production 资产同步成功')).not.toBeInTheDocument()
   await act(async () => rejectRetry(new Error('组织重试失败')))
   expect(await screen.findByRole('alert')).toHaveTextContent('组织重试失败')
+  expect(screen.queryByText('production 资产同步成功')).not.toBeInTheDocument()
   await user.click(await screen.findByRole('button', { name: '立即同步' }))
 
   expect(await screen.findByRole('button', { name: '当前 Organization：研发中心' })).toBeInTheDocument()
   expect(listOrganizations).toHaveBeenCalledTimes(3)
+})
+
+test.each([true, false])('未选择组织时同步结果给出明确提示，已有组织：%s', async (hasOrganizations) => {
+  const state = { ...bootstrapState, currentOrganization: '', profiles: bootstrapState.profiles.map(item => ({ ...item, organization: '' })) }
+  const backend = makeBackend({ bootstrap: vi.fn().mockResolvedValue(state), listOrganizations: vi.fn().mockResolvedValue(hasOrganizations ? [{ id: 'org-1', name: '研发中心' }] : []) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即同步' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: '立即同步' }))
+  expect(await screen.findByRole('status')).toHaveTextContent(hasOrganizations ? '请先选择 Organization，再同步资产。' : '没有可用的 Organization')
+  expect(backend.listAssets).not.toHaveBeenCalled()
+})
+
+test('手动同步等待认证状态加载，失败不提示成功', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即同步' })).toBeEnabled())
+  vi.mocked(backend.getAuthStatus).mockRejectedValueOnce(new Error('认证状态读取失败'))
+  await user.click(screen.getByRole('button', { name: '立即同步' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('认证状态读取失败')
+  expect(screen.queryByText('production 资产同步成功')).not.toBeInTheDocument()
+})
+
+test('复制在剪贴板写入成功后提示，失败不会报告成功', async () => {
+  const user = userEvent.setup()
+  const write = vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValueOnce(new Error('denied'))
+  render(<App backend={makeBackend()} />)
+  await user.click(await screen.findByRole('button', { name: '复制 Asset ID' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('复制失败')
+  expect(screen.queryByText('已复制到剪贴板')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '关闭错误提示' }))
+  write.mockResolvedValueOnce(undefined)
+  await user.click(screen.getByRole('button', { name: '复制 Asset ID' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('已复制到剪贴板')
+  expect(write).toHaveBeenLastCalledWith('asset-1')
+  write.mockRestore()
+})
+
+test('切换 Profile 后忽略原 Profile 尚未完成的同步结果', async () => {
+  let finish!: (page: AssetPage) => void
+  const state = { ...bootstrapState, profiles: [...bootstrapState.profiles, { ...bootstrapState.profiles[0], name: 'staging' }] }
+  const backend = makeBackend({ bootstrap: vi.fn().mockResolvedValue(state) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即同步' })).toBeEnabled())
+  vi.mocked(backend.listAssets).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  await user.click(screen.getByRole('button', { name: '立即同步' }))
+  await user.click(screen.getByRole('button', { name: '当前 Profile：production' }))
+  await user.click(screen.getByRole('option', { name: /staging/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '当前 Profile：staging' })).toBeInTheDocument())
+  await act(async () => finish(assetPage))
+  expect(screen.queryByText('production 资产同步成功')).not.toBeInTheDocument()
+  expect(screen.queryByText('staging 资产同步成功')).not.toBeInTheDocument()
 })
 
 test('资产详情不显示 Gateway 主机密钥提示', async () => {
@@ -931,6 +999,36 @@ test('设置主题会持久化 GUI 独有偏好，许可证位于关于栏', asy
 
   await user.click(screen.getByRole('button', { name: '查看许可证' }))
   expect(await screen.findByRole('dialog', { name: '开源许可证' })).toHaveTextContent('MIT License')
+})
+
+test.each(['dev', '0.2.0', '0.2.0-rc.1', '0.2.0-dev'])('设置只在开发版显示末尾的开发调试入口：%s', async (version) => {
+  const backend = makeBackend({ bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, version }) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '打开设置' }))
+  const navigation = screen.getByRole('navigation', { name: '设置导航' })
+  if (version !== 'dev') {
+    expect(within(navigation).queryByRole('button', { name: '开发调试' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '开发调试' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '演示普通消息' })).not.toBeInTheDocument()
+    return
+  }
+  const entry = within(navigation).getByRole('button', { name: '开发调试' })
+  expect(within(navigation).getAllByRole('button').at(-1)).toBe(entry)
+  const section = screen.getByRole('heading', { name: '开发调试' }).closest('section')!
+  expect(section.previousElementSibling).toHaveAttribute('id', 'settings-about')
+  expect(section.nextElementSibling).toBeNull()
+  expect(entry).toHaveAttribute('aria-controls', section.id)
+  const scroll = screen.getByTestId('settings-scroll')
+  Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 2000 }, clientHeight: { configurable: true, value: 500 }, scrollTop: { configurable: true, value: 1500 } })
+  fireEvent.scroll(scroll)
+  expect(entry).toHaveAttribute('aria-current', 'location')
+  for (const label of ['演示普通消息', '演示警告', '演示错误']) await user.click(within(section).getByRole('button', { name: label }))
+  expect(screen.getByText('这是一条普通消息，用于预览提示效果。').closest('[role="status"]')).toHaveClass('notification-info')
+  expect(screen.getByText('这是一条警告，用于预览提示效果。').closest('[role="status"]')).toHaveClass('notification-warning')
+  expect(screen.getByRole('alert')).toHaveTextContent('这是一条错误，用于预览提示效果。')
+  expect(backend.refreshAuth).not.toHaveBeenCalled()
+  expect(backend.savePreferences).not.toHaveBeenCalled()
 })
 
 test('设置页使用左侧导航和右侧单列滚动面板', async () => {
@@ -1992,6 +2090,7 @@ test('编辑 Profile URL 后保留 Profile，并要求重新登录', async () =>
   expect(await screen.findByText('https://new-jump.example.test')).toBeInTheDocument()
   expect(within(card).getByText('需要登录')).toBeInTheDocument()
   expect(backend.startLogin).not.toHaveBeenCalled()
+  expect(screen.getByRole('status')).toHaveTextContent('production 地址已更新，旧认证已清除，请重新登录。')
 })
 
 test('退出 Profile 登录前要求确认', async () => {
@@ -2025,6 +2124,7 @@ test('退出 Profile 登录前要求确认', async () => {
   await waitFor(() => expect(backend.logout).toHaveBeenCalledWith('production'))
   expect(screen.queryByRole('dialog', { name: '退出登录' })).not.toBeInTheDocument()
   expect(within(card).getByText('需要登录')).toBeInTheDocument()
+  expect(screen.getByRole('status')).toHaveTextContent('production 已退出登录')
 })
 
 test('Profile 卡片展示 Server URL，并在警告确认后删除全部本地内容', async () => {
