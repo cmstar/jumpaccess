@@ -2,6 +2,31 @@
 
 本文只列出当前代码中已经存在的命令。所有命令都可以用 `--help` 查看即时参数说明；Shell completion 由 Cobra 的内置 `completion` 命令生成。
 
+## 命令缩写
+
+各层级命令支持区分大小写的唯一前缀匹配。完整命令名和已注册别名优先；未精确命中时，只有当前层级唯一匹配的前缀才会执行。例如以下命令均等同于 `jumpctl organization list`：
+
+```text
+jumpctl org l
+jumpctl or l
+jumpctl orga li
+jumpctl o l
+```
+
+前缀同时匹配一个命令的名称和多个别名时，只算一个候选。存在歧义时不执行，向 stderr 列出匹配的正式命令名，并返回非零退出码：
+
+```text
+jumpctl auth l
+ambiguous command "l" for "jumpctl auth"
+Available commands:
+  login
+  logout
+```
+
+`pr` 会匹配 `profile`、`proxy`；`profile u` 会匹配 `update`、`use`；`c` 会匹配 `completion`、`config`。没有匹配时报告 `unknown command`。只输入命令组（如 `jumpctl or`）仍显示帮助；`jumpctl help or l` 支持相同的匹配和歧义检查。
+
+缩写仅适用于命令名及命令别名，不适用于 `--profile` 等选项名，也不会改写 Profile、Asset、Account、Alias 或 SSH 目标等参数值。`--` 后的内容仍作为位置参数处理。脚本和 SSH `ProxyCommand` 配置建议保留完整命令名，避免未来新增命令后缩写产生歧义。
+
 ## 建议的首次使用流程
 
 ```text

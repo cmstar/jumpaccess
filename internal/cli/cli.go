@@ -143,5 +143,6 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	for _, command := range newResourceCommands(deps) {
 		root.AddCommand(command)
 	}
+	configureCommandPrefixes(root)
 	return root
 }
