@@ -33,12 +33,13 @@ export class ZmodemController {
   private diskQueue: Promise<void> = Promise.resolve()
   private receiveJob: Promise<void> = Promise.resolve()
   private offeredFiles = 0
+  private completedNames: string[] = []
   private detectedHeader = false
   private bytesWithoutProgress = 0
   private lastProgressAt = 0
   private terminalProgress: ZmodemProgress
 
-  constructor(readonly id: string, private backend: ZmodemBackend, output: (text: string) => void, private changed: (state: ZmodemState) => void) {
+  constructor(readonly id: string, private backend: ZmodemBackend, output: (text: string) => void, private changed: (state: ZmodemState) => void, private completed: (message: string) => void = () => {}) {
     this.terminalProgress = new ZmodemProgress(output)
     this.sentry = this.newSentry()
   }
@@ -151,6 +152,7 @@ export class ZmodemController {
   }
   private async selectAndStart() {
     const generation = this.generation
+    this.completedNames = []
     const direction = this.detection?.get_session_role() === 'send' ? 'upload' : 'download'
     this.selecting = true
     this.update({ busy: true, direction, [direction]: true, message: direction === 'upload' ? '选择上传文件' : '选择下载位置', name: '', transferred: 0, size: 0 })
@@ -182,7 +184,7 @@ export class ZmodemController {
         })
         session.on('session_end', () => {
           void this.receiveJob.then(() => {
-            if (generation === this.generation && !this.disposed) void this.finish(this.offeredFiles ? '下载完成' : '没有可下载的文件')
+            if (generation === this.generation && !this.disposed) void this.finish(this.offeredFiles ? '下载完成' : '没有可下载的文件', this.offeredFiles > 0)
           }).catch(reason => this.fail(reason))
         })
         session.start()
@@ -194,7 +196,7 @@ export class ZmodemController {
     for (const file of files) {
       if (this.disposed || generation !== this.generation) return
       this.update({ name: file.name, size: file.size, transferred: 0 })
-      this.terminalProgress.start('upload', file.name, file.size)
+      this.terminalProgress.start('upload', file.path, file.size)
       const transfer = await session.send_offer({ name: file.name, size: file.size })
       if (this.disposed || generation !== this.generation) return
       if (!transfer) { skipped++; this.terminalProgress.end('Skipped by remote'); await this.backend.closeZmodemFile(file.id, false); continue }
@@ -212,10 +214,11 @@ export class ZmodemController {
       await transfer.end()
       await this.backend.closeZmodemFile(file.id, true)
       if (this.disposed || generation !== this.generation) return
+      this.completedNames.push(file.name)
       this.terminalProgress.end('Complete', true)
     }
     await session.close()
-    if (generation === this.generation) await this.finish(skipped ? `上传结束，远端跳过 ${skipped} 个文件` : '上传完成')
+    if (generation === this.generation) await this.finish(skipped ? `上传结束，远端跳过 ${skipped} 个文件` : '上传完成', files.length > skipped)
   }
   private async download(offer: Transfer, grant: string, generation: number) {
     const details = offer.get_details()
@@ -223,7 +226,7 @@ export class ZmodemController {
     const file = await this.backend.createZmodemDownload(this.id, grant, details.name, details.size)
     if (this.disposed || generation !== this.generation) { await this.backend.closeZmodemFile(file.id, false); return }
     this.update({ name: file.name, size: file.size, transferred: 0 })
-    this.terminalProgress.start('download', file.name, file.size)
+    this.terminalProgress.start('download', file.path, file.size)
     let transferred = 0
     await offer.accept({ on_input: data => {
       this.bytesWithoutProgress = 0
@@ -240,11 +243,16 @@ export class ZmodemController {
     await this.diskQueue
     if (!this.disposed && generation === this.generation) {
       await this.backend.closeZmodemFile(file.id, true)
-      if (!this.disposed && generation === this.generation) this.terminalProgress.end('Complete', true)
+      if (!this.disposed && generation === this.generation) {
+        this.completedNames.push(file.name)
+        this.terminalProgress.end('Complete', true)
+      }
     }
   }
-  private async finish(message: string) {
+  private async finish(message: string, success = false) {
     if (this.finishing) return
+    const generation = this.generation
+    const completedNames = this.completedNames
     this.finishing = true
     clearTimeout(this.timer)
     await this.selectionJob.catch(() => {})
@@ -256,7 +264,10 @@ export class ZmodemController {
     this.bytesWithoutProgress = 0
     this.selecting = false
     this.finishing = false
+    this.completedNames = []
     this.update({ busy: false, message })
+    // 批次结束且有成功文件时只通知一次；取消、失败和断连不触发成功提示。
+    if (success && completedNames.length && !this.disposed && generation === this.generation) this.completed(`${message}：${completedNames.join('、')}`)
   }
   cancel(message = '传输已取消', terminalMessage = 'Transfer cancelled') {
     if (this.disposed || this.finishing) return

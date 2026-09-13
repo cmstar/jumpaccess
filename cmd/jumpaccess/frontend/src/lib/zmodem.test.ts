@@ -96,10 +96,10 @@ test('等待远端开始超时后恢复输入，并允许再次传输', async ()
   } finally { vi.useRealTimers() }
 })
 
-test('真实 ZMODEM 双端协议上传完整二进制文件并恢复终端', async () => {
+test.each([false, true])('真实 ZMODEM 双端协议上传并恢复终端，远端全部跳过=%s', async (skipRemote) => {
   const api = backend()
   const data = Uint8Array.from({ length: 70_000 }, (_, i) => i % 256)
-  vi.mocked(api.chooseZmodemUploadFiles).mockResolvedValue([{ id: 'file', name: 'binary.dat', size: data.length }])
+  vi.mocked(api.chooseZmodemUploadFiles).mockResolvedValue([{ id: 'file', name: 'binary.dat', path: '/Users/local/上传/binary.dat', size: data.length }])
   let offset = 0
   vi.mocked(api.readZmodemFile).mockImplementation(async () => {
     const chunk = data.slice(offset, offset + 65536)
@@ -107,26 +107,61 @@ test('真实 ZMODEM 双端协议上传完整二进制文件并恢复终端', asy
     return encodeBytes(chunk)
   })
   const received: number[] = []
+  const offeredNames: string[] = []
   let incoming = Promise.resolve()
   const output: string[] = []
-  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {})
+  const completed = vi.fn()
+  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {}, completed)
   const peer = new Sentry({
     to_terminal: () => {}, on_retract: () => {},
     sender: bytes => { const copy = Uint8Array.from(bytes); incoming = incoming.then(() => controller.consume(copy)) },
     on_detect: detection => {
       const session = detection.confirm()
-      session.on('offer', offer => { void offer.accept({ on_input: chunk => received.push(...chunk) }) })
+      session.on('offer', offer => {
+        offeredNames.push(offer.get_details().name)
+        if (skipRemote) offer.skip()
+        else void offer.accept({ on_input: chunk => received.push(...chunk) })
+      })
       session.start()
     },
   })
   vi.mocked(api.writeSSHBinary).mockImplementation(async (_id, encoded) => { peer.consume(decodeBytes(encoded)) })
   peer.consume(new TextEncoder().encode('**\x18B00000000000000\r\n\x11'))
-  await vi.waitFor(() => expect(controller.state.message).toBe('上传完成'), { timeout: 5000 })
+  await vi.waitFor(() => expect(controller.state.message).toBe(skipRemote ? '上传结束，远端跳过 1 个文件' : '上传完成'), { timeout: 5000 })
+  if (skipRemote) {
+    expect(completed).not.toHaveBeenCalled()
+    expect(received).toHaveLength(0)
+    controller.dispose()
+    return
+  }
   expect(Uint8Array.from(received)).toEqual(data)
   await controller.consume(new TextEncoder().encode('shell$ '))
-  expect(output.join('')).toContain('Upload binary.dat')
+  expect(output.join('')).toContain('Upload /Users/local/上传/binary.dat')
+  expect(offeredNames).toEqual(['binary.dat'])
+  expect(completed).toHaveBeenCalledExactlyOnceWith('上传完成：binary.dat')
   expect(output.join('')).toContain('100%')
   expect(output.join('')).toMatch(/Complete\r\nshell\$ $/)
+  controller.dispose()
+})
+
+test('空批次下载不产生成功通知', async () => {
+  const api = backend()
+  vi.mocked(api.chooseZmodemDownloadDirectory).mockResolvedValue('grant')
+  const completed = vi.fn()
+  const controller = new ZmodemController('ssh', api, () => {}, () => {}, completed)
+  let incoming = Promise.resolve()
+  let remote: Session | undefined
+  const peer = new Sentry({
+    to_terminal: () => {}, on_retract: () => {},
+    sender: bytes => { const copy = Uint8Array.from(bytes); incoming = incoming.then(() => controller.consume(copy)) },
+    on_detect: detection => { remote = detection.confirm() },
+  })
+  vi.mocked(api.writeSSHBinary).mockImplementation(async (_id, encoded) => { peer.consume(decodeBytes(encoded)) })
+  await controller.consume(new TextEncoder().encode('**\x18B00000000000000\r\n\x11'))
+  await vi.waitFor(() => expect(remote).toBeDefined())
+  await remote!.close()
+  await vi.waitFor(() => expect(controller.state.message).toBe('没有可下载的文件'))
+  expect(completed).not.toHaveBeenCalled()
   controller.dispose()
 })
 
@@ -135,14 +170,15 @@ test('真实 ZMODEM 双端协议逐块下载并等待落盘', async () => {
   const data = Uint8Array.from({ length: 70_000 }, (_, i) => i % 256)
   const received: number[] = []
   vi.mocked(api.chooseZmodemDownloadDirectory).mockResolvedValue('grant')
-  vi.mocked(api.createZmodemDownload).mockResolvedValue({ id: 'file', name: 'binary.dat', size: data.length })
+  vi.mocked(api.createZmodemDownload).mockResolvedValue({ id: 'file', name: 'binary (1).dat', path: String.raw`G:\下载目录\binary (1).dat`, size: data.length })
   vi.mocked(api.writeZmodemFile).mockImplementation(async (_id, encoded) => { received.push(...decodeBytes(encoded)) })
   let save!: () => void
   vi.mocked(api.closeZmodemFile).mockReturnValue(new Promise<void>(resolve => { save = resolve }))
   let incoming = Promise.resolve()
   let remote: Session | undefined
   const output: string[] = []
-  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {})
+  const completed = vi.fn()
+  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {}, completed)
   const peer = new Sentry({
     to_terminal: () => {}, on_retract: () => {},
     sender: bytes => { const copy = Uint8Array.from(bytes); incoming = incoming.then(() => controller.consume(copy)) },
@@ -157,30 +193,34 @@ test('真实 ZMODEM 双端协议逐块下载并等待落盘', async () => {
   await remote!.close()
   await incoming
   await vi.waitFor(() => expect(api.closeZmodemFile).toHaveBeenCalledWith('file', true))
-  expect(output.join('')).toContain('Download binary.dat')
+  expect(output.join('')).toContain(String.raw`Download to G:\下载目录\binary (1).dat`)
   expect(output.join('')).toContain('Saving')
   expect(output.join('')).not.toContain('100%')
+  expect(completed).not.toHaveBeenCalled()
   await controller.consume(new TextEncoder().encode('shell$ '))
   expect(output.join('')).not.toContain('shell$ ')
   save()
   await vi.waitFor(() => expect(controller.state.message).toBe('下载完成'), { timeout: 5000 })
+  expect(completed).toHaveBeenCalledExactlyOnceWith('下载完成：binary (1).dat')
   expect(output.join('')).toMatch(/Complete\r\nshell\$ $/)
   expect(Uint8Array.from(received)).toEqual(data)
   expect(api.closeZmodemFile).toHaveBeenCalledWith('file', true)
   controller.dispose()
 })
 
-test('连续下载等待前一文件保存，取消后迟到的保存结果不会显示完成', async () => {
+test.each(['complete', 'cancel', 'dispose', 'failure'] as const)('连续下载按批次通知，%s 后的保存结果正确处理', async (outcome) => {
   const api = backend()
   vi.mocked(api.chooseZmodemDownloadDirectory).mockResolvedValue('grant')
-  vi.mocked(api.createZmodemDownload).mockImplementation(async (_id, _grant, name, size) => ({ id: name, name, size }))
+  vi.mocked(api.createZmodemDownload).mockImplementation(async (_id, _grant, name, size) => ({ id: name, name, path: `/downloads/${name}`, size }))
   let saveFirst!: () => void
   let saveSecond!: () => void
+  let failSecond!: (reason: Error) => void
   vi.mocked(api.closeZmodemFile)
     .mockReturnValueOnce(new Promise<void>(resolve => { saveFirst = resolve }))
-    .mockReturnValueOnce(new Promise<void>(resolve => { saveSecond = resolve }))
+    .mockReturnValueOnce(new Promise<void>((resolve, reject) => { saveSecond = resolve; failSecond = reject }))
   const output: string[] = []
-  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {})
+  const completed = vi.fn()
+  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {}, completed)
   let incoming = Promise.resolve()
   let remote: Session | undefined
   const peer = new Sentry({
@@ -203,11 +243,18 @@ test('连续下载等待前一文件保存，取消后迟到的保存结果不�
   await remote!.close()
   await incoming
   await vi.waitFor(() => expect(api.closeZmodemFile).toHaveBeenCalledWith('second', true))
-  expect(output.join('')).toMatch(/100%.*Complete\r\n\r\nDownload second/)
-  controller.cancel()
-  saveSecond()
-  await vi.waitFor(() => expect(controller.state.busy).toBe(false))
-  expect(output.join('').split('Download second')[1]).not.toContain('100%')
-  expect(output.join('')).toContain('Transfer cancelled')
+  expect(output.join('')).toMatch(/100%.*Complete\r\n\r\nDownload to \/downloads\/second/)
+  expect(completed).not.toHaveBeenCalled()
+  if (outcome === 'cancel') controller.cancel()
+  if (outcome === 'dispose') controller.dispose()
+  if (outcome === 'failure') failSecond(new Error('save failed'))
+  else saveSecond()
+  if (outcome !== 'dispose') await vi.waitFor(() => expect(controller.state.busy).toBe(false))
+  else { await Promise.resolve(); await Promise.resolve() }
+  if (outcome === 'complete') expect(completed).toHaveBeenCalledExactlyOnceWith('下载完成：first、second')
+  else {
+    expect(completed).not.toHaveBeenCalled()
+    expect(output.join('').split('Download to /downloads/second')[1]).not.toContain('100%')
+  }
   controller.dispose()
 })

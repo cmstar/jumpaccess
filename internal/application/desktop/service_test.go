@@ -349,6 +349,26 @@ func TestSavePreferencesWritesOnlyGUIStore(t *testing.T) {
 	}
 }
 
+func TestSavePreferencesPreservesDownloadHistory(t *testing.T) {
+	store := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
+	stored := guiconfig.Default()
+	stored.Downloads.LastDirectory = t.TempDir()
+	if err := store.Save(stored); err != nil {
+		t.Fatal(err)
+	}
+	request := guiconfig.Default()
+	request.Downloads.Mode = "remember"
+	request.Downloads.Directory = t.TempDir()
+	service := Service{Preferences: store}
+	if err := service.SavePreferences(request); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil || got.Downloads.Mode != "remember" || got.Downloads.Directory != request.Downloads.Directory || got.Downloads.LastDirectory != stored.Downloads.LastDirectory {
+		t.Fatalf("下载偏好 = %#v, %v", got.Downloads, err)
+	}
+}
+
 func TestSavePreferencesPreservesWindowPlacement(t *testing.T) {
 	preferenceStore := guiconfig.Store{Path: filepath.Join(t.TempDir(), "gui.toml")}
 	stored := guiconfig.Default()

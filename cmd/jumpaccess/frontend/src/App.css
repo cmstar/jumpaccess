@@ -2030,6 +2030,43 @@ details > summary::-webkit-details-marker {
 .terminal-style-fields .terminal-font-field .setting-help { grid-column: 2; margin-top: 0; }
 .terminal-style-fields > :last-child { border-bottom: 0; }
 
+.download-settings-fields {
+  border-top: 1px solid var(--border);
+}
+
+.download-settings-fields > .terminal-style-row {
+  border-bottom: 0;
+}
+
+.download-directory-control {
+  position: relative;
+  min-width: 0;
+}
+
+.settings-card .download-directory-control input {
+  margin-top: 0;
+  padding-right: 42px;
+}
+
+.download-directory-control .icon-button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 30px;
+  height: 30px;
+  transform: translateY(-50%);
+}
+
+.download-directory-control .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.download-directory-control .icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .terminal-cursor-controls {
   display: flex;
   min-width: 0;

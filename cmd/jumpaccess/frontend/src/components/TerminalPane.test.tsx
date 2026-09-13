@@ -83,7 +83,7 @@ const preferences: Preferences = {
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,
-  terminalCopyOnEnter: true,
+  terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '',
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
   newTabPosition: 'end',

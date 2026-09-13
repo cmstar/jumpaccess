@@ -326,6 +326,8 @@ func (s Service) SavePreferences(value guiconfig.Config) error {
 		stored.Version = value.Version
 		stored.Appearance = value.Appearance
 		stored.Terminal = value.Terminal
+		stored.Downloads.Mode = value.Downloads.Mode
+		stored.Downloads.Directory = value.Downloads.Directory
 		stored.Tabs = value.Tabs
 		return nil
 	})

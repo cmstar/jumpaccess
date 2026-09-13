@@ -345,7 +345,10 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     if (!backend.zmodem) return undefined
     let controller = transferControllers.current.get(id)
     if (!controller) {
-      controller = new ZmodemController(id, backend.zmodem, data => appendSSHOutput(id, data), state => setTransferStates(current => ({ ...current, [id]: state })))
+      controller = new ZmodemController(id, backend.zmodem, data => appendSSHOutput(id, data), state => setTransferStates(current => ({ ...current, [id]: state })), message => {
+        const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === id)
+        if (tab) showInfo(`${tabTitle(tab)} ${message}`)
+      })
       transferControllers.current.set(id, controller)
     }
     return controller
@@ -1733,6 +1736,33 @@ function TerminalFontInput({ families, onChange, value }: { families: string[]; 
 
 const terminalLineHeights = Array.from({ length: 11 }, (_, index) => 1 + index / 10)
 
+function DownloadDirectoryInput({ backend, value, onChange }: { backend: Backend; value: string; onChange: (path: string) => void }) {
+  const [draft, setDraft] = useState(value)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => setDraft(value), [value])
+  async function browse() {
+    setBusy(true)
+    setError('')
+    try {
+      const path = await backend.chooseDownloadFolder(draft)
+      if (path) { setDraft(path); onChange(path) }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { setBusy(false) }
+  }
+  return <div className="terminal-style-row">
+    <div><label htmlFor="download-directory">指定目录</label><small className="setting-help" id="download-directory-help">填写本机文件夹的完整路径。留空或目录不可用时，会询问本次保存位置。</small></div>
+    <div>
+      <div className="download-directory-control">
+        <input id="download-directory" aria-describedby="download-directory-help" title={draft} value={draft} onChange={event => setDraft(event.target.value)} onBlur={() => { if (draft !== value) onChange(draft) }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+        <button aria-label="选择文件夹" title="选择文件夹" className="icon-button" type="button" disabled={busy} onClick={() => void browse()}><FolderOpen /></button>
+      </div>
+      {error ? <small role="alert">{error}</small> : null}
+    </div>
+  </div>
+}
+
 const settingsNavigation = [
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal-style', label: '终端样式', icon: TerminalSquare },
@@ -1824,7 +1854,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
           </section>
           <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />
           <section className="settings-card" id="settings-terminal-behavior">
-            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标、复制与粘贴操作。</p></div></div>
+            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标、复制、粘贴与文件下载行为。</p></div></div>
             <div className="terminal-style-fields">
               <div className="terminal-style-row">
                 <div><label htmlFor="terminal-right-click">鼠标右键</label><small className="setting-help" id="terminal-right-click-help">打开上下文菜单后，右键提供复制和粘贴操作。</small></div>
@@ -1833,6 +1863,22 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             </div>
             <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
             <div className="setting-row"><span><strong>选中文本时按回车复制</strong><small id="terminal-copy-on-enter-help">按回车复制选中文本并取消选择，不向终端发送回车。</small></span><button aria-label="选中文本时按回车复制" aria-describedby="terminal-copy-on-enter-help" role="switch" aria-checked={preferences.terminalCopyOnEnter} className={preferences.terminalCopyOnEnter ? 'switch on' : 'switch'} onClick={() => update({ terminalCopyOnEnter: !preferences.terminalCopyOnEnter })}><span /></button></div>
+            <div className="terminal-style-fields download-settings-fields">
+              <div className="terminal-style-row">
+                <div><label htmlFor="download-mode">下载保存位置</label><small className="setting-help" id="download-mode-help">用于 SSH 中的 sz 命令及下载按钮。记忆目录首次使用或失效时从系统下载目录开始，自动保存目录不可用时会询问。</small></div>
+                <select id="download-mode" aria-describedby="download-mode-help" value={preferences.downloadMode} onChange={event => update({ downloadMode: event.target.value as Preferences['downloadMode'] })}>
+                  <optgroup label="每次询问">
+                    <option value="ask">从下载目录开始</option>
+                    <option value="remember">从上次目录开始</option>
+                  </optgroup>
+                  <optgroup label="自动保存">
+                    <option value="automatic">保存到下载目录</option>
+                    <option value="custom">保存到指定目录</option>
+                  </optgroup>
+                </select>
+              </div>
+              {preferences.downloadMode === 'custom' ? <DownloadDirectoryInput backend={backend} value={preferences.downloadDirectory} onChange={downloadDirectory => update({ downloadDirectory })} /> : null}
+            </div>
           </section>
           <section className="settings-card" id="settings-tabs">
             <div className="settings-card-title"><PanelTopClose /><div><h2>Tab 行为</h2><p>控制工作区 Tab 的打开位置、关闭入口和确认方式。</p></div></div>

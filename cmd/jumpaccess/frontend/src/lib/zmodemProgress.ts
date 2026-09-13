@@ -1,5 +1,5 @@
 function safeText(text: string): string {
-  // 文件名和错误可能来自远端，不能把控制序列写入终端。
+  // 路径及文件名也可能包含控制字符，不能把控制序列写入终端。
   return text.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, '')
 }
 
@@ -21,15 +21,15 @@ export class ZmodemProgress {
 
   constructor(private output: (text: string) => void) {}
 
-  start(direction: 'upload' | 'download', name: string, size: number) {
+  start(direction: 'upload' | 'download', path: string, size: number) {
     this.end('Transfer ended')
     this.active = true
     this.direction = direction
     this.size = size
     this.transferred = 0
     this.lastAt = Date.now()
-    // 文件名单独一行，避免长文件名导致进度反复折行。
-    this.output(`\r\n${direction === 'upload' ? 'Upload' : 'Download'} ${safeText(name)}\r\n`)
+    // 本机完整路径单独一行，避免长路径导致进度反复折行。
+    this.output(`\r\n${direction === 'upload' ? 'Upload' : 'Download to'} ${safeText(path)}\r\n`)
     this.render('')
   }
 

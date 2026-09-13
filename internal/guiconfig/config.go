@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 11
+const CurrentVersion = 12
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -49,6 +49,7 @@ type Config struct {
 	Version    int             `toml:"version"`
 	Appearance Appearance      `toml:"appearance"`
 	Terminal   Terminal        `toml:"terminal"`
+	Downloads  Downloads       `toml:"downloads"`
 	Tabs       Tabs            `toml:"tabs"`
 	Workspace  Workspace       `toml:"workspace" json:"-"`
 	Window     WindowPlacement `toml:"window" json:"-"`
@@ -56,6 +57,13 @@ type Config struct {
 
 type Appearance struct {
 	Theme string `toml:"theme"`
+}
+
+// Downloads 只控制桌面 SSH ZMODEM 下载；目录历史由后端更新。
+type Downloads struct {
+	Mode          string `toml:"mode"`
+	Directory     string `toml:"directory"`
+	LastDirectory string `toml:"last_directory" json:"-"`
 }
 
 type Terminal struct {
@@ -160,7 +168,8 @@ type WindowPlacement struct {
 
 func Default() Config {
 	return Config{
-		Version: CurrentVersion,
+		Version:   CurrentVersion,
+		Downloads: Downloads{Mode: "ask"},
 		Appearance: Appearance{
 			Theme: "system",
 		},
@@ -280,6 +289,16 @@ func decodeLegacy(data []byte, version int) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	switch c.Downloads.Mode {
+	case "ask", "automatic", "remember", "custom":
+	default:
+		return fmt.Errorf("downloads.mode must be ask, automatic, remember, or custom")
+	}
+	for _, c := range c.Downloads.Directory {
+		if unicode.IsControl(c) {
+			return fmt.Errorf("downloads.directory is invalid")
+		}
+	}
 	switch c.Tabs.NewTabPosition {
 	case "end", "after_current":
 	default:

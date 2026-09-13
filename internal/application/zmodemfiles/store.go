@@ -22,6 +22,8 @@ const downloadBufferLimit = 50 * 1024 * 1024
 type File struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Path 是用于本机显示的绝对路径；协议仍只发送 Name。
+	Path string `json:"path"`
 	Size int64  `json:"size"`
 }
 type openedFile struct {
@@ -52,7 +54,11 @@ func (s *Store) OpenUploads(session string, paths []string) ([]File, error) {
 	defer s.mu.Unlock()
 	result := make([]File, 0, len(paths))
 	for _, path := range paths {
-		file, err := os.Open(path)
+		absolutePath, err := filepath.Abs(path)
+		var file *os.File
+		if err == nil {
+			file, err = os.Open(absolutePath)
+		}
 		if err == nil {
 			var info os.FileInfo
 			info, err = file.Stat()
@@ -67,7 +73,7 @@ func (s *Store) OpenUploads(session string, paths []string) ([]File, error) {
 						s.files = make(map[string]*openedFile)
 					}
 					s.files[id] = &openedFile{file: file, session: session, size: info.Size()}
-					result = append(result, File{ID: id, Name: info.Name(), Size: info.Size()})
+					result = append(result, File{ID: id, Name: info.Name(), Path: absolutePath, Size: info.Size()})
 				}
 			}
 		}
@@ -91,6 +97,10 @@ func (s *Store) GrantDirectory(session, path string) (string, error) {
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("下载位置必须是文件夹")
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", err
 	}
 	id, err := randomID()
 	if err != nil {
@@ -147,7 +157,7 @@ func (s *Store) CreateDownload(session, grantID, name string, size int64) (File,
 			s.bufferReserved += int64(opened.buffer.Size())
 		}
 		s.files[id] = opened
-		return File{ID: id, Name: candidate, Size: size}, nil
+		return File{ID: id, Name: candidate, Path: file.Name(), Size: size}, nil
 	}
 	return File{}, fmt.Errorf("同名文件过多，无法创建下载文件")
 }

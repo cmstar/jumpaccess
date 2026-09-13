@@ -7,6 +7,44 @@ import (
 	"testing"
 )
 
+func TestTransferFilesExposeActualAbsoluteLocalPaths(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	name := "本地文件.bin"
+	if err := os.WriteFile(name, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var store Store
+	t.Cleanup(func() { store.CloseSession("") })
+	if _, err := store.GrantDirectory("ssh", ""); err == nil {
+		t.Fatal("空路径不能变成当前目录授权")
+	}
+	uploads, err := store.OpenUploads("ssh", []string{name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uploads) != 1 || uploads[0].Name != name || uploads[0].Path != filepath.Join(dir, name) {
+		t.Fatalf("上传应保留协议文件名并返回本机绝对路径: %#v", uploads)
+	}
+	grant, err := store.GrantDirectory("ssh", ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	download, err := store.CreateDownload("ssh", grant, name, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if download.Name != "本地文件 (1).bin" || download.Path != filepath.Join(dir, download.Name) {
+		t.Fatalf("下载应返回实际另存后的绝对路径: %#v", download)
+	}
+	if err := store.Close(download.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(download.Path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDownloadBuffersUntilCompletion(t *testing.T) {
 	var store Store
 	dir := t.TempDir()

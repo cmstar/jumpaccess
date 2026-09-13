@@ -1,5 +1,5 @@
 export interface TransferCapabilities { checked: boolean; upload: boolean; download: boolean }
-export interface TransferFile { id: string; name: string; size: number }
+export interface TransferFile { id: string; name: string; path: string; size: number }
 export interface ZmodemBackend {
   probeSSHTransferCommands(id: string): Promise<TransferCapabilities>
   writeSSHBinary(id: string, data: string): Promise<void>

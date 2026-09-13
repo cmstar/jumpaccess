@@ -6,11 +6,24 @@ import (
 
 	sshsessionapp "github.com/cmstar/jumpaccess/internal/application/sshsession"
 	"github.com/cmstar/jumpaccess/internal/application/zmodemfiles"
+	"github.com/cmstar/jumpaccess/internal/downloads"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *desktopApp) ProbeSSHTransferCommands(id string) sshsessionapp.TransferCapabilities {
 	return a.sessions.ProbeTransferCommands(a.context(), id)
+}
+
+func (a *desktopApp) ChooseDownloadFolder(directory string) (string, error) {
+	if !writableDownloadDirectory(directory) {
+		directory, _ = downloads.Directory()
+		if !writableDownloadDirectory(directory) {
+			directory = ""
+		}
+	}
+	restoreDialogPointer()
+	defer restoreDialogPointer()
+	return runtime.OpenDirectoryDialog(a.context(), runtime.OpenDialogOptions{Title: "选择自动下载目录", DefaultDirectory: directory, CanCreateDirectories: true})
 }
 func (a *desktopApp) WriteSSHBinary(id, data string) error { return a.sessions.WriteBinary(id, data) }
 func (a *desktopApp) AcknowledgeSSHOutput(id string, sequence uint64) {
@@ -52,16 +65,16 @@ func (a *desktopApp) ChooseZmodemDownloadDirectory(session string) (string, erro
 	if err := a.sessions.SetTransferActive(session, true); err != nil {
 		return "", err
 	}
-	restoreDialogPointer()
-	path, err := runtime.OpenDirectoryDialog(a.context(), runtime.OpenDialogOptions{Title: "ZMODEM 下载：选择保存位置", CanCreateDirectories: true})
-	restoreDialogPointer()
-	if err != nil || path == "" {
-		return "", err
-	}
-	if err := a.requireActiveSSH(session); err != nil {
-		return "", err
-	}
-	return a.zmodemFiles.GrantDirectory(session, path)
+	return chooseDownloadDirectory(a.context(), a.preferences, downloads.Directory, func(directory string) (string, error) {
+		restoreDialogPointer()
+		defer restoreDialogPointer()
+		return runtime.OpenDirectoryDialog(a.context(), runtime.OpenDialogOptions{Title: "ZMODEM 下载：选择保存位置", DefaultDirectory: directory, CanCreateDirectories: true})
+	}, func(path string) (string, error) {
+		if err := a.requireActiveSSH(session); err != nil {
+			return "", err
+		}
+		return a.zmodemFiles.GrantDirectory(session, path)
+	})
 }
 func (a *desktopApp) CreateZmodemDownload(session, grant, name string, size int64) (zmodemfiles.File, error) {
 	if err := a.requireActiveSSH(session); err != nil {

@@ -7,6 +7,8 @@ export type TerminalCursorStyle = 'block' | 'bar' | 'underline' | 'quarter_block
 export type TerminalScrollbarVisibility = 'always' | 'active' | 'hidden'
 
 export interface Preferences {
+  downloadMode: 'ask' | 'automatic' | 'remember' | 'custom'
+  downloadDirectory: string
   terminalBackground: TerminalBackground
   version: number
   theme: ThemeMode
@@ -230,6 +232,7 @@ export interface Backend {
   ensureWindowVisible(): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
   chooseTerminalBackground(currentPath: string): Promise<string>
+  chooseDownloadFolder(currentPath: string): Promise<string>
   readTerminalBackground(path: string): Promise<string>
   saveWorkspace(workspace: Workspace): Promise<void>
   getAuthStatus(profile: string): Promise<AuthStatus>
@@ -275,6 +278,7 @@ export interface Backend {
 }
 
 type GoPreferences = {
+  Downloads: { Mode: Preferences['downloadMode']; Directory: string }
   Version: number
   Appearance: { Theme: ThemeMode }
   Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
@@ -310,6 +314,7 @@ type DesktopBinding = {
   EnsureWindowVisible(): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
   ChooseTerminalBackground(currentPath: string): Promise<string>
+  ChooseDownloadFolder(currentPath: string): Promise<string>
   ReadTerminalBackground(path: string): Promise<string>
   SaveWorkspace(workspace: Workspace): Promise<void>
   GetAuthStatus(profile: string): Promise<AuthStatus>
@@ -375,6 +380,8 @@ function subscribe<T>(eventName: string, handler: (event: T) => void): () => voi
 
 function toPreferences(value: GoPreferences): Preferences {
   return {
+    downloadMode: value.Downloads.Mode,
+    downloadDirectory: value.Downloads.Directory,
     version: value.Version,
     terminalBackground: value.Terminal.Background ?? { ...defaultTerminalBackground },
     theme: value.Appearance.Theme,
@@ -396,6 +403,7 @@ function toPreferences(value: GoPreferences): Preferences {
 
 function fromPreferences(value: Preferences): GoPreferences {
   return {
+    Downloads: { Mode: value.downloadMode, Directory: value.downloadDirectory },
     Version: value.version,
     Appearance: {
       Theme: value.theme,
@@ -455,6 +463,7 @@ export const wailsBackend: Backend = {
   ensureWindowVisible: () => binding().EnsureWindowVisible(),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
   chooseTerminalBackground: (currentPath) => binding().ChooseTerminalBackground(currentPath),
+  chooseDownloadFolder: (currentPath) => binding().ChooseDownloadFolder(currentPath),
   readTerminalBackground: (path) => binding().ReadTerminalBackground(path),
   saveWorkspace: (workspace) => binding().SaveWorkspace(workspace),
   getAuthStatus: (profile) => binding().GetAuthStatus(profile),

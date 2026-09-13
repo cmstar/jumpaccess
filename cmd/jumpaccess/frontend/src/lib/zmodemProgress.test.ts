@@ -6,8 +6,8 @@ test('进度原地刷新、节流，完成后才显示 100%，随后恢复远端
   try {
     const output: string[] = []
     const progress = new ZmodemProgress(text => output.push(text))
-    progress.start('download', '文件.bin', 1024)
-    expect(output.join('')).toContain('Download 文件.bin')
+    progress.start('download', '/Users/local/Downloads/文件.bin', 1024)
+    expect(output.join('')).toContain('Download to /Users/local/Downloads/文件.bin')
     progress.update(512)
     const count = output.length
     progress.update(600)
@@ -26,10 +26,11 @@ test('进度原地刷新、节流，完成后才显示 100%，随后恢复远端
   } finally { vi.useRealTimers() }
 })
 
-test('取消、空文件与文件名控制字符不破坏终端', () => {
+test('取消、空文件与完整路径中的控制字符不破坏终端', () => {
   const output: string[] = []
   const progress = new ZmodemProgress(text => output.push(text))
-  progress.start('upload', 'bad\x1b[2J\r\nname', 0)
+  progress.start('upload', '/local/bad\x1b[2J\r\nname/file.bin', 0)
+  expect(output.join('')).toContain('Upload /local/bad[2Jname/file.bin')
   expect(output.join('')).not.toContain('\x1b[2J')
   expect(output.join('')).not.toContain('100%')
   progress.end('Cancelled')

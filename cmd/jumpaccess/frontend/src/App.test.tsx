@@ -7,6 +7,75 @@ import App from './App'
 import appStyles from './App.css?inline'
 import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionLatency, SessionOutput, SessionState } from './lib/backend'
 import type { ZmodemBackend } from './lib/zmodemTypes'
+import { Sentry, type Session } from 'zmodem.js'
+import { decodeBytes, encodeBytes } from './lib/zmodem'
+
+test.each([
+  { alias: true, direction: 'upload' },
+  { alias: false, direction: 'upload' },
+  { alias: true, direction: 'download' },
+  { alias: false, direction: 'download' },
+] as const)('SSH 完成提示标明来源并跨 Tab 显示：alias=$alias，direction=$direction', async ({ alias, direction }) => {
+  let output!: (event: SessionOutput) => void
+  let save!: () => void
+  let remote: Session | undefined
+  const id = 'session-download-notice'
+  const peer = new Sentry({
+    to_terminal: () => {}, on_retract: () => {},
+    sender: bytes => output({ id, encoding: 'base64', data: encodeBytes(bytes) }),
+    on_detect: detection => {
+      remote = detection.confirm()
+      if (direction === 'upload') {
+        remote.on('offer', offer => { void offer.accept({ on_input: () => {} }) })
+        remote.start()
+      }
+    },
+  })
+  const zmodem: ZmodemBackend = {
+    probeSSHTransferCommands: vi.fn().mockResolvedValue({ checked: true, upload: true, download: true }),
+    writeSSHBinary: vi.fn(async (_id, data) => { peer.consume(decodeBytes(data)) }),
+    chooseZmodemUploadFiles: vi.fn().mockResolvedValue([{ id: 'file', name: 'empty.txt', path: '/uploads/empty.txt', size: 0 }]),
+    chooseZmodemDownloadDirectory: vi.fn().mockResolvedValue('grant'),
+    createZmodemDownload: vi.fn().mockResolvedValue({ id: 'file', name: 'empty.txt', path: '/downloads/empty.txt', size: 0 }),
+    readZmodemFile: vi.fn(), writeZmodemFile: vi.fn(),
+    closeZmodemFile: vi.fn().mockImplementation(() => new Promise<void>(resolve => { save = resolve })),
+    endZmodemTransfer: vi.fn().mockResolvedValue(undefined),
+  }
+  const active: SessionState = { id, status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const backend = makeBackend({ zmodem, getAsset: vi.fn().mockResolvedValue({ ...assetDetail, accounts: [assetDetail.accounts[0]] }), startSSHSession: vi.fn().mockResolvedValueOnce(active).mockResolvedValueOnce({ ...active, id: 'other-session' }), onSessionOutput: handler => { output = handler; return () => {} } })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  const aliasButton = '使用 production-web 连接'
+  const assetButton = 'prod-web-01：连接 SSH'
+  await user.click(await screen.findByRole('button', { name: alias ? aliasButton : assetButton }))
+  await screen.findByLabelText('下载文件（ZMODEM）')
+  const sourceTab = screen.getByRole('tab', { selected: true })
+  act(() => {
+    const header = '**\x18B00000000000000\r\n\x11'
+    if (direction === 'upload') peer.consume(new TextEncoder().encode(header))
+    else output({ id, encoding: 'base64', data: btoa(header) })
+  })
+  await waitFor(() => expect(remote).toBeDefined())
+  if (direction === 'download') await act(async () => {
+    const transfer = await remote!.send_offer({ name: 'empty.txt', size: 0 })
+    await transfer!.end()
+    await remote!.close()
+  })
+  await waitFor(() => expect(zmodem.closeZmodemFile).toHaveBeenCalledWith('file', true))
+  const notices = within(screen.getByLabelText('应用提示'))
+  const name = alias ? 'production-web' : 'prod-web-01'
+  const message = `${name} ${direction === 'upload' ? '上传完成' : '下载完成'}：empty.txt`
+  expect(notices.queryByRole('status')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: /资产/ }))
+  await user.click(await screen.findByRole('button', { name: alias ? assetButton : aliasButton }))
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledTimes(2))
+  expect(sourceTab).toHaveAttribute('aria-selected', 'false')
+  await act(async () => save())
+  expect(await notices.findByText(message)).toBeVisible()
+  await user.click(sourceTab)
+  expect(notices.getAllByText(message)).toHaveLength(1)
+})
 
 test('SSH 传输按钮在断开按钮之前，切换 Tab 不重复处理传输握手', async () => {
   let output!: (event: SessionOutput) => void
@@ -114,7 +183,7 @@ const bootstrapState: BootstrapState = {
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
-    terminalCopyOnEnter: true,
+    terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '',
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
     newTabPosition: 'end',
@@ -181,6 +250,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     logout: vi.fn().mockResolvedValue(undefined),
     licenseText: vi.fn().mockResolvedValue('MIT License'),
     chooseTerminalBackground: vi.fn().mockResolvedValue(''),
+    chooseDownloadFolder: vi.fn().mockResolvedValue(''),
     readTerminalBackground: vi.fn().mockRejectedValue(new Error('图片不可用')),
     openConfig: vi.fn().mockResolvedValue(undefined),
     listMonospaceFonts: vi.fn().mockResolvedValue([]),
@@ -1431,6 +1501,47 @@ test('恢复自定义行高与不闪烁光标，保存失败时还原控件和�
   await screen.findByText('style save failed')
   expect(screen.getByLabelText('行高')).toHaveValue('1.25')
   expect(preview).toHaveTextContent('1.25 倍行高')
+})
+
+test('终端行为内的下载设置提供四种保存行为并自动保存', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const panel = screen.getByRole('heading', { name: '终端行为' }).closest('section')!
+  expect(screen.queryByRole('heading', { name: '文件下载' })).not.toBeInTheDocument()
+  expect(within(screen.getByRole('navigation', { name: '设置导航' })).queryByRole('button', { name: '文件下载' })).not.toBeInTheDocument()
+  const mode = within(panel).getByRole('combobox', { name: '下载保存位置' })
+  expect(mode).toHaveValue('ask')
+  expect(within(mode).getAllByRole('option')).toHaveLength(4)
+  for (const downloadMode of ['automatic', 'remember', 'custom', 'ask']) {
+    await user.selectOptions(mode, downloadMode)
+    await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ downloadMode })))
+  }
+})
+
+test('指定下载目录支持手工输入、文件夹选择和取消选择', async () => {
+  const chooseDownloadFolder = vi.fn().mockResolvedValueOnce('D:/接收文件').mockResolvedValueOnce('')
+  const backend = makeBackend({ chooseDownloadFolder })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(screen.queryByLabelText('指定目录')).not.toBeInTheDocument()
+  const panel = screen.getByRole('heading', { name: '终端行为' }).closest('section')!
+  await user.selectOptions(within(panel).getByLabelText('下载保存位置'), 'custom')
+  expect(within(panel).getByLabelText('指定目录')).toBeVisible()
+  await user.type(screen.getByLabelText('指定目录'), 'D:/download')
+  await user.tab()
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ downloadMode: 'custom', downloadDirectory: 'D:/download' })))
+  await user.click(screen.getByRole('button', { name: '选择文件夹' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ downloadDirectory: 'D:/接收文件' })))
+  expect(screen.getByLabelText('指定目录')).toHaveValue('D:/接收文件')
+  const count = vi.mocked(backend.savePreferences).mock.calls.length
+  await user.click(screen.getByRole('button', { name: '选择文件夹' }))
+  expect(backend.savePreferences).toHaveBeenCalledTimes(count)
+  expect(screen.getByLabelText('指定目录')).toHaveValue('D:/接收文件')
 })
 
 test('鼠标右键与字号使用一致的横向布局并可切换为上下文菜单', async () => {
