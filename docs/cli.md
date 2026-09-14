@@ -121,7 +121,7 @@ account = "account-id"
 | `jumpctl asset list [--profile <name>] [--organization <org>] [--search <text>] [--offset <count>] [--limit <count>]` | 分页列出匹配的 Asset；`--offset` 默认为 `0`，`--limit` 默认为 `100` |
 | `jumpctl account list <asset> [--profile <name>] [--organization <org>]` | 精确解析 Asset，并列出其允许的 Account |
 
-Asset 引用可以是 ID、名称或地址，但必须精确匹配且唯一。自动化和 ProxyCommand 建议在 Alias 中保存稳定 ID。
+Asset 引用可以是 ID、名称或地址。UUID 格式的 ID 直接查询详情；其他引用按每页 100 条搜索，名称和地址不区分大小写、完整匹配。按服务端返回顺序使用第一个精确匹配的 Asset，找到后立即停止，不检查或报告重名歧义；当前页没有匹配且还有后续结果时才继续翻页，全部查完仍无匹配时报找不到资产。分页请求失败或无法推进时返回错误。该规则适用于 `account list`、`ssh` 和 `proxy` 等共用资产解析的操作；`asset list` 保留显式分页行为。重名时的选择取决于服务端返回顺序，自动化和 ProxyCommand 建议在 Alias 中保存稳定 ID。
 
 `asset list` 使用偏移量分页。例如，`jumpctl asset list --offset 100 --limit 100` 会跳过前 100 个匹配结果并获取接下来的最多 100 个。`--offset` 必须大于或等于 `0`，`--limit` 必须大于 `0`；不指定分页参数时保留原有的前 100 条行为。
 
@@ -143,7 +143,7 @@ Asset 引用可以是 ID、名称或地址，但必须精确匹配且唯一。�
 - `ACCOUNT` 显示“账号名称（用户名）”；两者相同时只显示一次，名称缺失时依次使用用户名、账号别名。账号引用按 ID、名称、用户名或账号别名精确匹配，后三者不区分大小写；匹配不唯一时不猜测。`@INPUT`、`@USER`、`@ANON` 按原有特殊账号语义显示。
 - 未绑定账号显示“未绑定”，不会因资产只有一个账号而把它显示为已绑定。
 - 别名未指定组织时继承 Profile 的组织，并在名称后标记“（继承）”；两处均未指定时显示“未设置”。
-- 未登录、网络失败、资源不可见或引用无法唯一解析时，保留对应原始引用并标记“（名称暂不可用）”，仍成功列出本地 Alias。已查到资源但没有名称时，资产保留原始引用并标记“（名称未提供）”；账号没有名称、用户名或账号别名时同样处理。组织查询失败不阻止资产和账号名称展示。
+- 未登录、网络失败、资源不可见或账号引用无法唯一解析时，保留对应原始引用并标记“（名称暂不可用）”，仍成功列出本地 Alias。已查到资源但没有名称时，资产保留原始引用并标记“（名称未提供）”；账号没有名称、用户名或账号别名时同样处理。组织查询失败不阻止资产和账号名称展示。
 - 查询复用已有认证和按需 Token 刷新，不打开浏览器或提示选择账号；不修改 Alias 配置。组织列表每次执行最多查询一次，同一组织中的相同资产引用在本次执行内复用查询结果（包括失败结果），不同组织分别查询。用户取消时停止查询并返回非零状态。
 
 示例（数据为虚构）：
@@ -189,7 +189,7 @@ jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <accou
 jumpctl proxy <target> [--profile <name>] [--organization <org>] [--account <account>]
 ```
 
-Proxy 模式是非交互的 SSH server façade：stdout 只承载 SSH 协议字节，诊断只写 stderr。它不会打开浏览器、选择 Account 或信任未知上游 host key。目标和 Account 必须由 Alias 或显式参数唯一确定。
+Proxy 模式是非交互的 SSH server façade：stdout 只承载 SSH 协议字节，诊断只写 stderr。它不会打开浏览器、选择 Account 或信任未知上游 host key。Asset 沿用首个精确匹配规则；Account 必须由 Alias、显式参数或唯一可用账号确定，否则报错。
 
 Windows 上，`jumpctl proxy` 会在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，如果兼容客户端已通过管道提供 stdin、stdout，且当前控制台只属于 `jumpctl`，进程会脱离该私有控制台。PowerShell、CMD、Windows Terminal、OpenSSH 等共享或交互控制台保持附着；检查无法确认时也保持原状。macOS 不执行这项 Windows 专用处理。远端程序的 stdout 和 stderr 仍作为 SSH channel 数据正常显示在客户端中，不能与 ProxyCommand stdout 上的原始 SSH 传输流混用。
 

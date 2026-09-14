@@ -37,7 +37,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
-| JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责目标唯一性与连接准备 |
+| JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责资产首个匹配解析、账号选择与连接准备 |
 | SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
 | SFTP | `internal/sftpclient` 在独立 SSH transport 上打开 SFTP subsystem，复用 gateway 主机信任；`internal/application/sftpsession` 管理目录、文件操作和进程内传输队列，流式 I/O 留在 Go，前端只接收元数据与进度 |
 | 桌面前端 | `cmd/jumpaccess/frontend` 使用 React 和 xterm.js 表现浏览器式 Tab 栏、Profile、Organization、分页 Asset、行内 Alias、GUI 偏好及多会话终端；纯 reducer 管理单例页和可重复 SSH/SFTP Tab，生产环境只通过 Wails 绑定访问应用服务，Vite 开发服务器使用独立的内存预览适配器 |
@@ -72,7 +72,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 ### 连接准备与 SSH 会话
 
-1. 应用根据当前 Profile、Organization、Asset、Account 和 Alias 解析唯一目标。
+1. 应用根据当前 Profile、Organization、Asset、Account 和 Alias 解析连接目标；资产搜索逐页查找首个完整匹配，找到即停止，账号保留唯一性与交互选择规则。
 2. 在创建新连接前检查 Access Token；临近过期时使用 Refresh Token 刷新。多个 CLI 进程通过 Profile 级文件锁避免并发轮换 Refresh Token。
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
@@ -119,7 +119,7 @@ SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校�
 兼容客户端通过 stdin/stdout 启动 `jumpctl proxy`。该模式的目标契约是：
 
 - stdout 仅承载 SSH 协议数据；诊断信息只写入 stderr。
-- 未登录、Refresh Token 失效、目标歧义等错误以明确诊断和非零退出码返回。
+- 未登录、Refresh Token 失效、账号歧义等错误以明确诊断和非零退出码返回。
 - Proxy 模式不触发需要人工操作的浏览器登录；用户应先通过独立认证命令登录。
 - 功能和文档不与 Tabby 或其他单一客户端耦合。
 

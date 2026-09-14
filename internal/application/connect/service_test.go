@@ -3,6 +3,8 @@ package connect
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -29,10 +31,14 @@ type fakeAPI struct {
 	connectionRequest jumpserver.ConnectionRequest
 	listQueries       []jumpserver.AssetQuery
 	getAssetIDs       []string
+	listAssets        func(jumpserver.AssetQuery) (jumpserver.AssetPage, error)
 }
 
 func (f *fakeAPI) ListAssets(_ context.Context, query jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
 	f.listQueries = append(f.listQueries, query)
+	if f.listAssets != nil {
+		return f.listAssets(query)
+	}
 	return f.page, nil
 }
 
@@ -136,18 +142,111 @@ func TestResolveAssetSearchesNamesAndAddresses(t *testing.T) {
 	}
 }
 
-func TestResolveAssetRejectsAmbiguousExactMatches(t *testing.T) {
+func TestResolveAssetUsesFirstExactMatch(t *testing.T) {
 	api := &fakeAPI{page: jumpserver.AssetPage{Results: []jumpserver.Asset{
+		{ID: "partial", Name: "web-backup"},
 		{ID: "asset-1", Name: "web"},
 		{ID: "asset-2", Name: "WEB"},
-	}}}
+	}, Count: 200, Next: "next-page"}, detail: jumpserver.AssetDetail{Asset: jumpserver.Asset{ID: "asset-1"}}}
 
-	_, err := ResolveAsset(context.Background(), api, "web")
-	if !errors.Is(err, ErrAssetAmbiguous) {
-		t.Fatalf("error = %v, want ErrAssetAmbiguous", err)
+	asset, err := ResolveAsset(context.Background(), api, "web")
+	if err != nil || asset.ID != "asset-1" {
+		t.Fatalf("asset = %#v, error = %v", asset, err)
 	}
-	if len(api.getAssetIDs) != 0 {
-		t.Fatalf("GetAsset IDs = %#v, want none", api.getAssetIDs)
+	if len(api.listQueries) != 1 || !reflect.DeepEqual(api.getAssetIDs, []string{"asset-1"}) {
+		t.Fatalf("queries = %#v, detail IDs = %#v", api.listQueries, api.getAssetIDs)
+	}
+}
+
+func TestResolveAssetPagination(t *testing.T) {
+	firstPage := make([]jumpserver.Asset, 100)
+	for i := range firstPage {
+		firstPage[i] = jumpserver.Asset{ID: fmt.Sprintf("partial-%d", i), Name: "web-backup"}
+	}
+	wantAsset := jumpserver.Asset{ID: "selected", Name: "WEB", Address: "10.0.0.1"}
+	requestErr := errors.New("page request failed")
+	for _, tc := range []struct {
+		name        string
+		reference   string
+		pages       map[int]jumpserver.AssetPage
+		wantOffsets []int
+		wantErr     error
+		failOffset  int
+	}{
+		{
+			name: "match after first hundred stops before last page", reference: "web",
+			pages:       map[int]jumpserver.AssetPage{0: {Count: 250, Results: firstPage}, 100: {Count: 250, Results: []jumpserver.Asset{wantAsset}}},
+			wantOffsets: []int{0, 100},
+		},
+		{
+			name: "short page with next continues by actual length", reference: "10.0.0.1",
+			pages:       map[int]jumpserver.AssetPage{0: {Next: "next-page", Results: firstPage[:2]}, 2: {Results: []jumpserver.Asset{wantAsset}}},
+			wantOffsets: []int{0, 2},
+		},
+		{
+			name: "not found after last page", reference: "web",
+			pages:       map[int]jumpserver.AssetPage{0: {Count: 101, Results: firstPage}, 100: {Count: 101, Results: []jumpserver.Asset{{ID: "last", Name: "web-other"}}}},
+			wantOffsets: []int{0, 100}, wantErr: ErrAssetNotFound,
+		},
+		{
+			name: "later request failure propagates", reference: "web",
+			pages:       map[int]jumpserver.AssetPage{0: {Count: 101, Results: firstPage}},
+			wantOffsets: []int{0, 100}, wantErr: requestErr, failOffset: 100,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := &fakeAPI{detail: jumpserver.AssetDetail{Asset: wantAsset}}
+			api.listAssets = func(query jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
+				if query.Search != tc.reference || query.Limit != 100 {
+					t.Fatalf("query = %#v", query)
+				}
+				if tc.failOffset > 0 && query.Offset == tc.failOffset {
+					return jumpserver.AssetPage{}, requestErr
+				}
+				page, ok := tc.pages[query.Offset]
+				if !ok {
+					t.Fatalf("unexpected page offset %d", query.Offset)
+				}
+				return page, nil
+			}
+			asset, err := ResolveAsset(context.Background(), api, tc.reference)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil {
+				if asset.ID != wantAsset.ID || !reflect.DeepEqual(api.getAssetIDs, []string{wantAsset.ID}) {
+					t.Fatalf("asset = %#v, detail IDs = %#v", asset, api.getAssetIDs)
+				}
+			} else if len(api.getAssetIDs) != 0 {
+				t.Fatalf("unexpected detail request: %#v", api.getAssetIDs)
+			}
+			offsets := make([]int, len(api.listQueries))
+			for i, query := range api.listQueries {
+				offsets[i] = query.Offset
+			}
+			if !reflect.DeepEqual(offsets, tc.wantOffsets) {
+				t.Fatalf("offsets = %v, want %v", offsets, tc.wantOffsets)
+			}
+		})
+	}
+}
+
+func TestResolveAssetRejectsPaginationWithoutProgress(t *testing.T) {
+	for _, results := range [][]jumpserver.Asset{nil, {{ID: "partial", Name: "web-backup"}}} {
+		api := &fakeAPI{}
+		api.listAssets = func(query jumpserver.AssetQuery) (jumpserver.AssetPage, error) {
+			if len(api.listQueries) > 2 {
+				t.Fatal("pagination did not stop")
+			}
+			return jumpserver.AssetPage{Count: 200, Next: "next-page", Results: results}, nil
+		}
+		_, err := ResolveAsset(context.Background(), api, "web")
+		if err == nil || !strings.Contains(err.Error(), "pagination made no progress") {
+			t.Fatalf("error = %v, want pagination failure", err)
+		}
+		if len(api.getAssetIDs) != 0 {
+			t.Fatalf("unexpected detail request: %#v", api.getAssetIDs)
+		}
 	}
 }
 

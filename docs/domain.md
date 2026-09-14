@@ -43,9 +43,9 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 
 1. 根据显式参数或当前设置确定 Profile 和 Organization。
 2. 优先在该 Profile 范围内解析 Alias，否则查询 JumpServer Asset。
-3. 确定 Asset 和 Account。
+3. 确定 Asset 和 Account。UUID 格式的 Asset ID 直接查询详情；其他 Asset 引用按每页 100 条搜索，按服务端返回顺序选择首个 ID 精确匹配或名称、地址忽略大小写完整匹配的资产，找到即停止，不检查重名。当前页没有匹配才继续读取后续分页，遍历结束后仍无匹配时报找不到资产；分页失败或无法推进时返回错误。该规则由资源查询与连接准备共用。
 4. 直接 SSH 模式可以在终端中对多个 Account 进行交互选择。
-5. Proxy 模式必须非交互地得到唯一结果；Alias 未绑定 Account 或参数不能消除歧义时直接报错，不进行猜测。
+5. Proxy 模式按相同规则选择首个匹配的 Asset，Account 必须非交互地确定：优先显式参数，其次 Alias 绑定账号，否则只有一个可用账号时自动使用；多个账号且没有明确选择时直接报错。
 
 ### 建立连接
 
@@ -111,8 +111,8 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 - GUI 删除 Profile 会一并清除其 Server URL、Organization、全部 Alias 和本地 OAuth 凭据，并断开该 Profile 的 SSH/SFTP Session 并取消其传输；不会删除 JumpServer 上的 Asset 或 Account。删除当前 Profile 后按名称选择下一个 Profile，没有剩余项时回到未配置状态。
 - Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。
-- Proxy 模式保持非交互：不打开浏览器、不在 stdout 输出提示、不在目标歧义时要求用户选择。
-- Proxy 模式的失败原因写入 stderr 并返回非零退出码，使调用方能够区分未登录、认证过期、目标歧义和连接失败。
+- Proxy 模式保持非交互：不打开浏览器、不在 stdout 输出提示、不在账号歧义时要求用户选择。
+- Proxy 模式的失败原因写入 stderr 并返回非零退出码，使调用方能够区分未登录、认证过期、账号歧义和连接失败。
 - 产品能力以通用 SSH `ProxyCommand` 契约定义；Tabby 只能作为可选配置示例，不能成为业务模型或实现依赖。
 
 ## 术语表

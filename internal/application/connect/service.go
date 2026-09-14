@@ -14,7 +14,6 @@ import (
 
 var (
 	ErrAssetNotFound                 = errors.New("asset not found")
-	ErrAssetAmbiguous                = errors.New("asset is ambiguous")
 	ErrAccountNotFound               = errors.New("account not found")
 	ErrAccountAmbiguous              = errors.New("account is ambiguous")
 	ErrInteractiveCredentialRequired = errors.New("interactive account credential is required")
@@ -123,23 +122,34 @@ func ResolveAsset(ctx context.Context, api AssetAPI, reference string) (jumpserv
 	if isUUID(reference) {
 		return api.GetAsset(ctx, reference)
 	}
-	page, err := api.ListAssets(ctx, jumpserver.AssetQuery{Search: reference, Limit: 100})
-	if err != nil {
-		return jumpserver.AssetDetail{}, err
-	}
-	matches := make([]jumpserver.Asset, 0, 1)
-	for _, asset := range page.Results {
-		if asset.ID == reference || strings.EqualFold(asset.Name, reference) || strings.EqualFold(asset.Address, reference) {
-			matches = append(matches, asset)
+	offset := 0
+	seen := make(map[string]struct{})
+	for {
+		if err := ctx.Err(); err != nil {
+			return jumpserver.AssetDetail{}, err
+		}
+		page, err := api.ListAssets(ctx, jumpserver.AssetQuery{Search: reference, Offset: offset, Limit: 100})
+		if err != nil {
+			return jumpserver.AssetDetail{}, err
+		}
+		previousCount := len(seen)
+		for _, asset := range page.Results {
+			if asset.ID == reference || strings.EqualFold(asset.Name, reference) || strings.EqualFold(asset.Address, reference) {
+				return api.GetAsset(ctx, asset.ID)
+			}
+			seen[asset.ID] = struct{}{}
+		}
+		if len(page.Results) > 0 && len(seen) == previousCount {
+			return jumpserver.AssetDetail{}, fmt.Errorf("asset pagination made no progress at offset %d", offset)
+		}
+		offset += len(page.Results)
+		if page.Next == "" && offset >= page.Count {
+			return jumpserver.AssetDetail{}, fmt.Errorf("%w: %q", ErrAssetNotFound, reference)
+		}
+		if len(page.Results) == 0 {
+			return jumpserver.AssetDetail{}, fmt.Errorf("asset pagination made no progress at offset %d", offset)
 		}
 	}
-	if len(matches) == 0 {
-		return jumpserver.AssetDetail{}, fmt.Errorf("%w: %q", ErrAssetNotFound, reference)
-	}
-	if len(matches) > 1 {
-		return jumpserver.AssetDetail{}, fmt.Errorf("%w: %q matched %d assets", ErrAssetAmbiguous, reference, len(matches))
-	}
-	return api.GetAsset(ctx, matches[0].ID)
 }
 
 func isUUID(value string) bool {
