@@ -194,7 +194,7 @@ const bootstrapState: BootstrapState = {
 const assetPage: AssetPage = {
   count: 1,
   offset: 0,
-  limit: 50,
+  limit: 100,
   aliasCount: 2,
   results: [{
     id: 'asset-1',
@@ -778,7 +778,7 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
 
   expect(await screen.findByRole('heading', { name: '资产' })).toBeInTheDocument()
   await waitFor(() => expect(backend.listAssets).toHaveBeenCalledWith({
-    profile: 'production', organization: 'org-1', search: '', offset: 0, limit: 50,
+    profile: 'production', organization: 'org-1', search: '', offset: 0, limit: 100,
   }))
   const search = screen.getByRole('searchbox', { name: '搜索资产或 Alias' })
   await user.type(search, 'production-web')
@@ -791,6 +791,31 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
   expect(screen.getByText(/最近同步/)).toBeInTheDocument()
   expect(backend.listOrganizations).toHaveBeenCalledTimes(1)
   expect(await screen.findByText('production 资产同步成功')).toBeInTheDocument()
+})
+
+test('资产列表每页 100 条，前后翻页使用对应偏移量', async () => {
+  const results = Array.from({ length: 101 }, (_, index) => ({
+    ...assetPage.results[0], id: `asset-${index + 1}`, name: `分页资产-${index + 1}`, aliases: [],
+  }))
+  const backend = makeBackend({
+    listAssets: vi.fn().mockImplementation(async (request) => ({
+      ...assetPage, count: results.length, offset: request.offset, limit: request.limit,
+      results: results.slice(request.offset, request.offset + request.limit),
+    })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+
+  expect(await screen.findByText('1–100 / 101')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '上一页' })).toBeDisabled()
+  await user.click(screen.getByRole('button', { name: '下一页' }))
+  expect(await screen.findByText('101–101 / 101')).toBeInTheDocument()
+  expect(backend.listAssets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 100, limit: 100 }))
+  expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: '上一页' }))
+  expect(await screen.findByText('1–100 / 101')).toBeInTheDocument()
+  expect(backend.listAssets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, limit: 100 }))
 })
 
 test.each(['加载失败', '返回空列表', '未选择组织'])('立即同步在组织列表%s后重试并填充选项', async (scenario) => {

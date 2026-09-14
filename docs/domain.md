@@ -57,7 +57,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 ## 业务规则
 
 - Alias 位于 TOML 配置中，允许用户批量直接编辑；项目需要提供打开配置文件的快捷命令。
-- GUI 的资产搜索同时匹配远端 Asset 与本地 Alias；合并结果按 Asset ID 去重。远端 Asset API 使用 offset/limit 分页，GUI 保留对应分页语义。
+- GUI 的资产搜索同时匹配远端 Asset 与本地 Alias；合并结果按 Asset ID 去重。远端 Asset API 使用 offset/limit 分页，GUI 资产列表每页请求 100 条，与 CLI `asset list` 的默认分页大小一致。
 - “All organizations” 是聚合上下文：选择它时显示各具体 Organization 中与当前资产匹配的 Alias；在该聚合上下文创建的 Alias 切换到具体 Organization 后，只要对应 Asset 可见，也继续显示。
 - GUI 在资产行内纵向展示该 Asset 的全部 Alias；资产行的更多操作始终提供创建入口，因此同一 Asset 可以拥有多个 Alias。Alias 可重命名或删除：重命名必须原子保留 Asset、Organization 和 Account 映射，并同步更新匹配的已打开 SSH Tab 重连描述符，但不中断活动 Session；删除必须使用应用内确认对话框，不依赖系统或浏览器原生确认框。资产数和当前 Organization 的 Alias 总数显示在对应表头，Alias 总数不受当前分页影响。
 - 资产、Alias 和资产详情按授权协议独立显示 SSH/SFTP 入口；支持 SSH 不代表支持 SFTP。
