@@ -63,7 +63,7 @@ jumpctl ssh web
 | `jumpctl profile list` | 列出 Profile，并用 `*` 标记当前项 |
 | `jumpctl profile use <name>` | 切换当前 Profile |
 | `jumpctl alias set <name> --asset <asset> [--account <account>] [--organization <org>] [--profile <name>]` | 创建或替换 Profile 范围内的 Alias |
-| `jumpctl alias list [--profile <name>]` | 列出 Alias |
+| `jumpctl alias list [--profile <name>] [--long]` | 列出 Alias 对应的资产名称、地址、账号和组织；`--long` 逐项显示完整引用 |
 
 Alias 适合批量直接编辑。每用户应用根目录为：
 
@@ -125,15 +125,49 @@ Asset 引用可以是 ID、名称或地址，但必须精确匹配且唯一。�
 
 `asset list` 使用偏移量分页。例如，`jumpctl asset list --offset 100 --limit 100` 会跳过前 100 个匹配结果并获取接下来的最多 100 个。`--offset` 必须大于或等于 `0`，`--limit` 必须大于 `0`；不指定分页参数时保留原有的前 100 条行为。
 
-所有 `list` 命令都输出带大写列头的文本表格，并根据本次结果中的最长内容自动对齐；没有结果时仍输出列头。当前各命令的列为：
+所有 `list` 命令默认输出带大写列头的文本表格，并根据本次结果中的最长显示宽度自动对齐，支持中文和组合字符；没有结果时仍输出列头。当前各命令的列为：
 
 | 命令 | 列头 |
 | --- | --- |
 | `profile list` | `CURRENT`、`PROFILE`、`URL` |
-| `alias list` | `ALIAS`、`ASSET`、`ACCOUNT`、`ORGANIZATION` |
-| `organization list` | `ID`、`NAME` |
-| `asset list` | `ID`、`NAME`、`ADDRESS`、`TYPE` |
-| `account list` | `ID`、`USERNAME`、`NAME` |
+| `alias list` | `ALIAS`、`ASSET`、`ADDRESS`、`ACCOUNT`、`ORGANIZATION` |
+| `organization list` | `NAME`、`ID` |
+| `asset list` | `NAME`、`ADDRESS`、`TYPE`、`ID` |
+| `account list` | `NAME`、`USERNAME`、`ID` |
+
+资源列表把名称放在前面，完整 ID 放在最后，不截短。Organization 按名称排序，同名时按 ID 排序；Asset 保持当前页内按名称排序，Account 保持按用户名（缺少时按名称或 ID）排序。名称为空或只有空白时显示“名称未提供”。
+
+`alias list` 按别名排序，查询所选 Profile 下对应组织中的资产详情和组织名称：
+
+- `ASSET` 显示资产名称，`ADDRESS` 显示地址；地址不可用时显示 `—`。
+- `ACCOUNT` 显示“账号名称（用户名）”；两者相同时只显示一次，名称缺失时依次使用用户名、账号别名。账号引用按 ID、名称、用户名或账号别名精确匹配，后三者不区分大小写；匹配不唯一时不猜测。`@INPUT`、`@USER`、`@ANON` 按原有特殊账号语义显示。
+- 未绑定账号显示“未绑定”，不会因资产只有一个账号而把它显示为已绑定。
+- 别名未指定组织时继承 Profile 的组织，并在名称后标记“（继承）”；两处均未指定时显示“未设置”。
+- 未登录、网络失败、资源不可见或引用无法唯一解析时，保留对应原始引用并标记“（名称暂不可用）”，仍成功列出本地 Alias。已查到资源但没有名称时，资产保留原始引用并标记“（名称未提供）”；账号没有名称、用户名或账号别名时同样处理。组织查询失败不阻止资产和账号名称展示。
+- 查询复用已有认证和按需 Token 刷新，不打开浏览器或提示选择账号；不修改 Alias 配置。组织列表每次执行最多查询一次，同一组织中的相同资产引用在本次执行内复用查询结果（包括失败结果），不同组织分别查询。用户取消时停止查询并返回非零状态。
+
+示例（数据为虚构）：
+
+```text
+ALIAS     ASSET       ADDRESS     ACCOUNT                 ORGANIZATION
+order     订单服务    10.20.1.11  应用部署账号（deploy）  生产环境
+order-db  订单数据库  10.20.1.12  未绑定                  生产环境（继承）
+```
+
+`alias list --long` 为每个 Alias 输出一个独立条目，条目之间空一行：
+
+```text
+ALIAS         order
+ASSET         订单服务
+ASSET REF     738b492a-6e31-482d-9d28-5c0184d2b60f
+ADDRESS       10.20.1.11
+ACCOUNT       应用部署账号（deploy）
+ACCOUNT REF   deploy
+ORGANIZATION  生产环境（继承）
+ORG REF       b8c95402-756a-498c-8b41-1c73fae192d6
+```
+
+`ASSET REF`、`ACCOUNT REF` 保留配置中的完整原始引用，可能是 ID，也可能是名称、地址或用户名，不自动改写为 ID。`ORG REF` 显示实际使用的完整组织引用（包含从 Profile 继承的值）。“继承”标记保留在 `ORGANIZATION` 中；空账号或组织引用分别显示“未绑定”“未设置”。没有 Alias 时，`--long` 输出“暂无 Alias”。
 
 这些表格面向终端阅读；列之间由可变数量的空格分隔，不应把固定空格位置当作稳定的机器解析格式。
 

@@ -36,7 +36,7 @@ func TestCommandPrefixesExecuteOrganizationList(t *testing.T) {
 			if err := root.Execute(); err != nil {
 				t.Fatal(err)
 			}
-			if service.calls != 1 || stdout.String() != "ID     NAME\norg-1  One\n" {
+			if service.calls != 1 || stdout.String() != "NAME  ID\nOne   org-1\n" {
 				t.Fatalf("calls = %d, stdout = %q", service.calls, stdout.String())
 			}
 			if strings.Contains(input, "--profile") && service.profile != "pr" {

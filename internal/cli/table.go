@@ -1,11 +1,11 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
+
+	"github.com/rivo/uniseg"
 )
 
 var tableCellReplacer = strings.NewReplacer(
@@ -20,36 +20,35 @@ func writeTable(output io.Writer, headers []string, rows [][]string) error {
 		return fmt.Errorf("table headers are required")
 	}
 
-	var formatted bytes.Buffer
-	writer := tabwriter.NewWriter(&formatted, 0, 4, 2, ' ', 0)
-	if err := writeTableRow(writer, headers); err != nil {
-		return err
-	}
 	for index, row := range rows {
 		if len(row) != len(headers) {
 			return fmt.Errorf("table row %d has %d columns; want %d", index+1, len(row), len(headers))
 		}
-		if err := writeTableRow(writer, row); err != nil {
-			return err
+	}
+	// 按终端显示宽度对齐，中文占两列，组合字符按一个字形计算。
+	values := make([][]string, 0, len(rows)+1)
+	values = append(values, headers)
+	values = append(values, rows...)
+	widths := make([]int, len(headers))
+	for index, row := range values {
+		cells := make([]string, len(row))
+		for column, cell := range row {
+			cells[column] = tableCellReplacer.Replace(cell)
+			widths[column] = max(widths[column], uniseg.StringWidth(cells[column]))
 		}
+		values[index] = cells
 	}
-	if err := writer.Flush(); err != nil {
-		return err
-	}
-
-	for _, line := range strings.Split(strings.TrimSuffix(formatted.String(), "\n"), "\n") {
-		if _, err := fmt.Fprintln(output, strings.TrimRight(line, " ")); err != nil {
+	for _, row := range values {
+		var line strings.Builder
+		for column, cell := range row {
+			line.WriteString(cell)
+			if column < len(row)-1 {
+				line.WriteString(strings.Repeat(" ", widths[column]-uniseg.StringWidth(cell)+2))
+			}
+		}
+		if _, err := fmt.Fprintln(output, strings.TrimRight(line.String(), " ")); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func writeTableRow(output io.Writer, cells []string) error {
-	values := make([]string, len(cells))
-	for index, cell := range cells {
-		values[index] = tableCellReplacer.Replace(cell)
-	}
-	_, err := fmt.Fprintln(output, strings.Join(values, "\t"))
-	return err
 }

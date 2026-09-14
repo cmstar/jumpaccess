@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/cmstar/jumpaccess/internal/application/settings"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
@@ -37,7 +36,8 @@ func newAliasCommand(deps Dependencies) *cobra.Command {
 	set.Flags().StringVar(&organization, "organization", "", "Organization ID")
 	_ = set.MarkFlagRequired("asset")
 	command.AddCommand(set)
-	command.AddCommand(&cobra.Command{
+	var long bool
+	list := &cobra.Command{
 		Use:   "list",
 		Short: "List asset aliases",
 		Args:  cobra.NoArgs,
@@ -54,18 +54,14 @@ func newAliasCommand(deps Dependencies) *cobra.Command {
 			if !ok {
 				return fmt.Errorf("profile %q does not exist", selectedProfile)
 			}
-			names := make([]string, 0, len(profile.Aliases))
-			for name := range profile.Aliases {
-				names = append(names, name)
+			entries, err := listAliases(cmd.Context(), deps, selectedProfile, profile)
+			if err != nil {
+				return err
 			}
-			sort.Strings(names)
-			rows := make([][]string, 0, len(names))
-			for _, name := range names {
-				alias := profile.Aliases[name]
-				rows = append(rows, []string{name, alias.Asset, alias.Account, alias.Organization})
-			}
-			return writeTable(cmd.OutOrStdout(), []string{"ALIAS", "ASSET", "ACCOUNT", "ORGANIZATION"}, rows)
+			return writeAliases(cmd.OutOrStdout(), entries, long)
 		},
-	})
+	}
+	list.Flags().BoolVar(&long, "long", false, "Show each alias with full original references")
+	command.AddCommand(list)
 	return command
 }

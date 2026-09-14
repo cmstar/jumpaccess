@@ -416,11 +416,14 @@ func TestAliasListUsesCurrentProfileAndSortsNames(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	const want = "ALIAS  ASSET      ACCOUNT  ORGANIZATION\n" +
-		"db     asset-db   dba      org-db\n" +
-		"web    asset-web  root\n"
-	if stdout.String() != want {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[1], "db ") || !strings.HasPrefix(lines[2], "web ") {
+		t.Fatalf("unexpected alias order: %q", stdout.String())
+	}
+	for _, want := range []string{"ADDRESS", "asset-db（名称暂不可用）", "dba（名称暂不可用）", "org-db（名称暂不可用）", "未设置"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, missing %q", stdout.String(), want)
+		}
 	}
 }
 
@@ -561,7 +564,7 @@ func TestProxyCommandPreflightsNonInteractivelyAndKeepsStdoutUnused(t *testing.T
 
 func TestResourceCommandsPrintOrganizationsAssetsAndAccounts(t *testing.T) {
 	service := fakeResourceService{
-		organizations: []jumpserver.Organization{{ID: "org-2", Name: "Two"}, {ID: "org-1", Name: "One"}},
+		organizations: []jumpserver.Organization{{ID: "org-1", Name: "Two"}, {ID: "org-2", Name: "One"}},
 		assets: jumpserver.AssetPage{Results: []jumpserver.Asset{
 			{ID: "asset-1", Name: "web", Address: "10.0.0.1", Type: jumpserver.LabelValue{Value: "linux"}},
 		}},
@@ -571,9 +574,9 @@ func TestResourceCommandsPrintOrganizationsAssetsAndAccounts(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"organization", "list"}, "ID     NAME\norg-1  One\norg-2  Two\n"},
-		{[]string{"asset", "list", "--search", "web"}, "ID       NAME  ADDRESS   TYPE\nasset-1  web   10.0.0.1  linux\n"},
-		{[]string{"account", "list", "web"}, "ID         USERNAME  NAME\naccount-1  root      Root\n"},
+		{[]string{"organization", "list"}, "NAME  ID\nOne   org-2\nTwo   org-1\n"},
+		{[]string{"asset", "list", "--search", "web"}, "NAME  ADDRESS   TYPE   ID\nweb   10.0.0.1  linux  asset-1\n"},
+		{[]string{"account", "list", "web"}, "NAME  USERNAME  ID\nRoot  root      account-1\n"},
 	} {
 		var stdout bytes.Buffer
 		root := NewRoot(Dependencies{Resources: service, Stdout: &stdout})
@@ -595,7 +598,7 @@ func TestResourceListPrintsHeaderWhenThereAreNoResults(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if got, want := stdout.String(), "ID  NAME  ADDRESS  TYPE\n"; got != want {
+	if got, want := stdout.String(), "NAME  ADDRESS  TYPE  ID\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }

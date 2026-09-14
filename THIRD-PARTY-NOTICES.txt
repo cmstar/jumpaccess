@@ -3,6 +3,7 @@ THIRD-PARTY SOFTWARE NOTICES AND LICENSES
 JumpAccess binaries contain software from the projects listed below. The
 versions are the production dependencies used by the current Go and frontend
 package graphs for jumpctl and the Windows/macOS JumpAccess desktop app.
+The CLI also uses github.com/rivo/uniseg for Unicode table display widths.
 
   github.com/BurntSushi/toml v1.6.0                  MIT
   github.com/spf13/cobra v1.10.2                     Apache-2.0

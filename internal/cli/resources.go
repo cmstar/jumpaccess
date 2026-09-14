@@ -32,12 +32,17 @@ func newOrganizationCommand(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sort.Slice(organizations, func(i, j int) bool { return organizations[i].ID < organizations[j].ID })
+			sort.Slice(organizations, func(i, j int) bool {
+				if organizations[i].Name == organizations[j].Name {
+					return organizations[i].ID < organizations[j].ID
+				}
+				return organizations[i].Name < organizations[j].Name
+			})
 			rows := make([][]string, 0, len(organizations))
 			for _, organization := range organizations {
-				rows = append(rows, []string{organization.ID, organization.Name})
+				rows = append(rows, []string{displayName(organization.Name), organization.ID})
 			}
-			return writeTable(cmd.OutOrStdout(), []string{"ID", "NAME"}, rows)
+			return writeTable(cmd.OutOrStdout(), []string{"NAME", "ID"}, rows)
 		},
 	}
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
@@ -74,9 +79,9 @@ func newAssetCommand(deps Dependencies) *cobra.Command {
 			sort.Slice(page.Results, func(i, j int) bool { return page.Results[i].Name < page.Results[j].Name })
 			rows := make([][]string, 0, len(page.Results))
 			for _, asset := range page.Results {
-				rows = append(rows, []string{asset.ID, asset.Name, asset.Address, asset.Type.Value})
+				rows = append(rows, []string{displayName(asset.Name), asset.Address, asset.Type.Value, asset.ID})
 			}
-			return writeTable(cmd.OutOrStdout(), []string{"ID", "NAME", "ADDRESS", "TYPE"}, rows)
+			return writeTable(cmd.OutOrStdout(), []string{"NAME", "ADDRESS", "TYPE", "ID"}, rows)
 		},
 	}
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
@@ -109,9 +114,9 @@ func newAccountCommand(deps Dependencies) *cobra.Command {
 			sort.Slice(accounts, func(i, j int) bool { return accountIdentity(accounts[i]) < accountIdentity(accounts[j]) })
 			rows := make([][]string, 0, len(accounts))
 			for _, account := range accounts {
-				rows = append(rows, []string{account.ID, account.Username, account.Name})
+				rows = append(rows, []string{displayName(account.Name), account.Username, account.ID})
 			}
-			return writeTable(cmd.OutOrStdout(), []string{"ID", "USERNAME", "NAME"}, rows)
+			return writeTable(cmd.OutOrStdout(), []string{"NAME", "USERNAME", "ID"}, rows)
 		},
 	}
 	list.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
