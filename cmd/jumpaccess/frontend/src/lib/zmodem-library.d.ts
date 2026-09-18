@@ -14,6 +14,7 @@ declare module 'zmodem.js' {
     send_offer(details: { name: string; size: number }): Promise<Transfer | undefined>
     close(): Promise<void>
     abort(): void
+    aborted(): boolean
     has_ended(): boolean
   }
   export interface Detection {

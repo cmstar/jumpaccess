@@ -47,6 +47,7 @@ import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
 import { SFTPPane } from './components/SFTPPane'
 import { ZmodemToolbar } from './components/ZmodemToolbar'
+import { SSHTransferProgress } from './components/SSHTransferProgress'
 import { ZmodemController, decodeBytes } from './lib/zmodem'
 import type { ZmodemState } from './lib/zmodemTypes'
 import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
@@ -1441,30 +1442,33 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
     ? `${statusLabel} · 到 JumpServer SSH 网关的往返延迟 ${latency.milliseconds} ms`
     : status === 'active' ? `${statusLabel} · 正在检测 JumpServer SSH 网关延迟` : statusLabel
   return <section className="terminal-panel tab-terminal">
-    <div className="terminal-toolbar">
-      <div className="terminal-toolbar-info">
-        <strong className="terminal-toolbar-name">{descriptor.alias || assetName}</strong>
-        {descriptor.alias && assetName ? <small className="terminal-toolbar-meta">{assetName}</small> : null}
-        {descriptor.assetID ? <small className="terminal-toolbar-meta" title={descriptor.assetID}>{descriptor.assetID}</small> : null}
-        <span className={`terminal-connection-metric${showLatency ? '' : ' latency-hidden'}`} title={latencyTitle}>
-          <span aria-label={`连接状态：${statusLabel}`} className={`status-dot terminal-connection-status ${latencyClass}`} role="img" />
-          {showLatency ? <small className="terminal-latency-value">{latencyText}</small> : null}
-        </span>
+    <div className="terminal-header">
+      <div className="terminal-toolbar">
+        <div className="terminal-toolbar-info">
+          <strong className="terminal-toolbar-name">{descriptor.alias || assetName}</strong>
+          {descriptor.alias && assetName ? <small className="terminal-toolbar-meta">{assetName}</small> : null}
+          {descriptor.assetID ? <small className="terminal-toolbar-meta" title={descriptor.assetID}>{descriptor.assetID}</small> : null}
+          <span className={`terminal-connection-metric${showLatency ? '' : ' latency-hidden'}`} title={latencyTitle}>
+            <span aria-label={`连接状态：${statusLabel}`} className={`status-dot terminal-connection-status ${latencyClass}`} role="img" />
+            {showLatency ? <small className="terminal-latency-value">{latencyText}</small> : null}
+          </span>
+        </div>
+        <div className="terminal-toolbar-actions">
+          <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
+          <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions || transfer?.busy} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
+          <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void copyText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
+          <span aria-hidden="true" className="terminal-action-separator" />
+          <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={!canConnectSFTP || status !== 'active'} onClick={onConnectSFTP} title={canConnectSFTP && status === 'active' ? '连接SFTP' : '连接SFTP （当前不可用）'} type="button"><FolderOpen /></button>
+          <ZmodemToolbar key={session.id} active={status === 'active'} state={transfer} onCommand={onTransferCommand} />
+          <span aria-hidden="true" className="terminal-action-separator" />
+          <button aria-label="重新连接" className="icon-button" disabled={status !== 'active' || !tab.sessionID} onClick={onRestart} title="重新连接" type="button"><RotateCcw /></button>
+          <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
+        </div>
       </div>
-      <div className="terminal-toolbar-actions">
-        <button aria-label="复制选中文本" className="icon-button" disabled={!terminalActions?.canCopy} onClick={() => void terminalActions?.copy()} title="复制选中文本 (Ctrl + Insert)" type="button"><ClipboardCopy /></button>
-        <button aria-label="粘贴剪贴板文本" className="icon-button" disabled={status !== 'active' || !terminalActions || transfer?.busy} onClick={() => void terminalActions?.paste()} title="粘贴剪贴板文本 (Shift + Insert)" type="button"><ClipboardPaste /></button>
-        <button aria-label="复制当前工作目录" className="icon-button" disabled={!currentDirectory} onClick={() => void copyText(currentDirectory)} title={`复制当前路径\n${currentDirectory || '当前路径不可用'}`} type="button"><FolderOutput /></button>
-        <span aria-hidden="true" className="terminal-action-separator" />
-        <button aria-label="从 SSH 连接 SFTP" className="icon-button" disabled={!canConnectSFTP || status !== 'active'} onClick={onConnectSFTP} title={canConnectSFTP && status === 'active' ? '连接SFTP' : '连接SFTP （当前不可用）'} type="button"><FolderOpen /></button>
-        <ZmodemToolbar key={session.id} active={status === 'active'} state={transfer} onCommand={onTransferCommand} />
-        <span aria-hidden="true" className="terminal-action-separator" />
-        <button aria-label="重新连接" className="icon-button" disabled={status !== 'active' || !tab.sessionID} onClick={onRestart} title="重新连接" type="button"><RotateCcw /></button>
-        <button aria-label={`断开 ${tabTitle(tab)} SSH 连接`} className="icon-button danger" disabled={status !== 'active' || !tab.sessionID} onClick={onDisconnect} title="断开连接" type="button"><Unplug /></button>
-      </div>
+      <SSHTransferProgress key={session.id} state={transfer} onCancel={onCancelTransfer} />
     </div>
     <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
-    <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{transfer.message || (!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用')}{transfer.name ? ` · ${transfer.name} · ${transfer.transferred ?? 0} / ${transfer.size ?? 0} B` : ''}{transfer.busy ? <button className="button ghost small" onClick={onCancelTransfer} type="button">取消传输</button> : null}</span> : null}</div>
+    <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div>
   </section>
 }
 

@@ -13,6 +13,8 @@ export interface ZmodemBackend {
 }
 export interface ZmodemState extends TransferCapabilities {
   busy: boolean
+  phase?: 'waiting' | 'selecting' | 'transferring' | 'confirming' | 'saving' | 'finishing' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
+  finishedAt?: number
   direction?: 'upload' | 'download'
   name?: string
   transferred?: number

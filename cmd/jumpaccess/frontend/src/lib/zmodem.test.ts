@@ -14,6 +14,110 @@ function backend(): ZmodemBackend {
   }
 }
 
+test.each([false, true])('取消下载实际中止远端，丢弃在途数据并冻结进度；发送队列先前失败=%s', async (failedWrite) => {
+  const api = backend()
+  const output: string[] = []
+  let incoming = Promise.resolve()
+  let remote: Session | undefined
+  let rejectWrite!: (reason: Error) => void
+  let releaseDisk: (() => void) | undefined
+  vi.mocked(api.chooseZmodemDownloadDirectory).mockResolvedValue('grant')
+  vi.mocked(api.createZmodemDownload).mockResolvedValue({ id: 'file', name: 'large.bin', path: '/downloads/large.bin', size: 8_000_000 })
+  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {})
+  const peer = new Sentry({
+    to_terminal: () => {}, on_retract: () => {},
+    sender: bytes => { const copy = Uint8Array.from(bytes); incoming = incoming.then(() => controller.consume(copy)) },
+    on_detect: detection => { remote = detection.confirm() },
+  })
+  let delayWrite = false
+  vi.mocked(api.writeSSHBinary).mockImplementation(async (_id, encoded) => {
+    if (delayWrite) { delayWrite = false; await new Promise<void>((_resolve, reject) => { rejectWrite = reject }) }
+    try { peer.consume(decodeBytes(encoded)) } catch (reason) { if (!remote?.aborted()) throw reason }
+  })
+  await controller.consume(new TextEncoder().encode('**\x18B00000000000000\r\n\x11'))
+  await vi.waitFor(() => expect(remote).toBeDefined())
+  const offer = remote!.send_offer({ name: 'large.bin', size: 8_000_000 })
+  if (failedWrite) {
+    // 延迟接收端的 ZRPOS，模拟点击取消时已有一次桥接写入尚未完成。
+    delayWrite = true
+    await vi.waitFor(() => expect(rejectWrite).toBeDefined())
+  } else {
+    const transfer = await offer
+    transfer!.send(new TextEncoder().encode('first block'))
+    await incoming
+    vi.mocked(api.writeZmodemFile).mockImplementationOnce(() => new Promise<void>(resolve => { releaseDisk = resolve }))
+    transfer!.send(new TextEncoder().encode('pending disk block'))
+    await vi.waitFor(() => expect(releaseDisk).toBeDefined())
+  }
+  vi.useFakeTimers()
+  try {
+    const progress = controller.state.transferred
+    controller.cancel()
+    if (failedWrite) rejectWrite(new Error('bridge write failed'))
+    releaseDisk?.()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(remote!.aborted()).toBe(true)
+    expect(controller.state.transferred).toBe(progress)
+    const before = output.join('')
+    const garbage = new TextEncoder().encode('BINARY-DATA-MUST-NOT-RENDER\x00\xff')
+    await controller.consume(garbage)
+    await vi.advanceTimersByTimeAsync(200)
+    await controller.consume(garbage)
+    expect(output.join('')).toBe(before)
+    expect(controller.state.transferred).toBe(progress)
+    expect(controller.state.busy).toBe(true)
+    expect(controller.state.phase).toBe('cancelling')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(controller.state.busy).toBe(false)
+    expect(controller.state.phase).toBe('cancelled')
+    expect(output.join('')).not.toContain('Press Enter to refresh')
+    expect(output.join('')).not.toContain('Transfer stopped.')
+    if (!failedWrite) expect(output.join('')).toContain('Transfer cancelled')
+    expect(api.closeZmodemFile).not.toHaveBeenCalledWith('file', true)
+    expect(api.endZmodemTransfer).toHaveBeenCalledWith('ssh')
+    await controller.consume(new TextEncoder().encode('shell$ '))
+    expect(output.join('')).toContain('shell$ ')
+  } finally { controller.dispose(); vi.useRealTimers() }
+})
+
+test('远端持续发送时不恢复终端或提前宣布取消完成，超时提示重新连接', async () => {
+  vi.useFakeTimers()
+  const api = backend()
+  const output: string[] = []
+  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {})
+  try {
+    await controller.command('sz -- large.bin\r', vi.fn())
+    controller.cancel()
+    await vi.advanceTimersByTimeAsync(0)
+    for (let i = 0; i < 30; i++) {
+      await controller.consume(new TextEncoder().encode('BINARY'))
+      await vi.advanceTimersByTimeAsync(400)
+    }
+    expect(controller.state.busy).toBe(true)
+    expect(controller.state.message).toContain('请重新连接 SSH')
+    expect(output.join('')).not.toContain('BINARY')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(controller.state.busy).toBe(false)
+  } finally { controller.dispose(); vi.useRealTimers() }
+})
+
+test('取消信号自身发送失败时持续隔离，不把失败当作已取消', async () => {
+  vi.useFakeTimers()
+  const api = backend()
+  const output: string[] = []
+  const controller = new ZmodemController('ssh', api, text => output.push(text), () => {})
+  try {
+    vi.mocked(api.writeSSHBinary).mockRejectedValue(new Error('SSH write failed'))
+    await controller.command('sz -- large.bin\r', vi.fn())
+    controller.cancel()
+    await vi.advanceTimersByTimeAsync(11_000)
+    await controller.consume(new TextEncoder().encode('BINARY'))
+    expect(controller.state.busy).toBe(true)
+    expect(controller.state.message).toContain('请重新连接 SSH')
+    expect(output.join('')).not.toContain('BINARY')
+  } finally { controller.dispose(); vi.useRealTimers() }
+})
+
 test('binary bridge preserves all octets and download command quotes shell syntax', () => {
   const data = Uint8Array.from({ length: 256 }, (_, i) => i)
   expect(decodeBytes(encodeBytes(data))).toEqual(data)
@@ -87,7 +191,7 @@ test('等待远端开始超时后恢复输入，并允许再次传输', async ()
     const write = vi.fn().mockResolvedValue(undefined)
     await controller.command('rz\r', write)
     expect(controller.state.busy).toBe(true)
-    await vi.advanceTimersByTimeAsync(60_001)
+    await vi.advanceTimersByTimeAsync(60_501)
     expect(controller.state.busy).toBe(false)
     expect(controller.state.message).toContain('超时')
     await controller.command('rz\r', write)
@@ -193,6 +297,7 @@ test('真实 ZMODEM 双端协议逐块下载并等待落盘', async () => {
   await remote!.close()
   await incoming
   await vi.waitFor(() => expect(api.closeZmodemFile).toHaveBeenCalledWith('file', true))
+  expect(controller.state.phase).toBe('saving')
   expect(output.join('')).toContain(String.raw`Download to G:\下载目录\binary (1).dat`)
   expect(output.join('')).toContain('Saving')
   expect(output.join('')).not.toContain('100%')
@@ -201,6 +306,8 @@ test('真实 ZMODEM 双端协议逐块下载并等待落盘', async () => {
   expect(output.join('')).not.toContain('shell$ ')
   save()
   await vi.waitFor(() => expect(controller.state.message).toBe('下载完成'), { timeout: 5000 })
+  expect(controller.state.phase).toBe('completed')
+  expect(controller.state.finishedAt).toEqual(expect.any(Number))
   expect(completed).toHaveBeenCalledExactlyOnceWith('下载完成：binary (1).dat')
   expect(output.join('')).toMatch(/Complete\r\nshell\$ $/)
   expect(Uint8Array.from(received)).toEqual(data)

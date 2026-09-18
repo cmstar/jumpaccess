@@ -2553,7 +2553,7 @@ details > summary::-webkit-details-marker {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: 46px minmax(0, 1fr) 25px;
+  grid-template-rows: auto minmax(0, 1fr) 25px;
   background: var(--surface);
 }
 
@@ -2562,6 +2562,30 @@ details > summary::-webkit-details-marker {
   min-height: 0;
   flex: 1;
 }
+
+.terminal-header { min-width: 0; }
+.ssh-transfer-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 14px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: .6rem;
+}
+.ssh-transfer-direction { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ssh-transfer-direction svg { width: 16px; height: 16px; color: var(--accent); }
+.ssh-transfer-details { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.ssh-transfer-details > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-transfer-details > [role="status"] { flex: 0 1 auto; }
+.ssh-transfer-name { flex: 1; color: var(--muted); }
+.ssh-transfer-meter { display: flex; align-items: center; gap: 8px; flex: 0 1 35%; max-width: 380px; min-width: max-content; }
+.ssh-transfer-meter progress { flex: 1; width: 0; min-width: 60px; height: 6px; accent-color: var(--accent); }
+.ssh-transfer-meter > span { flex-shrink: 0; font-size: .55rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ssh-transfer-progress > button { flex-shrink: 0; height: 26px; min-height: 0; padding-block: 0; }
+.ssh-transfer-progress.failed .ssh-transfer-details > span:first-child { color: var(--danger); }
 
 .terminal-toolbar {
   display: flex;
@@ -3398,12 +3422,4 @@ details > summary::-webkit-details-marker {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.zmodem-status .button {
-  flex-shrink: 0;
-  min-height: 20px;
-  height: 20px;
-  padding: 0 6px;
-  font-size: inherit;
 }

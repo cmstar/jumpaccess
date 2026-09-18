@@ -63,6 +63,11 @@ test.each([
     await remote!.close()
   })
   await waitFor(() => expect(zmodem.closeZmodemFile).toHaveBeenCalledWith('file', true))
+  const progress = screen.getByRole('region', { name: 'SSH 文件传输' })
+  expect(progress.closest('.terminal-header')).not.toBeNull()
+  expect(within(progress).getByRole('progressbar')).toBeInTheDocument()
+  expect(within(progress).getByRole('button', { name: '取消传输' })).toBeDisabled()
+  expect(document.querySelector('.terminal-statusbar')).not.toHaveTextContent('取消传输')
   const notices = within(screen.getByLabelText('应用提示'))
   const name = alias ? 'production-web' : 'prod-web-01'
   const message = `${name} ${direction === 'upload' ? '上传完成' : '下载完成'}：empty.txt`
