@@ -613,6 +613,9 @@ test('Windows 最小化交给后端记录当前显示器，恢复焦点时校正
 test('Windows 最大化按钮随窗口状态切换最大化和还原图标', async () => {
   let maximized = false
   const previousRuntime = window.runtime
+  const flags = { enableResize: true, resizeEdge: 'n-resize', defaultCursor: '' }
+  Object.defineProperty(window, 'wails', { configurable: true, value: { flags } })
+  document.documentElement.style.cursor = 'n-resize'
   window.runtime = {
     EventsOnMultiple: vi.fn().mockReturnValue(() => undefined),
     WindowIsMaximised: vi.fn().mockImplementation(async () => maximized),
@@ -631,12 +634,45 @@ test('Windows 最大化按钮随窗口状态切换最大化和还原图标', asy
 
     const restore = await screen.findByRole('button', { name: '还原窗口' })
     expect(restore.querySelector('.lucide-copy')).toBeInTheDocument()
+    expect(flags.enableResize).toBe(false)
+    expect(flags.resizeEdge).toBeUndefined()
+    expect(document.documentElement.style.cursor).toBe('')
 
     maximized = false
     fireEvent.resize(window)
     expect(await screen.findByRole('button', { name: '最大化窗口' })).toBeInTheDocument()
+    expect(flags.enableResize).toBe(true)
+
+    maximized = true
+    fireEvent.resize(window)
+    expect(await screen.findByRole('button', { name: '还原窗口' })).toBeInTheDocument()
+    expect(flags.enableResize).toBe(false)
   } finally {
     window.runtime = previousRuntime
+    Reflect.deleteProperty(window, 'wails')
+    document.documentElement.style.cursor = ''
+  }
+})
+
+test('启动时已最大化的 Windows 窗口关闭边缘缩放', async () => {
+  const previousRuntime = window.runtime
+  const flags = { enableResize: true, resizeEdge: 's-resize', defaultCursor: 'default' }
+  Object.defineProperty(window, 'wails', { configurable: true, value: { flags } })
+  document.documentElement.style.cursor = 's-resize'
+  window.runtime = {
+    EventsOnMultiple: vi.fn().mockReturnValue(() => undefined),
+    WindowIsMaximised: vi.fn().mockResolvedValue(true),
+  }
+  try {
+    render(<App backend={makeBackend()} />)
+    await screen.findByRole('button', { name: '还原窗口' })
+    expect(flags.enableResize).toBe(false)
+    expect(flags.resizeEdge).toBeUndefined()
+    expect(document.documentElement.style.cursor).toBe('default')
+  } finally {
+    window.runtime = previousRuntime
+    Reflect.deleteProperty(window, 'wails')
+    document.documentElement.style.cursor = ''
   }
 })
 

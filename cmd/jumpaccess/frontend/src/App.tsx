@@ -1248,15 +1248,26 @@ function TitleBar({ backend, activeTabID, auth, onActivate, onClose, onMinimize,
   const [maximized, setMaximized] = useState(false)
   const [draggedTabID, setDraggedTabID] = useState('')
   const [dropTargetID, setDropTargetID] = useState('')
+  const applyWindowState = (value: boolean) => {
+    setMaximized(value)
+    const flags = window.wails?.flags
+    if (mac || !flags) return
+    // Wails 2.14 的边缘光标检测不判断最大化，需同步关闭并清理上次命中的边缘。
+    flags.enableResize = !value
+    if (value) {
+      if (flags.resizeEdge) document.documentElement.style.cursor = flags.defaultCursor ?? ''
+      flags.resizeEdge = undefined
+    }
+  }
   const toggleMaximized = () => {
     runtime?.WindowToggleMaximise?.()
-    setMaximized((current) => !current)
+    applyWindowState(!maximized)
   }
   useEffect(() => {
     if (mac) return
     const syncWindowState = () => {
       const state = runtime?.WindowIsMaximised?.()
-      if (state) void state.then(setMaximized).catch(() => undefined)
+      if (state) void state.then(applyWindowState).catch(() => undefined)
     }
     syncWindowState()
     window.addEventListener('resize', syncWindowState)

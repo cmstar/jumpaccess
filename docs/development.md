@@ -132,6 +132,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 - 共享核心不能假定 Windows 路径语义；平台路径由对应适配实现计算。
 - 形成真实构建入口后，至少验证 Windows 与 macOS 目标构建；具体架构和发布矩阵随发布流程确定。
 - Windows 窗口使用 Wails `Frameless` 并保留 DWM 装饰，由 React 渲染标题栏和最小化/最大化/关闭按钮；只有标题栏空白区标记为可拖动。最大化按钮通过 Wails 窗口状态在最大化与还原图标之间同步切换，并在窗口 resize、重新获得焦点及按钮操作后校正状态。
+- Wails 2.14 的前端边缘缩放检测未判断最大化状态；同步窗口状态时需更新内部 `window.wails.flags.enableResize`，最大化时清除 `resizeEdge` 并恢复原光标，还原时重新启用边缘缩放。升级 Wails 时需重新核对这些内部字段及运行时行为。
 - Wails 2 的 HWND-hosted WebView 不原生支持把 HTML 自绘按钮注册成 Windows caption button，因此当前不实现最大化按钮悬停 Snap Layout；用户仍可使用 Windows 的其他窗口布局入口。待 Wails 3 正式版提供稳定的 composition hosting 与 non-client region 支持后再评估接入，不在 Wails 2 上维护原生覆盖窗口方案。
 - macOS 使用 `TitleBarHiddenInset` 并保留左侧原生 traffic lights，前端不渲染右侧窗口控制按钮。
 - Windows 通过 `EnumDisplayMonitors` 与显示器工作区恢复窗口；macOS 通过 AppKit `NSScreen` 恢复窗口。不得把 Wails 在不同平台返回的窗口坐标直接当作统一的虚拟桌面绝对坐标持久化。

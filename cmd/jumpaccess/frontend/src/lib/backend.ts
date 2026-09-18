@@ -355,6 +355,8 @@ type DesktopBinding = {
 
 declare global {
   interface Window {
+    // Wails 2 无边框窗口的边缘缩放状态；升级运行时时需核对该内部接口。
+    wails?: { flags: { enableResize?: boolean; resizeEdge?: string; defaultCursor?: string } }
     go?: { main?: { desktopApp?: DesktopBinding } }
     runtime?: {
       EventsOnMultiple(eventName: string, callback: (event: unknown) => void, maxCallbacks: number): () => void
