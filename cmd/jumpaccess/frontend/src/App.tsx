@@ -1441,7 +1441,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
   const latencyTitle = latencyAvailable
     ? `${statusLabel} · 到 JumpServer SSH 网关的往返延迟 ${latency.milliseconds} ms`
     : status === 'active' ? `${statusLabel} · 正在检测 JumpServer SSH 网关延迟` : statusLabel
-  return <section className="terminal-panel tab-terminal">
+  return <section className={`terminal-panel tab-terminal${preferences.terminalShowStatusBar ? '' : ' terminal-statusbar-hidden'}`}>
     <div className="terminal-header">
       <div className="terminal-toolbar">
         <div className="terminal-toolbar-info">
@@ -1468,7 +1468,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
       <SSHTransferProgress key={session.id} state={transfer} onCancel={onCancelTransfer} />
     </div>
     <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
-    <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div>
+    {preferences.terminalShowStatusBar ? <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div> : null}
   </section>
 }
 
@@ -1833,7 +1833,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             </div>
           </section>
           <section className="settings-card" id="settings-terminal-style">
-            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>配色、字体、行高、光标和滚动条只影响终端内容。选择后自动保存并生效。</p></div></div>
+            <div className="settings-card-title"><TerminalSquare /><div><h2>终端样式</h2><p>设置终端配色、字体、行高、光标、滚动条和 SSH 状态栏。选择后自动保存并生效。</p></div></div>
             <Suspense fallback={<div className="terminal-preview-loading">正在加载终端预览…</div>}><TerminalPreview preferences={preferences} /></Suspense>
             <div className="terminal-style-fields">
               <TerminalSchemeSelect value={preferences.terminalColorScheme} onChange={(terminalColorScheme) => update({ terminalColorScheme })} />
@@ -1854,6 +1854,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
                 </div>
               </div>
               <div className="terminal-style-row"><label htmlFor="terminal-scrollbar-visibility">显示滚动条</label><select id="terminal-scrollbar-visibility" value={preferences.terminalScrollbarVisibility} onChange={(event) => update({ terminalScrollbarVisibility: event.target.value as TerminalScrollbarVisibility })}><option value="always">始终显示</option><option value="active">仅活跃时显示</option><option value="hidden">隐藏</option></select></div>
+              <div className="terminal-style-row"><div><label htmlFor="terminal-show-status-bar">显示 SSH 状态栏</label><small className="setting-help" id="terminal-show-status-bar-help">显示终端底部的连接状态和传输能力信息。</small></div><button id="terminal-show-status-bar" aria-label="显示 SSH 状态栏" aria-describedby="terminal-show-status-bar-help" type="button" role="switch" aria-checked={preferences.terminalShowStatusBar} className={preferences.terminalShowStatusBar ? 'switch on' : 'switch'} onClick={() => update({ terminalShowStatusBar: !preferences.terminalShowStatusBar })}><span /></button></div>
             </div>
           </section>
           <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />

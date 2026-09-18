@@ -80,6 +80,7 @@ const preferences: Preferences = {
   terminalCursorStyle: 'block',
   terminalCursorBlink: true,
   terminalScrollbarVisibility: 'active',
+  terminalShowStatusBar: true,
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,

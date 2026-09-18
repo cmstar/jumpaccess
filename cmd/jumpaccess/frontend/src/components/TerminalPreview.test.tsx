@@ -24,6 +24,7 @@ const preferences: Preferences = {
   version: 6, theme: 'light', terminalColorScheme: 'nord', terminalFontFamily: 'monospace', terminalFontSize: 12,
   terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true,
   terminalScrollbarVisibility: 'active',
+  terminalShowStatusBar: true,
   terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
 }
 

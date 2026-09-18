@@ -2026,6 +2026,7 @@ details > summary::-webkit-details-marker {
 .terminal-style-fields .terminal-font-field > label { margin: 0; }
 .settings-card .terminal-style-row select,
 .terminal-style-fields .terminal-font-control input { margin-top: 0; }
+.terminal-style-row > .switch { justify-self: end; }
 .terminal-style-fields .terminal-font-toggle { top: 1px; }
 .terminal-style-fields .terminal-font-field .setting-help { grid-column: 2; margin-top: 0; }
 .terminal-style-fields > :last-child { border-bottom: 0; }
@@ -2561,6 +2562,10 @@ details > summary::-webkit-details-marker {
   height: 100%;
   min-height: 0;
   flex: 1;
+}
+
+.terminal-panel.terminal-statusbar-hidden {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .terminal-header { min-width: 0; }

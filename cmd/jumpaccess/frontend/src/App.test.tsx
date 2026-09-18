@@ -10,12 +10,12 @@ import type { ZmodemBackend } from './lib/zmodemTypes'
 import { Sentry, type Session } from 'zmodem.js'
 import { decodeBytes, encodeBytes } from './lib/zmodem'
 
-test.each([
+test.each(([
   { alias: true, direction: 'upload' },
   { alias: false, direction: 'upload' },
   { alias: true, direction: 'download' },
   { alias: false, direction: 'download' },
-] as const)('SSH 完成提示标明来源并跨 Tab 显示：alias=$alias，direction=$direction', async ({ alias, direction }) => {
+] as const).flatMap(item => [true, false].map(showStatusBar => ({ ...item, showStatusBar }))))('SSH 完成提示标明来源并跨 Tab 显示：alias=$alias，direction=$direction，showStatusBar=$showStatusBar', async ({ alias, direction, showStatusBar }) => {
   let output!: (event: SessionOutput) => void
   let save!: () => void
   let remote: Session | undefined
@@ -42,7 +42,7 @@ test.each([
     endZmodemTransfer: vi.fn().mockResolvedValue(undefined),
   }
   const active: SessionState = { id, status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
-  const backend = makeBackend({ zmodem, getAsset: vi.fn().mockResolvedValue({ ...assetDetail, accounts: [assetDetail.accounts[0]] }), startSSHSession: vi.fn().mockResolvedValueOnce(active).mockResolvedValueOnce({ ...active, id: 'other-session' }), onSessionOutput: handler => { output = handler; return () => {} } })
+  const backend = makeBackend({ bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, preferences: { ...bootstrapState.preferences, terminalShowStatusBar: showStatusBar } }), zmodem, getAsset: vi.fn().mockResolvedValue({ ...assetDetail, accounts: [assetDetail.accounts[0]] }), startSSHSession: vi.fn().mockResolvedValueOnce(active).mockResolvedValueOnce({ ...active, id: 'other-session' }), onSessionOutput: handler => { output = handler; return () => {} } })
   const user = userEvent.setup()
   render(<App backend={backend} />)
   await screen.findByTestId('asset-row-asset-1')
@@ -67,7 +67,8 @@ test.each([
   expect(progress.closest('.terminal-header')).not.toBeNull()
   expect(within(progress).getByRole('progressbar')).toBeInTheDocument()
   expect(within(progress).getByRole('button', { name: '取消传输' })).toBeDisabled()
-  expect(document.querySelector('.terminal-statusbar')).not.toHaveTextContent('取消传输')
+  if (showStatusBar) expect(document.querySelector('.terminal-statusbar')).not.toHaveTextContent('取消传输')
+  else expect(document.querySelector('.terminal-statusbar')).not.toBeInTheDocument()
   const notices = within(screen.getByLabelText('应用提示'))
   const name = alias ? 'production-web' : 'prod-web-01'
   const message = `${name} ${direction === 'upload' ? '上传完成' : '下载完成'}：empty.txt`
@@ -185,6 +186,7 @@ const bootstrapState: BootstrapState = {
     terminalCursorStyle: 'block',
     terminalCursorBlink: true,
     terminalScrollbarVisibility: 'active',
+    terminalShowStatusBar: true,
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
@@ -1468,6 +1470,54 @@ test('配色保存失败时恢复已保存方案与预览', async () => {
   await screen.findByText('cannot save preferences')
   expect(screen.getByRole('combobox', { name: '配色方案 Nord' })).toBeVisible()
   expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
+})
+
+test('SSH 状态栏开关位于终端样式，默认开启，保存后已有会话隐藏且可恢复', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  expect(document.querySelector('.terminal-statusbar')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const panel = screen.getByRole('heading', { name: '终端样式' }).closest('section')!
+  const toggle = within(panel).getByRole('switch', { name: '显示 SSH 状态栏' })
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await user.click(toggle)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalShowStatusBar: false })))
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(document.querySelector('.terminal-statusbar')).not.toBeInTheDocument()
+  expect(document.querySelector('.terminal-panel')).toHaveClass('terminal-statusbar-hidden')
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await user.click(screen.getByRole('switch', { name: '显示 SSH 状态栏' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalShowStatusBar: true })))
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(document.querySelector('.terminal-statusbar')).toBeInTheDocument()
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+})
+
+test('SSH 状态栏开关保存失败后还原开启状态', async () => {
+  const backend = makeBackend({ savePreferences: vi.fn().mockRejectedValue(new Error('statusbar save failed')) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await user.click(screen.getByRole('switch', { name: '显示 SSH 状态栏' }))
+  await screen.findByText('statusbar save failed')
+  expect(screen.getByRole('switch', { name: '显示 SSH 状态栏' })).toHaveAttribute('aria-checked', 'true')
+})
+
+test('关闭 SSH 状态栏不影响 SFTP 状态栏', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, preferences: { ...bootstrapState.preferences, terminalShowStatusBar: false } }),
+    getAsset: vi.fn().mockResolvedValue({ ...assetDetail, protocols: [{ name: 'sftp', port: 22 }] }),
+    readSFTPDirectory: vi.fn().mockResolvedValue({ path: '/home/deploy', entries: [] }),
+  })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接 SFTP' }))
+  await waitFor(() => expect(document.querySelector('.sftp-statusbar')).toHaveTextContent('/home/deploy'))
+  expect(document.querySelector('.sftp-statusbar')).toHaveTextContent('0 个项目')
 })
 
 test('显示滚动条下拉框按顺序提供三种模式，默认仅活跃时显示并保存选择', async () => {

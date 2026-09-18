@@ -18,6 +18,7 @@ export interface Preferences {
   terminalCursorStyle: TerminalCursorStyle
   terminalCursorBlink: boolean
   terminalScrollbarVisibility: TerminalScrollbarVisibility
+  terminalShowStatusBar: boolean
   terminalColorScheme: string
   terminalRightClickAction: TerminalRightClickAction
   terminalWarnOnMultiLinePaste: boolean
@@ -281,7 +282,7 @@ type GoPreferences = {
   Downloads: { Mode: Preferences['downloadMode']; Directory: string }
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
+  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; ShowStatusBar: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean; NewTabPosition: NewTabPosition }
 }
 
@@ -391,6 +392,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalCursorStyle: value.Terminal.CursorStyle,
     terminalCursorBlink: value.Terminal.CursorBlink,
     terminalScrollbarVisibility: value.Terminal.ScrollbarVisibility,
+    terminalShowStatusBar: value.Terminal.ShowStatusBar,
     terminalColorScheme: value.Terminal.ColorScheme,
     terminalRightClickAction: value.Terminal.RightClickAction,
     terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
@@ -416,6 +418,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       CursorStyle: value.terminalCursorStyle,
       CursorBlink: value.terminalCursorBlink,
       ScrollbarVisibility: value.terminalScrollbarVisibility,
+      ShowStatusBar: value.terminalShowStatusBar,
       ColorScheme: value.terminalColorScheme,
       RightClickAction: value.terminalRightClickAction,
       WarnOnMultiLinePaste: value.terminalWarnOnMultiLinePaste,
