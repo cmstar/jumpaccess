@@ -44,6 +44,32 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 
 ## 关键数据流
 
+### 跨入口共享规则与状态归属
+
+CLI 和 GUI 共用 `bootstrap`、`application/auth`、`application/settings`、`application/resources`、`application/connect` 及 SSH transport。桌面 DTO、原生对话框、终端交互和 ProxyCommand 仍由各自 Adapter 承担；账号歧义、凭据站点绑定等领域判断只保留一个 Implementation。
+
+```mermaid
+flowchart TD
+  CLI[jumpctl / internal/cli] --> Core[共享应用 Module]
+  GUI[Wails / application/desktop] --> Core
+  React[React 工作区] --> GUI
+  Core --> Auth[auth：凭据生命周期与站点校验]
+  Core --> Connect[connect：目标与账号解析]
+  Core --> Settings[settings：Profile 与 Alias]
+  Connect --> Transport[sshclient / sftpclient / sshupstream]
+  Transport --> Trust[sshhostkey：共享 known_hosts]
+```
+
+`auth.LockProfile` 统一刷新、登录提交、退出、Profile URL 修改及删除的凭据锁，锁键与应用根目录在两个入口间一致；同时需要配置锁时，固定先取 Profile 凭据锁、再取配置锁。`auth.CommitLogin` 在保存前重新读取 Profile 并核对 Token.Site，资源查询和连接准备在创建客户端前再次核对凭据站点。浏览器交互不持有跨进程锁。GUI 登录交换结果只有在尝试仍有效时才能提交；取消或替换的尝试不能写回凭据。当前没有持久化的登录代际：其他进程退出登录不会撤销已经打开的浏览器授权意图，同名同 URL 的 Profile 删除后重建也不能识别旧授权意图；需要更强契约时应增加跨进程代际，而不是长时间持锁等待浏览器。
+
+`connect.ResolvePermittedAccount` 是显式账号引用的唯一解析入口，连接准备和 GUI Alias 绑定共同使用；重复匹配返回歧义错误。CLI 的交互选择及连接伪账号仍属于连接用例，GUI 清空 Alias 账号仍表示连接时询问。
+
+GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名称未占用并写入；CLI `alias set` 继续使用允许替换的 `SetAlias`。二者复用同一配置修改 Module，但保留创建与设置的不同契约。
+
+前端 `model/terminalOutput` 保存有限历史和绝对字符起点，`TerminalPane` 按绝对位置消费新增输出；历史裁剪不改变消费游标，重复内容也能继续显示。`model/useHostKeyPrompts` 按请求 ID 排队，异步决定仅移除对应请求，已失效的请求不会堵住后续确认。资产授权详情属于 Profile/Organization 上下文，切换上下文必须清理旧详情及待处理操作。
+
+快速搜索按 effect 生命周期隔离已经发出的请求；旧查询、旧 Profile 和已经关闭的搜索窗口不再接收其迟到结果或错误。SFTP 修改弹窗绑定发起时的 Session ID，断连和重连清理旧目录、选择与弹窗；操作代际用于隔离旧修改、原生文件选择和冲突决定的异步完成。代际隔离只防止旧结果更新新界面，已经发到远端的操作仍由原 Session 的后端生命周期负责。
+
 浏览器演示通过独立的 Vite `demo` 模式加载真实 React 界面与 `createPreviewBackend` 内存实例，提供已配置、首次使用、登录过期场景；刷新页面重置数据。模拟 SSH 仅解释预设命令，SFTP 仅操作内存目录。演示模块不进入正常生产前端构建，也不装配 Go 服务或访问正式配置和凭据。桌面程序尚无演示启动参数。文档截图由独立 Playwright 脚本在人工触发时生成，输出到 `docs/screenshots`，不属于构建、测试或发布流程。
 
 资产页和设置页的组件生命周期跟随对应 Tab 是否存在；切换时通过 `hidden` 隐藏页面并保留 DOM、滚动位置及设置导航状态，关闭 Tab 才卸载。不活跃页面不占布局或参与键盘焦点导航，临时视图状态不写入 `gui.toml`。
@@ -71,6 +97,8 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 同一操作系统用户下不能按 URL 路径把 `jms` scheme 同时路由给两个程序。发布版注册协议时必须检测现有处理程序、明确告知冲突且不得静默覆盖；选择手工模式时不修改协议注册。
 
 ### 连接准备与 SSH 会话
+
+`sshclient.Open` 的建连超时和取消覆盖 TCP、SSH 握手、session channel、PTY 及 Shell 请求；建连完成后，该超时不再控制活动 Session。`known_hosts` 每次验证都读取当前内容，保存信任使用跨进程文件锁；等待锁响应调用方取消，并有独立的 10 秒等待上限。等待用户确认不持锁，确认后重新核对，防止并行 CLI/GUI 写入相互冲突或重复的密钥。
 
 1. 应用根据当前 Profile、Organization、Asset、Account 和 Alias 解析连接目标；资产搜索逐页查找首个完整匹配，找到即停止，账号保留唯一性与交互选择规则。
 2. 在创建新连接前检查 Access Token；临近过期时使用 Refresh Token 刷新。多个 CLI 进程通过 Profile 级文件锁避免并发轮换 Refresh Token。

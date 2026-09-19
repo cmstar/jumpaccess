@@ -1,9 +1,7 @@
 /bin/
 /dist/
-/.cache/
-/.gocache/
-/.gotmp/
-/.tmp-wails-scaffold/
+# 统一忽略任意层级以点开头的文件和目录。
+.*
 *.exe
 *.test
 coverage.out
@@ -15,7 +13,7 @@ coverage.out
 /cmd/jumpaccess/frontend/wailsjs/
 /cmd/jumpaccess/frontend/package.json.md5
 
-# 全局忽略规则可能会忽略点目录，发布工作流必须进入仓库。
+# 发布工作流必须进入仓库。
 !/.github/
 !/.github/workflows/
 !/.github/workflows/*.yml

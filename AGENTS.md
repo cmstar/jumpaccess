@@ -1,6 +1,6 @@
 # Agent 工作入口
 
-JumpAccess 的首个交付物是 Go CLI `jumpctl`，用于独立完成 JumpServer OAuth 认证，并提供直接 SSH 和通用 SSH `ProxyCommand` 能力。项目当前处于初始化阶段；文档中的目标设计不得当作已实现功能。
+JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `jumpaccess`。两者共享配置、OAuth、资源查询、目标解析和 SSH 核心；GUI 另提供多会话工作区和 SFTP，CLI 提供通用 SSH `ProxyCommand`。工程已进入功能演进阶段；文档中的目标设计不得当作已实现功能。
 
 ## 按需阅读
 

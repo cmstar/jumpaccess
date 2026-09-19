@@ -37,7 +37,7 @@ internal/downloads/ # 系统下载目录查询
 internal/config/    # TOML 模型、校验和存储
 internal/guiconfig/ # GUI 独有偏好与 gui.toml 存储
 internal/credential/# 私有文件凭据与原生凭据兼容适配
-internal/filelock/  # 多进程 Token 刷新锁
+internal/filelock/  # 多进程配置、凭据生命周期和主机信任锁
 internal/jumpserver/# JumpServer REST 与 client-url 协议客户端
 internal/oauth/     # OAuth Discovery、PKCE、callback 与 Token 协议
 internal/proxyconsole/ # Windows ProxyCommand 私有控制台脱离适配
@@ -96,6 +96,10 @@ docs/               # 长期项目知识
 全局提示由 `cmd/jumpaccess/frontend/src/components/Notifications.tsx` 的 `NotificationProvider` 在 `App` 外层挂载，各子组件通过 `useNotifications()` 的 `showInfo`、`showWarning`、`showError` 复用，无需逐层传递回调。浮层经 Portal 挂到 `document.body`，共用明暗主题，位于标题栏下方且高于 Modal；容器空白区域不拦截指针，长文本换行，过多提示可滚动。`useCopyText()` 统一普通文本复制及其结果反馈，不在提示中回显复制内容。表单和会话内的上下文错误继续由原组件管理，不重复弹出全局提示。测试使用模拟计时器验证自动关闭、暂停和卸载清理，使用可控 Promise 验证异步完成、失败及过期结果隔离。
 
 ## 测试约定
+
+跨入口架构回归应从共享用例验证行为，并补对应 Adapter 的最小集成测试：账号歧义不得因 CLI/GUI 不同而变化；登录完成、退出和修改 Profile 必须遵守同一凭据锁；旧站点 Token 不得传入新站点客户端；主机密钥确认期间其他进程写入信任后必须重新校验。测试只用临时目录和合成凭据。
+
+异步界面回归用可控 Promise 验证旧结果不能覆盖当前上下文，尤其是 Profile/Organization 切换、并行确认和 SFTP 重连。终端需覆盖缓冲达到上限、连续相同输出及一次输出超出保留窗口；SSH 建连需用本地服务器分别阻塞 channel、PTY、Shell，验证取消和超时均能退出，而活动会话不受建连 deadline 影响。
 
 ZMODEM 修改需验证全字节二进制数据、分片握手和 UTF-8、双端真实协议收发、原生选择取消、断连后迟到的选择结果、下载文件名边界和同名文件保护、分块输出确认与关闭解锁。`go test -race ./internal/application/sshsession ./internal/application/zmodemfiles ./internal/sshclient` 检查核心并发边界；前端测试不使用真实账号或生产文件。用户本机还需使用实际 `lrzsz` 和 JumpServer 验证策略兼容性。
 
