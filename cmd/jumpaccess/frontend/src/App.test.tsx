@@ -1846,6 +1846,24 @@ test('并发主机密钥确认按顺序处理，迟到的决定不清除下一�
   expect(await screen.findByRole('dialog', { name: '确认新的 SSH Gateway' })).toHaveTextContent('SHA256:third')
 })
 
+test('Profile 卡片启用后重新读取相同 Asset ID 的授权详情', async () => {
+  const state = { ...bootstrapState, profiles: [...bootstrapState.profiles, { ...bootstrapState.profiles[0], name: 'staging' }] }
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue(state),
+    getAsset: vi.fn(async request => ({ ...assetDetail, protocols: request.profile === 'staging' ? [] : assetDetail.protocols })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('button', { name: '使用 production-web 连接' })
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
+  const card = screen.getByRole('heading', { name: 'staging' }).closest('article')!
+  await user.click(within(card).getByRole('button', { name: '启用' }))
+  await user.click(screen.getByRole('button', { name: '打开资产' }))
+  await waitFor(() => expect(backend.getAsset).toHaveBeenCalledWith(expect.objectContaining({ profile: 'staging', asset: 'asset-1' })))
+  expect(await screen.findByText('当前没有可用的授权协议。')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '使用 production-web 连接' })).not.toBeInTheDocument()
+})
+
 test('已失效的主机密钥确认不会挡住下一条请求', async () => {
   let prompt: (event: HostKeyPrompt) => void = () => undefined
   const backend = makeBackend({
@@ -2038,6 +2056,28 @@ test('资产页没有数据时快速连接才请求 API', async () => {
   expect(backend.quickSearch).toHaveBeenCalledWith({
     profile: 'production', organization: 'org-1', query: '', limit: 20,
   })
+})
+
+test('旧 Profile 的快速搜索迟到结果不能覆盖新 Profile', async () => {
+  let finish!: (assets: typeof assetPage.results) => void
+  const state = { ...bootstrapState, profiles: [...bootstrapState.profiles, { ...bootstrapState.profiles[0], name: 'staging' }] }
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue(state),
+    listAssets: vi.fn().mockResolvedValue({ ...assetPage, count: 0, results: [] }),
+    quickSearch: vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve })).mockResolvedValue([]),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  await waitFor(() => expect(backend.quickSearch).toHaveBeenCalledTimes(1))
+  await user.click(within(screen.getByRole('dialog', { name: '快速连接' })).getByRole('button', { name: '关闭' }))
+  await user.click(screen.getByRole('button', { name: /^打开 Profile/ }))
+  await user.click(within(screen.getByRole('heading', { name: 'staging' }).closest('article')!).getByRole('button', { name: '启用' }))
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  await waitFor(() => expect(backend.quickSearch).toHaveBeenCalledWith(expect.objectContaining({ profile: 'staging' })))
+  await act(async () => finish(assetPage.results))
+  expect(within(screen.getByRole('dialog', { name: '快速连接' })).queryByText('production-web')).not.toBeInTheDocument()
 })
 
 test('创建 Alias 后局部更新并保留已有账号显示缓存', async () => {

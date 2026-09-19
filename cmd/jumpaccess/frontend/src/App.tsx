@@ -680,20 +680,35 @@ function AppContent({ backend = wailsBackend }: AppProps) {
 
   useEffect(() => {
     if (!quickOpen || !profile || !organization || !currentProfileLoggedIn || assets.results.length > 0) return
+    let cancelled = false
     const timer = window.setTimeout(() => {
       backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
-        .then(setQuickResults)
-        .catch((reason) => showError(errorMessage(reason)))
+        .then((results) => { if (!cancelled) setQuickResults(results) })
+        .catch((reason) => { if (!cancelled) showError(errorMessage(reason)) })
     }, 160)
-    return () => window.clearTimeout(timer)
+    return () => { cancelled = true; window.clearTimeout(timer) }
   }, [assets.results.length, backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
 
   async function reloadBootstrap(preferredProfile?: string) {
     const state = await backend.bootstrap()
-    setBootstrap(state)
     const nextProfile = preferredProfile ?? state.currentProfile
+    const nextOrganization = state.profiles.find((item) => item.name === nextProfile)?.organization ?? state.currentOrganization
+    if (detailContext.current !== `${nextProfile}\0${nextOrganization}`) {
+      setDetails({})
+      setDetailErrors({})
+      setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setQuickResults([])
+      setSelectedAssetID('')
+      setOffset(0)
+      setLastSynced(null)
+      setPendingConnection(null)
+      setAliasAsset(null)
+      setAliasEditor(null)
+      setPendingAliasDeletion(null)
+    }
+    setBootstrap(state)
     setProfile(nextProfile)
-    setOrganization(state.profiles.find((item) => item.name === nextProfile)?.organization ?? state.currentOrganization)
+    setOrganization(nextOrganization)
   }
 
   async function run(action: () => Promise<void>) {
