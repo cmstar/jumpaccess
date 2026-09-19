@@ -66,14 +66,14 @@ func (s Service) Login(ctx context.Context, requestedProfile string, options Log
 	if err != nil {
 		return Status{}, err
 	}
-	if err := s.Tokens.Save(profile, token); err != nil {
-		return Status{}, fmt.Errorf("save OAuth credential: %w", err)
+	if err := CommitLogin(ctx, s.Config, s.Tokens, s.Manager.Locker, profile, token); err != nil {
+		return Status{}, err
 	}
 	return s.statusFor(profile, token), nil
 }
 
 func (s Service) Status(requestedProfile string) (Status, error) {
-	profile, _, err := s.resolveProfile(requestedProfile)
+	profile, configured, err := s.resolveProfile(requestedProfile)
 	if err != nil {
 		return Status{}, err
 	}
@@ -83,6 +83,9 @@ func (s Service) Status(requestedProfile string) (Status, error) {
 	}
 	if err != nil {
 		return Status{}, fmt.Errorf("load OAuth credential: %w", err)
+	}
+	if err := ValidateTokenSite(token, configured.URL); err != nil {
+		return Status{Profile: profile}, nil
 	}
 	return s.statusFor(profile, token), nil
 }
@@ -104,6 +107,11 @@ func (s Service) Logout(ctx context.Context, requestedProfile string) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := LockProfile(ctx, s.Manager.Locker, profile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	token, err := s.Tokens.Load(profile)
 	if errors.Is(err, credential.ErrNotFound) {
 		return nil

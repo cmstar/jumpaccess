@@ -111,6 +111,7 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 	login := &desktopapp.LoginCoordinator{
 		Config:      core.Store,
 		Tokens:      core.Tokens,
+		Locker:      core.AuthManager.Locker,
 		HTTPClient:  core.HTTPClient,
 		OpenBrowser: systemopen.Open,
 		Timeout:     core.Configuration.Behavior.OAuthTimeout.Duration,

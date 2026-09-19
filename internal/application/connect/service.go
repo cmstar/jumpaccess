@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	"strings"
 
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
@@ -76,6 +77,9 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 	}
 	token, err := s.Tokens.EnsureFresh(ctx, selection.Profile)
 	if err != nil {
+		return Prepared{}, err
+	}
+	if err := authapp.ValidateTokenSite(token, selection.SiteURL); err != nil {
 		return Prepared{}, err
 	}
 	if s.NewAPI == nil {

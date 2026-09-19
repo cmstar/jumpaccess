@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
@@ -90,6 +91,9 @@ func (s Service) resolveProfile(requested string) (string, projectconfig.Profile
 func (s Service) client(ctx context.Context, profile, site, organization string) (API, error) {
 	token, err := s.Tokens.EnsureFresh(ctx, profile)
 	if err != nil {
+		return nil, err
+	}
+	if err := authapp.ValidateTokenSite(token, site); err != nil {
 		return nil, err
 	}
 	if s.NewAPI == nil {

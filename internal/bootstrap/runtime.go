@@ -61,6 +61,7 @@ func New(options Options) (Runtime, error) {
 		return (oauth.Client{HTTPClient: httpClient, Metadata: metadata}).Refresh(ctx, old.RefreshToken)
 	}
 	manager := authapp.Manager{
+		Config:        store,
 		Tokens:        tokens,
 		Locker:        filelock.Locker{Dir: filepath.Join(options.RootDir, "locks")},
 		Refresh:       refresh,
@@ -111,6 +112,6 @@ func New(options Options) (Runtime, error) {
 		Auth:          authService,
 		Connect:       connectService,
 		Resources:     resourceService,
-		Settings:      settingsapp.Service{Store: store, Credentials: tokens},
+		Settings:      settingsapp.Service{Store: store, Credentials: tokens, Locker: manager.Locker},
 	}, nil
 }

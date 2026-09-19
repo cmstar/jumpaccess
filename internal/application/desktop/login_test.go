@@ -12,6 +12,7 @@ import (
 
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
+	"github.com/cmstar/jumpaccess/internal/filelock"
 	"github.com/cmstar/jumpaccess/internal/oauth"
 )
 
@@ -24,6 +25,50 @@ func (r *recordingTokens) Save(profile string, token credential.Token) error {
 	r.profile = profile
 	r.token = token
 	return nil
+}
+
+func TestLoginCoordinatorCancelDuringExchangePreventsSaving(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var provider *httptest.Server
+	provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			close(entered)
+			<-release
+			_ = json.NewEncoder(w).Encode(oauth.TokenResponse{AccessToken: "fixture", ExpiresIn: 3600})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(oauth.Metadata{Issuer: provider.URL, ClientID: "client", AuthorizationEndpoint: provider.URL + "/authorize", TokenEndpoint: provider.URL + "/token"})
+	}))
+	defer provider.Close()
+	configuration := projectconfig.Default()
+	configuration.CurrentProfile = "work"
+	configuration.Profiles["work"] = projectconfig.Profile{URL: provider.URL}
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	if err := store.Save(configuration); err != nil {
+		t.Fatal(err)
+	}
+	tokens := &recordingTokens{}
+	opened := ""
+	coordinator := LoginCoordinator{Config: store, Locker: filelock.Locker{Dir: filepath.Join(filepath.Dir(store.Path), "locks")}, Tokens: tokens, HTTPClient: provider.Client(), OpenBrowser: func(value string) error { opened = value; return nil }}
+	attempt, err := coordinator.Start(context.Background(), "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(opened)
+	callback := oauth.NativeRedirectURI + "?code=fixture&state=" + url.QueryEscape(u.Query().Get("state"))
+	completed := make(chan error, 1)
+	go func() { _, err := coordinator.Complete(context.Background(), attempt.ID, callback); completed <- err }()
+	<-entered
+	if err := coordinator.Cancel(attempt.ID); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-completed; err == nil {
+		t.Fatal("cancelled exchange reported success")
+	}
+	if tokens.profile != "" {
+		t.Fatal("cancelled exchange saved credentials")
+	}
 }
 
 func TestLoginCoordinatorCompletesPastedNativeCallback(t *testing.T) {
@@ -56,7 +101,7 @@ func TestLoginCoordinatorCompletesPastedNativeCallback(t *testing.T) {
 	var opened string
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	coordinator := LoginCoordinator{
-		Config: store, Tokens: tokens, HTTPClient: provider.Client(), Timeout: time.Minute,
+		Config: store, Locker: filelock.Locker{Dir: filepath.Join(filepath.Dir(store.Path), "locks")}, Tokens: tokens, HTTPClient: provider.Client(), Timeout: time.Minute,
 		OpenBrowser: func(rawURL string) error { opened = rawURL; return nil },
 		Now:         func() time.Time { return now },
 	}
@@ -98,7 +143,7 @@ func TestLoginCoordinatorKeepsAttemptAfterInvalidCallback(t *testing.T) {
 	if err := store.Save(configuration); err != nil {
 		t.Fatal(err)
 	}
-	coordinator := LoginCoordinator{Config: store, Tokens: &recordingTokens{}, HTTPClient: provider.Client(), OpenBrowser: func(string) error { return nil }}
+	coordinator := LoginCoordinator{Config: store, Locker: filelock.Locker{Dir: filepath.Join(filepath.Dir(store.Path), "locks")}, Tokens: &recordingTokens{}, HTTPClient: provider.Client(), OpenBrowser: func(string) error { return nil }}
 
 	attempt, err := coordinator.Start(context.Background(), "")
 	if err != nil {
@@ -135,7 +180,7 @@ func TestLoginCoordinatorClearsExpiredAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	coordinator := LoginCoordinator{
-		Config: store, Tokens: &recordingTokens{}, HTTPClient: provider.Client(),
+		Config: store, Locker: filelock.Locker{Dir: filepath.Join(filepath.Dir(store.Path), "locks")}, Tokens: &recordingTokens{}, HTTPClient: provider.Client(),
 		OpenBrowser: func(string) error { return nil }, Timeout: 10 * time.Millisecond,
 	}
 	attempt, err := coordinator.Start(context.Background(), "")

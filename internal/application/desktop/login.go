@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	"github.com/cmstar/jumpaccess/internal/credential"
 	"github.com/cmstar/jumpaccess/internal/oauth"
 )
@@ -28,11 +29,13 @@ type pendingLogin struct {
 	authorization oauth.ManualAuthorization
 	expiresAt     time.Time
 	timer         *time.Timer
+	completing    bool
 }
 
 type LoginCoordinator struct {
 	Config      ConfigLoader
 	Tokens      TokenSaver
+	Locker      authapp.Locker
 	HTTPClient  *http.Client
 	OpenBrowser func(string) error
 	Timeout     time.Duration
@@ -96,6 +99,14 @@ func (c *LoginCoordinator) Start(ctx context.Context, requestedProfile string) (
 func (c *LoginCoordinator) Complete(ctx context.Context, id, rawCallback string) (AuthStatus, error) {
 	c.mu.Lock()
 	attempt, exists := c.pending[id]
+	if exists && attempt.completing {
+		c.mu.Unlock()
+		return AuthStatus{}, fmt.Errorf("OAuth login attempt is already completing")
+	}
+	if exists {
+		attempt.completing = true
+		c.pending[id] = attempt
+	}
 	c.mu.Unlock()
 	if !exists {
 		return AuthStatus{}, fmt.Errorf("OAuth login attempt is not pending")
@@ -106,12 +117,30 @@ func (c *LoginCoordinator) Complete(ctx context.Context, id, rawCallback string)
 	}
 	token, err := attempt.authorization.Complete(ctx, rawCallback, c.now())
 	if err != nil {
+		c.mu.Lock()
+		if current, pending := c.pending[id]; pending {
+			current.completing = false
+			c.pending[id] = current
+		}
+		c.mu.Unlock()
 		return AuthStatus{}, err
 	}
-	if err := c.Tokens.Save(attempt.profile, token); err != nil {
-		return AuthStatus{}, fmt.Errorf("save OAuth credential: %w", err)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, pending := c.pending[id]; !pending || !attempt.expiresAt.After(c.now()) {
+		return AuthStatus{}, fmt.Errorf("OAuth login attempt is no longer pending")
 	}
-	_ = c.Cancel(id)
+	commitContext, cancel := context.WithTimeout(ctx, attempt.expiresAt.Sub(c.now()))
+	defer cancel()
+	if err := authapp.CommitLogin(commitContext, c.Config, c.Tokens, c.Locker, attempt.profile, token); err != nil {
+		attempt.completing = false
+		c.pending[id] = attempt
+		return AuthStatus{}, err
+	}
+	if attempt.timer != nil {
+		attempt.timer.Stop()
+	}
+	delete(c.pending, id)
 	return AuthStatus{
 		LoggedIn:         true,
 		RefreshAvailable: token.RefreshToken != "",

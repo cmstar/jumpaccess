@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
+	"github.com/cmstar/jumpaccess/internal/filelock"
 )
 
 type CredentialRemover interface {
@@ -17,6 +20,7 @@ type CredentialRemover interface {
 type Service struct {
 	Store       projectconfig.Store
 	Credentials CredentialRemover
+	Locker      authapp.Locker
 }
 
 func (s Service) AddProfile(name, siteURL string) error {
@@ -40,6 +44,11 @@ func (s Service) UpdateProfileURL(name, siteURL string) error {
 	if err != nil {
 		return fmt.Errorf("profile %q has invalid URL", name)
 	}
+	unlock, err := s.lockProfile(name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
 		profile, exists := value.Profiles[name]
 		if !exists {
@@ -67,6 +76,11 @@ func (s Service) UseProfile(name string) error {
 }
 
 func (s Service) DeleteProfile(name string) error {
+	unlock, err := s.lockProfile(name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
 		if _, exists := value.Profiles[name]; !exists {
 			return fmt.Errorf("profile %q does not exist", name)
@@ -90,6 +104,14 @@ func (s Service) DeleteProfile(name string) error {
 		}
 		return nil
 	})
+}
+
+func (s Service) lockProfile(name string) (func() error, error) {
+	locker := s.Locker
+	if locker == nil {
+		locker = filelock.Locker{Dir: filepath.Join(filepath.Dir(s.Store.Path), "locks")}
+	}
+	return authapp.LockProfile(context.Background(), locker, name)
 }
 
 func (s Service) SetAlias(profileName, name string, alias projectconfig.Alias) error {

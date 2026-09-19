@@ -20,7 +20,7 @@ func TestServiceLoginDefaultsToManualFlowAndStoresNativeCredential(t *testing.T)
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
 	store := &memoryTokens{tokens: make(map[string]credential.Token)}
 	service := Service{
-		Config: staticConfig{value: value}, Tokens: store,
+		Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}}, Tokens: store,
 		ManualLoginFlow: func(_ context.Context, site string, _ LoginOptions) (credential.Token, error) {
 			if site != "https://jump.example.test" {
 				t.Fatalf("site = %q", site)
@@ -46,7 +46,7 @@ func TestServiceStatusReportsMissingCredentialWithoutExposingAnError(t *testing.
 	value := projectconfig.Default()
 	value.CurrentProfile = "work"
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
-	service := Service{Config: staticConfig{value: value}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)}}
+	service := Service{Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)}}
 
 	status, err := service.Status("")
 	if err != nil {
@@ -61,10 +61,10 @@ func TestServiceLogoutRevokesBeforeDeletingCredential(t *testing.T) {
 	value := projectconfig.Default()
 	value.CurrentProfile = "work"
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
-	store := &memoryTokens{tokens: map[string]credential.Token{"work": {AccessToken: "access", RefreshToken: "refresh"}}}
+	store := &memoryTokens{tokens: map[string]credential.Token{"work": {AccessToken: "access", Site: "https://jump.example.test", RefreshToken: "refresh"}}}
 	var revoked bool
 	service := Service{
-		Config: staticConfig{value: value}, Tokens: store,
+		Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}}, Tokens: store,
 		Revoke: func(_ context.Context, token credential.Token) error {
 			revoked = token.RefreshToken == "refresh"
 			return nil
@@ -88,8 +88,8 @@ func TestServiceStatusMarksExpiredToken(t *testing.T) {
 	value.CurrentProfile = "work"
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
 	service := Service{
-		Config: staticConfig{value: value},
-		Tokens: &memoryTokens{tokens: map[string]credential.Token{"work": {AccessToken: "access", ExpiresAt: now.Add(-time.Second)}}},
+		Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}},
+		Tokens: &memoryTokens{tokens: map[string]credential.Token{"work": {AccessToken: "access", Site: "https://jump.example.test", ExpiresAt: now.Add(-time.Second)}}},
 		Now:    func() time.Time { return now },
 	}
 
@@ -107,12 +107,12 @@ func TestServiceLoginAppliesOAuthTimeout(t *testing.T) {
 	value.CurrentProfile = "work"
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
 	service := Service{
-		Config: staticConfig{value: value}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)}, Timeout: time.Minute,
+		Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)}, Timeout: time.Minute,
 		LoginFlow: func(ctx context.Context, _ string, _ LoginOptions) (credential.Token, error) {
 			if _, ok := ctx.Deadline(); !ok {
 				t.Fatal("login context has no deadline")
 			}
-			return credential.Token{AccessToken: "secret"}, nil
+			return credential.Token{AccessToken: "secret", Site: "https://jump.example.test"}, nil
 		},
 	}
 	if _, err := service.Login(context.Background(), "", LoginOptions{}); err != nil {
@@ -126,14 +126,14 @@ func TestServiceLoginManualOptionSelectsPermanentFallbackFlow(t *testing.T) {
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
 	var selected string
 	service := Service{
-		Config: staticConfig{value: value}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)},
+		Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)},
 		LoginFlow: func(context.Context, string, LoginOptions) (credential.Token, error) {
 			selected = "native"
-			return credential.Token{AccessToken: "native"}, nil
+			return credential.Token{AccessToken: "native", Site: "https://jump.example.test"}, nil
 		},
 		ManualLoginFlow: func(context.Context, string, LoginOptions) (credential.Token, error) {
 			selected = "manual"
-			return credential.Token{AccessToken: "manual"}, nil
+			return credential.Token{AccessToken: "manual", Site: "https://jump.example.test"}, nil
 		},
 	}
 
@@ -153,7 +153,7 @@ func TestServiceNoBrowserSelectsManualFlowAndPreservesOptions(t *testing.T) {
 		store := &memoryTokens{tokens: make(map[string]credential.Token)}
 		options := LoginOptions{Manual: manual, NoBrowser: true}
 		service := Service{
-			Config: staticConfig{value: value}, Tokens: store, Timeout: time.Minute,
+			Config: staticConfig{value: value}, Manager: Manager{Locker: &mutexLocker{}}, Tokens: store, Timeout: time.Minute,
 			LoginFlow: func(context.Context, string, LoginOptions) (credential.Token, error) {
 				t.Fatal("no-browser login selected the native flow")
 				return credential.Token{}, nil
@@ -165,7 +165,7 @@ func TestServiceNoBrowserSelectsManualFlowAndPreservesOptions(t *testing.T) {
 				if _, ok := ctx.Deadline(); !ok {
 					t.Fatal("login timeout was not applied")
 				}
-				return credential.Token{AccessToken: "test-access"}, nil
+				return credential.Token{AccessToken: "test-access", Site: "https://jump.example.test"}, nil
 			},
 		}
 		if _, err := service.Login(context.Background(), "work", options); err != nil {

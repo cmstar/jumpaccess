@@ -15,8 +15,25 @@ func (s staticConfig) Load() (projectconfig.Config, error) { return s.value, nil
 
 type staticTokens struct{}
 
+type foreignTokens struct{}
+
+func (foreignTokens) EnsureFresh(context.Context, string) (credential.Token, error) {
+	return credential.Token{AccessToken: "fixture", Site: "https://old.example.test"}, nil
+}
+
+func TestResourceRequestsRejectCredentialFromAnotherSite(t *testing.T) {
+	configuration := projectconfig.Default()
+	configuration.CurrentProfile = "work"
+	configuration.Profiles["work"] = projectconfig.Profile{URL: "https://new.example.test"}
+	called := false
+	service := Service{Config: staticConfig{value: configuration}, Tokens: foreignTokens{}, NewAPI: func(string, string, string) (API, error) { called = true; return fakeAPI{}, nil }}
+	if _, err := service.ListOrganizations(context.Background(), "work"); err == nil || called {
+		t.Fatal("foreign credential reached API factory")
+	}
+}
+
 func (staticTokens) EnsureFresh(context.Context, string) (credential.Token, error) {
-	return credential.Token{AccessToken: "access"}, nil
+	return credential.Token{AccessToken: "access", Site: "https://jump.example.test"}, nil
 }
 
 type fakeAPI struct {

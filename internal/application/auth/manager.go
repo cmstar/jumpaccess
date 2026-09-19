@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"time"
@@ -24,6 +23,7 @@ type Locker interface {
 }
 
 type Manager struct {
+	Config        ConfigLoader
 	Tokens        TokenRepository
 	Locker        Locker
 	Refresh       func(context.Context, credential.Token) (oauth.TokenResponse, error)
@@ -73,6 +73,9 @@ func (m Manager) ensure(ctx context.Context, profile string, force bool) (creden
 		return credential.Token{}, fmt.Errorf("load OAuth credential: %w", err)
 	}
 	if !force && m.isFresh(token) {
+		if err := m.validateSite(profile, token); err != nil {
+			return credential.Token{}, err
+		}
 		return token, nil
 	}
 	if token.RefreshToken == "" {
@@ -82,8 +85,7 @@ func (m Manager) ensure(ctx context.Context, profile string, force bool) (creden
 		return credential.Token{}, fmt.Errorf("OAuth refresh lock is unavailable")
 	}
 
-	lockDigest := sha256.Sum256([]byte(profile))
-	unlock, err := m.Locker.Lock(ctx, fmt.Sprintf("oauth-%x", lockDigest))
+	unlock, err := LockProfile(ctx, m.Locker, profile)
 	if err != nil {
 		return credential.Token{}, fmt.Errorf("acquire OAuth refresh lock: %w", err)
 	}
@@ -93,6 +95,9 @@ func (m Manager) ensure(ctx context.Context, profile string, force bool) (creden
 	token, err = m.Tokens.Load(profile)
 	if err != nil {
 		return credential.Token{}, fmt.Errorf("reload OAuth credential: %w", err)
+	}
+	if err := m.validateSite(profile, token); err != nil {
+		return credential.Token{}, err
 	}
 	if !force && m.isFresh(token) {
 		return token, nil
@@ -123,6 +128,21 @@ func (m Manager) ensure(ctx context.Context, profile string, force bool) (creden
 		return credential.Token{}, fmt.Errorf("save refreshed OAuth credential: %w", err)
 	}
 	return refreshed, nil
+}
+
+func (m Manager) validateSite(profile string, token credential.Token) error {
+	if m.Config == nil {
+		return nil
+	}
+	value, err := m.Config.Load()
+	if err != nil {
+		return err
+	}
+	configured, exists := value.Profiles[profile]
+	if !exists {
+		return fmt.Errorf("%w: profile no longer exists", ErrLoginRequired)
+	}
+	return ValidateTokenSite(token, configured.URL)
 }
 
 func (m Manager) isFresh(token credential.Token) bool {
