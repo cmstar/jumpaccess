@@ -39,13 +39,22 @@ type Session struct {
 }
 
 func Open(ctx context.Context, options OpenOptions) (*Session, error) {
+	// 连接超时覆盖 channel、PTY 和 Shell 协商，不能只约束 TCP/SSH 握手。
+	openCtx := ctx
+	if options.Timeout > 0 {
+		var cancel context.CancelFunc
+		openCtx, cancel = context.WithTimeout(ctx, options.Timeout)
+		defer cancel()
+	}
 	client, err := (sshupstream.Dialer{
 		HostKeyCallback: options.HostKeyCallback,
 		Timeout:         options.Timeout,
-	}).Dial(ctx, options.Connection)
+	}).Dial(openCtx, options.Connection)
 	if err != nil {
 		return nil, err
 	}
+	stopOpening := context.AfterFunc(openCtx, func() { _ = client.Close() })
+	defer stopOpening()
 	remote, err := client.NewSession()
 	if err != nil {
 		_ = client.Close()
@@ -76,6 +85,10 @@ func Open(ctx context.Context, options OpenOptions) (*Session, error) {
 		_ = remote.Close()
 		_ = client.Close()
 		return nil, fmt.Errorf("start SSH shell: %w", err)
+	}
+	if err := openCtx.Err(); err != nil {
+		_ = client.Close()
+		return nil, err
 	}
 	session := &Session{
 		ctx:      ctx,
