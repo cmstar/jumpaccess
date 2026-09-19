@@ -1808,6 +1808,22 @@ test('路由 SSH 状态、输出和主机密钥确认事件', async () => {
   await waitFor(() => expect(backend.resolveSSHHostKey).toHaveBeenCalledWith('host-key-1', false))
 })
 
+test('终端历史达到上限后仍连续显示新的输出', async () => {
+  let outputHandler: (event: SessionOutput) => void = () => undefined
+  const backend = makeBackend({ onSessionOutput: handler => { outputHandler = handler; return () => undefined } })
+  const user = userEvent.setup()
+  terminalWrites.length = 0
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalled())
+  act(() => outputHandler({ id: 'session-1', data: 'x'.repeat(1024 * 1024) }))
+  await waitFor(() => expect(terminalWrites.some(text => text.length === 1024 * 1024)).toBe(true))
+  act(() => outputHandler({ id: 'session-1', data: 'after-limit\r\n' }))
+  await waitFor(() => expect(terminalWrites).toContain('after-limit\r\n'))
+  act(() => outputHandler({ id: 'session-1', data: 'after-limit\r\n' }))
+  await waitFor(() => expect(terminalWrites.filter(text => text === 'after-limit\r\n')).toHaveLength(2))
+})
+
 test('远端断开后保留 SSH Tab 并追加 Enter 重连提示', async () => {
   let stateHandler: (event: SessionState) => void = () => undefined
   const backend = makeBackend({

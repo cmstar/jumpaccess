@@ -54,6 +54,7 @@ import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
 import { TerminalBackgroundProvider, TerminalBackgroundSurface } from './components/TerminalBackground'
 import { TerminalBackgroundSettings } from './components/TerminalBackgroundSettings'
 import { terminalScheme } from './model/terminalTheme'
+import { appendTerminalOutput, type TerminalOutput } from './model/terminalOutput'
 import { type TabDisplayNames, useTabDisplayNames } from './model/useTabDisplayNames'
 import {
   type Account,
@@ -339,7 +340,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     }
     const pending = earlyOutput.current.get(id) ?? ''
     earlyOutput.current.delete(id)
-    setSessionOutput(current => ({ ...current, [tab.id]: ((current[tab.id] ?? '') + pending + data).slice(-terminalBufferLimit) }))
+    setSessionOutput(current => ({ ...current, [tab.id]: appendTerminalOutput(current[tab.id], pending + data, terminalBufferLimit) }))
   }
 
   function transferFor(id: string) {
@@ -354,7 +355,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     }
     return controller
   }
-  const [sessionOutput, setSessionOutput] = useState<Record<string, string>>({})
+  const [sessionOutput, setSessionOutput] = useState<Record<string, TerminalOutput>>({})
   const [startupError, setStartupError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
   const [aliasEditor, setAliasEditor] = useState<{ asset: Asset; alias: Alias } | null>(null)
@@ -409,11 +410,10 @@ function AppContent({ backend = wailsBackend }: AppProps) {
 
   function appendDisconnectedPrompt(tabID: string) {
     setSessionOutput((current) => {
-      const previous = current[tabID] ?? ''
-      const output = previous.endsWith(disconnectedMessage)
-        ? previous
-        : `${previous}${previous ? '\r\n' : ''}${disconnectedMessage}`
-      return { ...current, [tabID]: output.slice(-terminalBufferLimit) }
+      const previous = current[tabID]
+      if (previous?.text.endsWith(disconnectedMessage)) return current
+      const data = `${previous?.text ? '\r\n' : ''}${disconnectedMessage}`
+      return { ...current, [tabID]: appendTerminalOutput(previous, data, terminalBufferLimit) }
     })
   }
 
@@ -460,7 +460,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         setWorkspace(restored)
         setSessionOutput(Object.fromEntries(restored.tabs
           .filter((tab): tab is SSHTab => tab.kind === 'ssh')
-          .map((tab) => [tab.id, disconnectedMessage])))
+          .map((tab) => [tab.id, { text: disconnectedMessage, start: 0 }])))
         setSessionDirectories({})
         setSessionLatencies({})
         workspaceReady.current = true
@@ -895,7 +895,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     connectionAttempts.current.set(tabID, attempt)
     dispatchTabs({ type: 'begin-connection', tabID, reconnecting })
     clearSessionDirectory(tabID)
-    setSessionOutput((current) => ({ ...current, [tabID]: '' }))
+    setSessionOutput((current) => ({ ...current, [tabID]: { text: '', start: 0 } }))
     try {
       const session = await backend.startSSHSession({
         profile: descriptor.profile,
@@ -1193,7 +1193,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         ) : null}
 
         {workspace.tabs.filter((tab): tab is SFTPTab => tab.kind === 'sftp').map((tab) => <div className="sftp-tab-content" hidden={tab.id !== workspace.activeTabID} key={tab.id}><SFTPPane active={tab.id === workspace.activeTabID} backend={backend} tab={tab} onReconnect={() => void beginSFTPConnection(tab.id, tab.descriptor)} onDisconnect={() => void requestSFTPClose(tab, true)} /></div>)}
-        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onRestart={() => void restartSSHConnection(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? disconnectedMessage} preferences={bootstrap.preferences} tab={activeTab} /> : null}
+        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onRestart={() => void restartSSHConnection(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? { text: disconnectedMessage, start: 0 }} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点和认证状态。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">使用中</span> : <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>启用</button>}</div><h2>{item.name}</h2><dl><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void copyText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.auth.loggedIn ? <><button className="button ghost small" disabled={refreshingProfiles.has(item.name)} onClick={() => void refreshProfileAuth(item.name)}><RefreshCcw className={refreshingProfiles.has(item.name) ? 'spin' : ''} />{refreshingProfiles.has(item.name) ? '刷新中…' : '刷新认证'}</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -1409,7 +1409,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
   onDisconnect: () => void
   onRestart: () => void
   onReconnect: () => void
-  output: string
+  output: TerminalOutput
   preferences: Preferences
   tab: SSHTab
 }) {
@@ -1478,7 +1478,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
       </div>
       <SSHTransferProgress key={session.id} state={transfer} onCancel={onCancelTransfer} />
     </div>
-    <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
+    <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output.text} outputStart={output.start} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
     {preferences.terminalShowStatusBar ? <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div> : null}
   </section>
 }

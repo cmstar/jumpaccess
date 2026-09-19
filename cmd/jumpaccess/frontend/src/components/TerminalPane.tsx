@@ -16,6 +16,7 @@ interface TerminalPaneProps {
   onCurrentDirectoryChange?: (directory: string) => void
   onReconnect?: () => void
   output: string
+  outputStart?: number
   preferences: Preferences
   session: SessionState
 }
@@ -67,7 +68,7 @@ function currentDirectoryFromOSC7(payload: string): string | undefined {
   }
 }
 
-export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, preferences, session, transferBusy = false }: TerminalPaneProps) {
+export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, outputStart = 0, preferences, session, transferBusy = false }: TerminalPaneProps) {
   const backgroundVisible = !!useTerminalBackground().image
   const paneRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -368,12 +369,13 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   useEffect(() => {
     const terminal = terminalRef.current
     if (!terminal) return
-    if (output.length < writtenRef.current) {
+    const end = outputStart + output.length
+    if (end < writtenRef.current) {
       terminal.reset()
       writtenRef.current = 0
       historyReplayRef.current = true
     }
-    const next = output.slice(writtenRef.current)
+    const next = output.slice(Math.max(0, writtenRef.current - outputStart))
     if (next) {
       terminal.write(next, () => {
         if (terminalRef.current === terminal) historyReplayRef.current = false
@@ -381,8 +383,8 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     } else {
       historyReplayRef.current = false
     }
-    writtenRef.current = output.length
-  }, [output])
+    writtenRef.current = end
+  }, [output, outputStart, session.id])
 
   const hasSelection = terminalRef.current?.hasSelection() ?? false
   const canPaste = session.status === 'active'

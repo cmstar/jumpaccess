@@ -19,6 +19,7 @@ const terminalMock = vi.hoisted(() => ({
   pasted: [] as string[],
   writeCallbacks: [] as Array<() => void>,
   writeResponse: '',
+  writes: [] as string[],
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -35,6 +36,7 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon() {}
     open() {}
     write(_data: string, callback?: () => void) {
+      terminalMock.writes.push(_data)
       if (terminalMock.writeResponse) terminalMock.dataHandler?.(terminalMock.writeResponse)
       if (callback) terminalMock.writeCallbacks.push(callback)
     }
@@ -63,6 +65,18 @@ vi.mock('@xterm/xterm', () => ({
     }
   },
 }))
+
+test('历史窗口移动超过一整段缓存时继续显示保留尾部，不重建终端', () => {
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
+  const { rerender } = render(<TerminalPane backend={backend} output="abcd" outputStart={0} preferences={preferences} session={activeSession} />)
+  const instances = terminalMock.instances
+  terminalMock.writes.length = 0
+  rerender(<TerminalPane backend={backend} output="wxyz" outputStart={20} preferences={preferences} session={activeSession} />)
+  expect(terminalMock.writes).toEqual(['wxyz'])
+  rerender(<TerminalPane backend={backend} output="wxyz" outputStart={24} preferences={preferences} session={activeSession} />)
+  expect(terminalMock.writes).toEqual(['wxyz', 'wxyz'])
+  expect(terminalMock.instances).toBe(instances)
+})
 
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
@@ -315,6 +329,7 @@ beforeEach(() => {
   terminalMock.pasted = []
   terminalMock.writeCallbacks = []
   terminalMock.writeResponse = ''
+  terminalMock.writes = []
 })
 
 test('配色和字体即时更新且保留终端选区，外围主题不改变终端配色', () => {
