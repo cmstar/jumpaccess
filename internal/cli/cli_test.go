@@ -454,6 +454,22 @@ func TestAuthLoginManualFlagForcesPastedCallbackFlow(t *testing.T) {
 	}
 }
 
+func TestAuthLoginAcceptsNoBrowserFlag(t *testing.T) {
+	for _, flags := range [][]string{{"--no-browser"}, {"--no-browser", "--manual"}} {
+		t.Run(strings.Join(flags, " "), func(t *testing.T) {
+			service := &fakeAuthService{status: authapp.Status{Profile: "work", LoggedIn: true}}
+			root := NewRoot(Dependencies{Auth: service})
+			root.SetArgs(append([]string{"auth", "login", "--profile", "work"}, flags...))
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if !service.loginOptions.NoBrowser || service.loginProfile != "work" {
+				t.Fatal("no-browser option or selected profile was not passed to authentication")
+			}
+		})
+	}
+}
+
 func TestAuthStatusReportsExpiryWithoutPrintingTokens(t *testing.T) {
 	var stdout bytes.Buffer
 	expires := time.Date(2026, 8, 27, 13, 0, 0, 0, time.UTC)

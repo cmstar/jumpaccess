@@ -17,7 +17,7 @@ import (
 	"github.com/cmstar/jumpaccess/internal/oauth"
 )
 
-type LoginFlow func(context.Context, string) (credential.Token, error)
+type LoginFlow func(context.Context, string, authapp.LoginOptions) (credential.Token, error)
 
 type Options struct {
 	RootDir         string

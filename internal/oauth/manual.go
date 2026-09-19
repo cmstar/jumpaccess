@@ -22,6 +22,7 @@ type ManualFlow struct {
 	HTTPClient  *http.Client
 	RedirectURI string
 	OpenBrowser func(string) error
+	NoBrowser   bool
 	Input       io.Reader
 	Output      io.Writer
 	Now         func() time.Time
@@ -78,7 +79,7 @@ func (a ManualAuthorization) Complete(ctx context.Context, rawCallback string, n
 }
 
 func (f ManualFlow) Login(ctx context.Context, site string) (credential.Token, error) {
-	if f.OpenBrowser == nil {
+	if !f.NoBrowser && f.OpenBrowser == nil {
 		return credential.Token{}, fmt.Errorf("browser opener is unavailable")
 	}
 	if f.Input == nil {
@@ -93,17 +94,23 @@ func (f ManualFlow) Login(ctx context.Context, site string) (credential.Token, e
 	if output == nil {
 		output = io.Discard
 	}
-	if _, err := fmt.Fprintf(output, `Opening the JumpServer authorization page:
+	instruction := "Opening the JumpServer authorization page:"
+	if f.NoBrowser {
+		instruction = "Open this JumpServer authorization URL in a browser on this or another computer:"
+	}
+	if _, err := fmt.Fprintf(output, `%s
 %s
 
 After authorization reaches the JumpServer confirmation page, do not select Confirm.
 Copy either the jms:// callback link or the complete confirmation-page URL,
 then paste it here and press Enter:
-OAuth callback URL: `, authorization.URL); err != nil {
+OAuth callback URL: `, instruction, authorization.URL); err != nil {
 		return credential.Token{}, fmt.Errorf("write OAuth instructions: %w", err)
 	}
-	if err := f.OpenBrowser(authorization.URL); err != nil {
-		return credential.Token{}, fmt.Errorf("open authorization URL: %w", err)
+	if !f.NoBrowser {
+		if err := f.OpenBrowser(authorization.URL); err != nil {
+			return credential.Token{}, fmt.Errorf("open authorization URL: %w", err)
+		}
 	}
 
 	rawCallback, err := readCallbackLine(ctx, f.Input)

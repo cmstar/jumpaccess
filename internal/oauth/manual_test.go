@@ -3,6 +3,8 @@ package oauth
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,6 +14,89 @@ import (
 	"testing"
 	"time"
 )
+
+type instructionWriter func([]byte) (int, error)
+
+func (write instructionWriter) Write(p []byte) (int, error) { return write(p) }
+
+func TestManualFlowNoBrowserCompletesFromPrintedURL(t *testing.T) {
+	for _, mode := range []string{"opener present", "opener absent", "wrong state"} {
+		t.Run(mode, func(t *testing.T) {
+			var instructions, input bytes.Buffer
+			var authorizationURL *url.URL
+			exchanges := 0
+			var provider *httptest.Server
+			provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case discoveryPath:
+					_ = json.NewEncoder(w).Encode(Metadata{
+						ClientID: "client-id", AuthorizationEndpoint: provider.URL + "/authorize", TokenEndpoint: provider.URL + "/token",
+					})
+				case "/token":
+					exchanges++
+					_ = r.ParseForm()
+					digest := sha256.Sum256([]byte(r.Form.Get("code_verifier")))
+					if r.Form.Get("code") != "test-code" || r.Form.Get("redirect_uri") != NativeRedirectURI ||
+						base64.RawURLEncoding.EncodeToString(digest[:]) != authorizationURL.Query().Get("code_challenge") {
+						t.Error("token exchange did not preserve the authorization code, redirect URI and PKCE verifier")
+					}
+					_ = json.NewEncoder(w).Encode(TokenResponse{AccessToken: "test-access", RefreshToken: "test-refresh", ExpiresIn: 3600})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer provider.Close()
+			flow := ManualFlow{
+				HTTPClient: provider.Client(), NoBrowser: true, Input: &input,
+				OpenBrowser: func(string) error { t.Fatal("no-browser flow attempted to open a browser"); return nil },
+				Output: instructionWriter(func(p []byte) (int, error) {
+					// 模拟用户把终端打印的地址拿到外部浏览器授权，再粘贴确认页 URL。
+					for _, line := range strings.Split(string(p), "\n") {
+						if !strings.HasPrefix(line, provider.URL+"/authorize?") {
+							continue
+						}
+						var err error
+						authorizationURL, err = url.Parse(strings.TrimSpace(line))
+						if err != nil {
+							t.Fatal(err)
+						}
+						state := authorizationURL.Query().Get("state")
+						if mode == "wrong state" {
+							state = "wrong"
+						}
+						callback := NativeRedirectURI + "?code=test-code&state=" + url.QueryEscape(state)
+						input.WriteString(provider.URL + "/core/redirect/confirm/?next=" + url.QueryEscape(callback) + "\n")
+					}
+					return instructions.Write(p)
+				}),
+			}
+			if mode == "opener absent" {
+				flow.OpenBrowser = nil
+			}
+			token, err := flow.Login(context.Background(), provider.URL)
+			if mode == "wrong state" {
+				if err == nil || !strings.Contains(err.Error(), "state") || exchanges != 0 {
+					t.Fatalf("invalid state was not rejected before exchange: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if exchanges != 1 || token.AccessToken != "test-access" {
+				t.Fatal("authorization did not complete")
+			}
+			for _, want := range []string{"another computer", "do not select Confirm", "OAuth callback URL:"} {
+				if !strings.Contains(instructions.String(), want) {
+					t.Errorf("instructions missing %q", want)
+				}
+			}
+			if strings.Contains(instructions.String(), "Opening") || strings.Contains(instructions.String(), token.AccessToken) {
+				t.Fatal("misleading or sensitive instructions")
+			}
+		})
+	}
+}
 
 func TestManualFlowCompletesAuthorizationFromPastedCallback(t *testing.T) {
 	var tokenForm url.Values

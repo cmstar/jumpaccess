@@ -97,10 +97,20 @@ account = "account-id"
 
 | 命令 | 作用 |
 | --- | --- |
-| `jumpctl auth login [--profile <name>] [--manual]` | 打开浏览器并完成 Authorization Code + PKCE 登录；`--manual` 强制从终端读取粘贴的回调 URL，当前开发版本未实现私有协议接收时也默认使用该方式 |
+| `jumpctl auth login [--profile <name>] [--manual] [--no-browser]` | 完成 Authorization Code + PKCE 登录；默认打开浏览器，`--manual` 强制手工粘贴回调（当前版本也是默认方式），`--no-browser` 跳过打开浏览器并等待粘贴回调 |
 | `jumpctl auth status [--profile <name>]` | 只显示登录状态、过期时间和是否有 Refresh Token，不显示秘密 |
 | `jumpctl auth refresh [--profile <name>]` | 立即刷新；Refresh Token 轮换后原子写回该 Profile 的凭据文件 |
 | `jumpctl auth logout [--profile <name>]` | 撤销并删除 Profile 的 OAuth 凭据 |
+
+本机无法打开浏览器，或希望在另一台电脑完成授权时，运行：
+
+```text
+jumpctl auth login --profile work --no-browser
+```
+
+程序向 stderr 打印完整授权地址，等待手工粘贴回调，不调用本机浏览器。将授权地址复制到可以访问 JumpServer 的浏览器中，完成授权后按下文复制回调。`--no-browser` 无需搭配 `--manual`，也允许两者同时使用；单独使用 `--manual` 仍会打开浏览器。
+
+保持原登录进程运行，并在 `behavior.oauth_timeout`（默认 5 分钟）内粘贴回调；超时后重新发起登录并使用新的授权地址。Token 由运行 CLI 的机器交换和保存。本参数不改变平台支持范围，当前支持 Windows 和 macOS，Linux 适配尚未完成。
 
 程序发起 API 请求前会按需刷新。直接 SSH 和 ProxyCommand 运行期间还会定期检查；刷新成功只影响后续 API 请求，刷新失败会写入 stderr，但不会关闭已经建立的 SSH Session。
 

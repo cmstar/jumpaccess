@@ -8,6 +8,7 @@ import (
 
 	jumpaccess "github.com/cmstar/jumpaccess"
 	"github.com/cmstar/jumpaccess/internal/appdir"
+	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/cli"
@@ -45,13 +46,16 @@ func run() int {
 	nativeCredentials := credential.NewNativeBackend()
 	manager := core.AuthManager
 	authService := core.Auth
-	authService.ManualLoginFlow = (oauth.ManualFlow{
-		HTTPClient:  core.HTTPClient,
-		RedirectURI: oauth.NativeRedirectURI,
-		OpenBrowser: systemopen.Open,
-		Input:       os.Stdin,
-		Output:      os.Stderr,
-	}).Login
+	authService.ManualLoginFlow = func(ctx context.Context, site string, options authapp.LoginOptions) (credential.Token, error) {
+		return (oauth.ManualFlow{
+			HTTPClient:  core.HTTPClient,
+			RedirectURI: oauth.NativeRedirectURI,
+			OpenBrowser: systemopen.Open,
+			NoBrowser:   options.NoBrowser,
+			Input:       os.Stdin,
+			Output:      os.Stderr,
+		}).Login(ctx, site)
+	}
 	command := cli.NewRoot(cli.Dependencies{
 		Version:     version,
 		Licenses:    jumpaccess.Licenses(),

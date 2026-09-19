@@ -19,16 +19,17 @@ func newAuthCommand(deps Dependencies) *cobra.Command {
 func newAuthLoginCommand(deps Dependencies) *cobra.Command {
 	var profile string
 	var manual bool
+	var noBrowser bool
 	command := &cobra.Command{
 		Use:   "login",
-		Short: "Open a browser and authenticate the selected profile",
+		Short: "Authenticate the selected profile using browser authorization",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			service, err := requireAuth(deps)
 			if err != nil {
 				return err
 			}
-			status, err := service.Login(cmd.Context(), profile, authapp.LoginOptions{Manual: manual})
+			status, err := service.Login(cmd.Context(), profile, authapp.LoginOptions{Manual: manual, NoBrowser: noBrowser})
 			if err != nil {
 				return err
 			}
@@ -38,6 +39,7 @@ func newAuthLoginCommand(deps Dependencies) *cobra.Command {
 	}
 	command.Flags().StringVar(&profile, "profile", "", "profile name (defaults to current profile)")
 	command.Flags().BoolVar(&manual, "manual", false, "paste the OAuth callback URL instead of using the registered protocol handler")
+	command.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser and wait for a pasted callback URL")
 	return command
 }
 

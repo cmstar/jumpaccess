@@ -59,7 +59,7 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 ### 浏览器登录
 
 1. 用户执行独立的认证命令。
-2. 程序生成 PKCE 和防伪状态，启动系统浏览器。
+2. 程序生成 PKCE 和防伪状态，默认启动系统浏览器；CLI 指定 `--no-browser` 时只打印授权地址并等待手工回调，浏览器可以位于另一台能访问 JumpServer 的电脑上，无需同时指定 `--manual`。
 3. JumpServer 完成授权后生成 `jms://auth/callback`。当前开发版由用户把该链接或包含它的确认页 URL 粘贴回终端；发布版计划由已注册的私有协议处理程序自动接收。
 4. 程序严格校验回调目标和 `state`，使用原登录进程持有的 PKCE verifier 交换 Token，并把敏感 Token 原子写入该 Profile 的私有凭据文件。
 5. Profile、Alias 等非敏感信息继续保存在 TOML 配置中。

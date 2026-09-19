@@ -21,7 +21,7 @@ func TestServiceLoginDefaultsToManualFlowAndStoresNativeCredential(t *testing.T)
 	store := &memoryTokens{tokens: make(map[string]credential.Token)}
 	service := Service{
 		Config: staticConfig{value: value}, Tokens: store,
-		ManualLoginFlow: func(_ context.Context, site string) (credential.Token, error) {
+		ManualLoginFlow: func(_ context.Context, site string, _ LoginOptions) (credential.Token, error) {
 			if site != "https://jump.example.test" {
 				t.Fatalf("site = %q", site)
 			}
@@ -108,7 +108,7 @@ func TestServiceLoginAppliesOAuthTimeout(t *testing.T) {
 	value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
 	service := Service{
 		Config: staticConfig{value: value}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)}, Timeout: time.Minute,
-		LoginFlow: func(ctx context.Context, _ string) (credential.Token, error) {
+		LoginFlow: func(ctx context.Context, _ string, _ LoginOptions) (credential.Token, error) {
 			if _, ok := ctx.Deadline(); !ok {
 				t.Fatal("login context has no deadline")
 			}
@@ -127,11 +127,11 @@ func TestServiceLoginManualOptionSelectsPermanentFallbackFlow(t *testing.T) {
 	var selected string
 	service := Service{
 		Config: staticConfig{value: value}, Tokens: &memoryTokens{tokens: make(map[string]credential.Token)},
-		LoginFlow: func(context.Context, string) (credential.Token, error) {
+		LoginFlow: func(context.Context, string, LoginOptions) (credential.Token, error) {
 			selected = "native"
 			return credential.Token{AccessToken: "native"}, nil
 		},
-		ManualLoginFlow: func(context.Context, string) (credential.Token, error) {
+		ManualLoginFlow: func(context.Context, string, LoginOptions) (credential.Token, error) {
 			selected = "manual"
 			return credential.Token{AccessToken: "manual"}, nil
 		},
@@ -142,5 +142,41 @@ func TestServiceLoginManualOptionSelectsPermanentFallbackFlow(t *testing.T) {
 	}
 	if selected != "manual" {
 		t.Fatalf("selected flow = %q", selected)
+	}
+}
+
+func TestServiceNoBrowserSelectsManualFlowAndPreservesOptions(t *testing.T) {
+	for _, manual := range []bool{false, true} {
+		value := projectconfig.Default()
+		value.CurrentProfile = "work"
+		value.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
+		store := &memoryTokens{tokens: make(map[string]credential.Token)}
+		options := LoginOptions{Manual: manual, NoBrowser: true}
+		service := Service{
+			Config: staticConfig{value: value}, Tokens: store, Timeout: time.Minute,
+			LoginFlow: func(context.Context, string, LoginOptions) (credential.Token, error) {
+				t.Fatal("no-browser login selected the native flow")
+				return credential.Token{}, nil
+			},
+			ManualLoginFlow: func(ctx context.Context, site string, got LoginOptions) (credential.Token, error) {
+				if got != options || site != value.Profiles["work"].URL {
+					t.Fatal("login options or site changed")
+				}
+				if _, ok := ctx.Deadline(); !ok {
+					t.Fatal("login timeout was not applied")
+				}
+				return credential.Token{AccessToken: "test-access"}, nil
+			},
+		}
+		if _, err := service.Login(context.Background(), "work", options); err != nil {
+			t.Fatal(err)
+		}
+		if token, err := store.Load("work"); err != nil || token.AccessToken != "test-access" {
+			t.Fatal("token was not saved")
+		}
+		service.ManualLoginFlow = nil
+		if _, err := service.Login(context.Background(), "work", options); err == nil {
+			t.Fatal("missing manual flow silently fell back to native flow")
+		}
 	}
 }

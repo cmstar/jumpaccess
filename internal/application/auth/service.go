@@ -23,16 +23,17 @@ type Status struct {
 }
 
 type LoginOptions struct {
-	Manual bool
+	Manual    bool
+	NoBrowser bool
 }
 
 type Service struct {
 	Config    ConfigLoader
 	Tokens    TokenRepository
 	Manager   Manager
-	LoginFlow func(context.Context, string) (credential.Token, error)
+	LoginFlow func(context.Context, string, LoginOptions) (credential.Token, error)
 	// ManualLoginFlow 是其他程序占用私有协议或系统禁止注册协议时永久保留的回退方式。
-	ManualLoginFlow func(context.Context, string) (credential.Token, error)
+	ManualLoginFlow func(context.Context, string, LoginOptions) (credential.Token, error)
 	Revoke          func(context.Context, credential.Token) error
 	Now             func() time.Time
 	Timeout         time.Duration
@@ -44,7 +45,7 @@ func (s Service) Login(ctx context.Context, requestedProfile string, options Log
 		return Status{}, err
 	}
 	loginFlow := s.LoginFlow
-	if options.Manual {
+	if options.Manual || options.NoBrowser {
 		loginFlow = s.ManualLoginFlow
 		if loginFlow == nil {
 			return Status{}, fmt.Errorf("manual browser login is unavailable")
@@ -61,7 +62,7 @@ func (s Service) Login(ctx context.Context, requestedProfile string, options Log
 		ctx, cancel = context.WithTimeout(ctx, s.Timeout)
 		defer cancel()
 	}
-	token, err := loginFlow(ctx, configured.URL)
+	token, err := loginFlow(ctx, configured.URL, options)
 	if err != nil {
 		return Status{}, err
 	}
