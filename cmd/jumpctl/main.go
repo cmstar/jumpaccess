@@ -79,7 +79,7 @@ func run() int {
 					return terminalprompt.ConfirmHostKey(os.Stdin, os.Stderr, host, fingerprint)
 				},
 			}
-			callback, err := hostKeys.Callback(true)
+			callback, err := hostKeys.Callback(ctx, true)
 			if err != nil {
 				return err
 			}
@@ -96,7 +96,7 @@ func run() int {
 			}).Run(ctx, prepared.Connection)
 		},
 		RunProxy: func(ctx context.Context, prepared connectapp.Prepared) error {
-			callback, err := (sshhostkey.Store{Path: filepath.Join(rootDir, "known_hosts")}).Callback(false)
+			callback, err := (sshhostkey.Store{Path: filepath.Join(rootDir, "known_hosts")}).Callback(ctx, false)
 			if err != nil {
 				return err
 			}

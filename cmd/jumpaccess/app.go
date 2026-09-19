@@ -168,7 +168,7 @@ func newDesktopApp(rootDir string) (*desktopApp, error) {
 				Confirm: func(host, fingerprint string) (bool, error) {
 					return hostKeys.Confirm(ctx, host, fingerprint)
 				},
-			}).Callback(true)
+			}).Callback(ctx, true)
 		},
 		Open: func(ctx context.Context, options sshclient.OpenOptions) (sshsessionapp.TerminalSession, error) {
 			return sshclient.Open(ctx, options)
