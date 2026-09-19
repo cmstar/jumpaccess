@@ -55,6 +55,7 @@ import { TerminalBackgroundProvider, TerminalBackgroundSurface } from './compone
 import { TerminalBackgroundSettings } from './components/TerminalBackgroundSettings'
 import { terminalScheme } from './model/terminalTheme'
 import { appendTerminalOutput, type TerminalOutput } from './model/terminalOutput'
+import { useHostKeyPrompts } from './model/useHostKeyPrompts'
 import { type TabDisplayNames, useTabDisplayNames } from './model/useTabDisplayNames'
 import {
   type Account,
@@ -369,7 +370,8 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const [loginAttempt, setLoginAttempt] = useState<LoginAttempt | null>(null)
   const [licenseOpen, setLicenseOpen] = useState(false)
   const [licenseText, setLicenseText] = useState('')
-  const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
+  const hostKeyPrompts = useHostKeyPrompts(backend.resolveSSHHostKey)
+  const hostKeyPrompt = hostKeyPrompts.prompt
   const [pendingQuit, setPendingQuit] = useState(false)
   const [pendingSFTPClose, setPendingSFTPClose] = useState<{ tab: SFTPTab; disconnectOnly: boolean } | null>(null)
   const [pendingDisconnect, setPendingDisconnect] = useState<SSHTab | null>(null)
@@ -502,7 +504,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         if (pendingSFTPStates.current.size > 64) pendingSFTPStates.current.delete(pendingSFTPStates.current.keys().next().value!)
       }
     })
-    const offHostKey = backend.onHostKeyPrompt(setHostKeyPrompt)
+    const offHostKey = backend.onHostKeyPrompt(hostKeyPrompts.enqueue)
     return () => {
       cancelled = true
       offState()
@@ -1209,7 +1211,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       {editingProfile ? <EditProfileDialog profile={editingProfile} onCancel={() => setEditingProfile(null)} onSave={(url) => updateProfileURL(editingProfile, url)} /> : null}
       {loginAttempt ? <LoginDialog attempt={loginAttempt} onCancel={() => void run(async () => { await backend.cancelLogin(loginAttempt.id); setLoginAttempt(null) })} onComplete={(callback) => void run(async () => { await backend.completeLogin(loginAttempt.id, callback); showInfo(`${loginAttempt.profile} 登录成功`); setLoginAttempt(null); await reloadBootstrap(); setDetails({}); setRefreshKey((value) => value + 1) })} /> : null}
       {licenseOpen ? <Modal title="开源许可证" description="JumpAccess 及随附第三方组件的许可证信息。" onClose={() => setLicenseOpen(false)}><pre className="license-text">{licenseText}</pre><div className="dialog-actions"><button className="button primary" onClick={() => setLicenseOpen(false)}>关闭</button></div></Modal> : null}
-      {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await backend.resolveSSHHostKey(hostKeyPrompt.id, accepted); setHostKeyPrompt(null) })} /> : null}
+      {hostKeyPrompt ? <HostKeyDialog prompt={hostKeyPrompt} onDecision={(accepted) => void run(async () => { await hostKeyPrompts.decide(accepted) })} /> : null}
       {pendingQuit ? <Modal title="停止传输并退出？" description="仍有未完成的文件传输。退出会停止这些任务。" onClose={() => setPendingQuit(false)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingQuit(false)}>取消</button><button className="button primary danger" onClick={() => void run(async () => { await workspaceSaveQueue.current; await preferenceSaveQueue.current; await backend.confirmQuit(); setPendingQuit(false) })}>停止并退出</button></div></Modal> : null}
       {pendingSFTPClose ? <Modal title={pendingSFTPClose.disconnectOnly ? "停止传输并断开？" : "停止传输并关闭？"} description="此连接仍有未完成的传输。继续会停止这些任务。" onClose={() => setPendingSFTPClose(null)}><div className="dialog-actions"><button className="button secondary" onClick={() => setPendingSFTPClose(null)}>取消</button><button className="button primary danger" onClick={() => void confirmSFTPClose()}>{pendingSFTPClose.disconnectOnly ? '停止并断开' : '停止并关闭'}</button></div></Modal> : null}
       {pendingDisconnect ? <DisconnectSessionDialog tab={pendingDisconnect} onCancel={() => setPendingDisconnect(null)} onConfirm={() => void closeTab(pendingDisconnect)} /> : null}

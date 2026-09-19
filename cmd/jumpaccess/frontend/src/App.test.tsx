@@ -1824,6 +1824,46 @@ test('终端历史达到上限后仍连续显示新的输出', async () => {
   await waitFor(() => expect(terminalWrites.filter(text => text === 'after-limit\r\n')).toHaveLength(2))
 })
 
+test('并发主机密钥确认按顺序处理，迟到的决定不清除下一项', async () => {
+  let prompt: (event: HostKeyPrompt) => void = () => undefined
+  let finish!: () => void
+  const backend = makeBackend({
+    onHostKeyPrompt: handler => { prompt = handler; return () => undefined },
+    resolveSSHHostKey: vi.fn().mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve })).mockResolvedValue(undefined),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  act(() => prompt({ id: 'first', host: 'first.test:22', fingerprint: 'SHA256:first' }))
+  act(() => prompt({ id: 'second', host: 'second.test:22', fingerprint: 'SHA256:second' }))
+  expect(screen.getByRole('dialog', { name: '确认新的 SSH Gateway' })).toHaveTextContent('SHA256:first')
+  await user.click(screen.getByRole('button', { name: '拒绝' }))
+  act(() => prompt({ id: 'third', host: 'third.test:22', fingerprint: 'SHA256:third' }))
+  await act(async () => finish())
+  expect(await screen.findByRole('dialog', { name: '确认新的 SSH Gateway' })).toHaveTextContent('SHA256:second')
+  await user.click(screen.getByRole('button', { name: '拒绝' }))
+  await waitFor(() => expect(backend.resolveSSHHostKey).toHaveBeenCalledWith('second', false))
+  expect(await screen.findByRole('dialog', { name: '确认新的 SSH Gateway' })).toHaveTextContent('SHA256:third')
+})
+
+test('已失效的主机密钥确认不会挡住下一条请求', async () => {
+  let prompt: (event: HostKeyPrompt) => void = () => undefined
+  const backend = makeBackend({
+    onHostKeyPrompt: handler => { prompt = handler; return () => undefined },
+    resolveSSHHostKey: vi.fn().mockRejectedValueOnce(new Error('SSH host key prompt is not pending')).mockResolvedValue(undefined),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  act(() => {
+    prompt({ id: 'expired', host: 'expired.test:22', fingerprint: 'SHA256:expired' })
+    prompt({ id: 'next', host: 'next.test:22', fingerprint: 'SHA256:next' })
+  })
+  await user.click(screen.getByRole('button', { name: '拒绝' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('not pending')
+  expect(screen.getByRole('dialog', { name: '确认新的 SSH Gateway' })).toHaveTextContent('SHA256:next')
+})
+
 test('远端断开后保留 SSH Tab 并追加 Enter 重连提示', async () => {
   let stateHandler: (event: SessionState) => void = () => undefined
   const backend = makeBackend({
