@@ -25,6 +25,48 @@ function backendFor(overrides: Partial<Backend> = {}): Backend {
 }
 function show(backend: Backend, currentTab = tab) { return render(<SFTPPane backend={backend} tab={currentTab} onReconnect={vi.fn()} onDisconnect={vi.fn()} />) }
 
+test('重连关闭旧会话的删除确认，不允许旧路径操作新会话', async () => {
+  const backend = backendFor()
+  const { rerender } = show(backend)
+  await userEvent.click(await screen.findByRole('checkbox', { name: '选择 README.md' }))
+  await userEvent.click(screen.getByRole('button', { name: '删除' }))
+  expect(screen.getByRole('dialog', { name: '删除文件' })).toBeInTheDocument()
+  rerender(<SFTPPane backend={backend} tab={{ ...tab, sessionID: 'sftp-2' }} onReconnect={vi.fn()} onDisconnect={vi.fn()} />)
+  expect(screen.queryByRole('dialog', { name: '删除文件' })).not.toBeInTheDocument()
+  expect(backend.removeSFTPEntries).not.toHaveBeenCalled()
+})
+
+test.each(['success', 'failure'])('旧会话操作的迟到 %s 不关闭或污染新会话弹窗', async (result) => {
+  let finish!: () => void
+  let fail!: (error: Error) => void
+  const backend = backendFor({ makeSFTPDirectory: vi.fn().mockImplementationOnce(() => new Promise<void>((resolve, reject) => { finish = resolve; fail = reject })) })
+  const { rerender } = show(backend)
+  await screen.findByText('README.md')
+  await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
+  await userEvent.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'old')
+  await userEvent.click(screen.getByRole('button', { name: '创建' }))
+  rerender(<SFTPPane backend={backend} tab={{ ...tab, sessionID: 'sftp-2' }} onReconnect={vi.fn()} onDisconnect={vi.fn()} />)
+  await waitFor(() => expect(backend.readSFTPDirectory).toHaveBeenCalledWith('sftp-2', '/home/deploy'))
+  await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
+  await userEvent.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'new')
+  await act(async () => result === 'success' ? finish() : fail(new Error('old session failure')))
+  expect(screen.getByRole('textbox', { name: '文件夹名称' })).toHaveValue('new')
+  expect(screen.queryByText('old session failure')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '创建' })).toBeEnabled()
+  expect(vi.mocked(backend.readSFTPDirectory).mock.calls.filter(([id]) => id === 'sftp-1')).toHaveLength(1)
+})
+
+test('原生选择返回前重连时不启动旧会话传输', async () => {
+  let finish!: (paths: string[]) => void
+  const backend = backendFor({ chooseSFTPUploadFiles: vi.fn(() => new Promise<string[]>(resolve => { finish = resolve })) })
+  const { rerender } = show(backend)
+  await screen.findByText('README.md')
+  await userEvent.click(screen.getByRole('button', { name: '上传文件' }))
+  rerender(<SFTPPane backend={backend} tab={{ ...tab, sessionID: 'sftp-2' }} onReconnect={vi.fn()} onDisconnect={vi.fn()} />)
+  await act(async () => finish(['C:\\Downloads\\old.txt']))
+  expect(backend.startSFTPTransfer).not.toHaveBeenCalled()
+})
+
 test.each(['disconnected', 'failed', 'connecting', 'reconnecting'] as const)('SFTP %s 状态的重连使用带悬停提示的图标并保持可用性', async (connectionStatus) => {
   const onReconnect = vi.fn()
   render(<SFTPPane backend={backendFor()} tab={{ ...tab, sessionID: undefined, connectionStatus }} onReconnect={onReconnect} onDisconnect={vi.fn()} />)

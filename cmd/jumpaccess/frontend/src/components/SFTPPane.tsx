@@ -24,7 +24,7 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
   const [dismissedConflict, setDismissedConflict] = useState('')
   const [choosing, setChoosing] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
-  const [mutation, setMutation] = useState<{ kind: 'create' | 'rename' | 'delete'; name: string; paths: string[]; parent: string } | null>(null)
+  const [mutation, setMutation] = useState<{ sessionID: string; kind: 'create' | 'rename' | 'delete'; name: string; paths: string[]; parent: string } | null>(null)
   const [mutating, setMutating] = useState(false)
   const [mutationError, setMutationError] = useState('')
   const [path, setPath] = useState('')
@@ -32,6 +32,7 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigation = useRef(0)
+  const operationEpoch = useRef(0)
   const namePointerStart = useRef<{ x: number; y: number } | null>(null)
   const transferVersions = useRef(new Map<string, number>())
   const sessionHistory = useRef(new Set<string>())
@@ -64,8 +65,20 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
   refreshDirectory.current = () => { if (directory.path) void navigate(directory.path, false, true) }
 
   useEffect(() => {
+    setMutation(null)
+    setMutationError('')
+    setMutating(false)
+    setChoosing(false)
+    setResolvingConflict(false)
+    setConflictBatch(false)
+    setDismissedConflict('')
+    setSelected([])
+    setDirectory({ path: '', entries: [] })
+    setPath('')
+    setLoading(false)
+    setError('')
     if (connected) void navigate(tab.directory || '.')
-    return () => { navigation.current++ }
+    return () => { navigation.current++; operationEpoch.current++ }
   }, [backend, tab.sessionID, connected])
 
   function selectEntry(event: MouseEvent<HTMLTableCellElement>, entryPath: string) {
@@ -78,21 +91,26 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
   }
 
   function beginMutation(kind: 'create' | 'rename' | 'delete') {
+    if (!connected || !tab.sessionID) return
     setMutationError('')
-    setMutation({ kind, paths: selected, parent: directory.path, name: kind === 'rename' ? directory.entries.find((entry) => entry.path === selected[0])?.name || '' : '' })
+    setMutation({ sessionID: tab.sessionID, kind, paths: selected, parent: directory.path, name: kind === 'rename' ? directory.entries.find((entry) => entry.path === selected[0])?.name || '' : '' })
   }
 
   async function submitMutation() {
-    if (!mutation || !tab.sessionID || mutating || !connected || (mutation.kind === 'delete' ? !canDelete : !canUpload)) return
+    if (!mutation || mutation.sessionID !== tab.sessionID || mutating || !connected || (mutation.kind === 'delete' ? !canDelete : !canUpload)) return
+    const epoch = operationEpoch.current
+    const sessionID = mutation.sessionID
+    const isCurrent = () => operationEpoch.current === epoch && currentSession.current === sessionID
     setMutating(true); setMutationError('')
     try {
-      if (mutation.kind === 'create') await backend.makeSFTPDirectory(tab.sessionID, `${mutation.parent.replace(/\/$/, '')}/${mutation.name.trim()}`)
-      if (mutation.kind === 'rename') await backend.renameSFTPEntry(tab.sessionID, mutation.paths[0], mutation.name.trim())
-      if (mutation.kind === 'delete') await backend.removeSFTPEntries(tab.sessionID, mutation.paths)
+      if (mutation.kind === 'create') await backend.makeSFTPDirectory(sessionID, `${mutation.parent.replace(/\/$/, '')}/${mutation.name.trim()}`)
+      if (mutation.kind === 'rename') await backend.renameSFTPEntry(sessionID, mutation.paths[0], mutation.name.trim())
+      if (mutation.kind === 'delete') await backend.removeSFTPEntries(sessionID, mutation.paths)
+      if (!isCurrent()) return
       setMutation(null)
       await navigate(directory.path)
-    } catch (reason) { setMutationError(message(reason)) }
-    finally { setMutating(false) }
+    } catch (reason) { if (isCurrent()) setMutationError(message(reason)) }
+    finally { if (isCurrent()) setMutating(false) }
   }
 
   function mergeTransfers(incoming: SFTPTransfer[], fillOnly = false) {
@@ -134,8 +152,9 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
   }, [backend, active, connected, canUpload, tab.sessionID, directory.path])
 
   async function transferAction(action: () => Promise<unknown>) {
+    const epoch = operationEpoch.current
     setError('')
-    try { await action() } catch (reason) { setError(message(reason)) }
+    try { await action() } catch (reason) { if (operationEpoch.current === epoch) setError(message(reason)) }
   }
 
   const conflict = transfers.find((item) => item.status === 'conflict' && conflictKey(item) !== dismissedConflict && item.sessionId === tab.sessionID)
@@ -145,17 +164,21 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
 
   async function resolveConflict(choice: SFTPConflictChoice) {
     if (!conflict || resolvingConflict) return
+    const epoch = operationEpoch.current
     setResolvingConflict(true)
     try {
       await backend.resolveSFTPConflict(conflict.id, choice, conflictBatch)
+      if (operationEpoch.current !== epoch) return
       setDismissedConflict(conflictKey(conflict)); setConflictBatch(false)
-    } catch (reason) { setError(message(reason)) }
-    finally { setResolvingConflict(false) }
+    } catch (reason) { if (operationEpoch.current === epoch) setError(message(reason)) }
+    finally { if (operationEpoch.current === epoch) setResolvingConflict(false) }
   }
 
   async function chooseTransfer(kind: 'upload' | 'folder' | 'download') {
     if (!connected || !tab.sessionID || choosing || (kind === 'download' ? !canDownload : !canUpload)) return
     const sessionId = tab.sessionID
+    const epoch = operationEpoch.current
+    const isCurrent = () => operationEpoch.current === epoch && currentSession.current === sessionId
     const remoteDirectory = directory.path
     const remoteSources = [...selected]
     setChoosing(true); setError('')
@@ -170,11 +193,11 @@ export function SFTPPane({ backend, tab, active = true, onReconnect, onDisconnec
         sources = kind === 'folder' ? (selectedDirectory ? [selectedDirectory] : []) : await backend.chooseSFTPUploadFiles()
         destination = remoteDirectory
       }
-      if (!destination || !sources.length) return
+      if (!isCurrent() || !destination || !sources.length) return
       const added = await backend.startSFTPTransfer({ sessionId, direction: kind === 'download' ? 'download' : 'upload', sources, destination })
-      mergeTransfers(added ?? [], true)
-    } catch (reason) { setError(message(reason)) }
-    finally { setChoosing(false) }
+      if (isCurrent()) mergeTransfers(added ?? [], true)
+    } catch (reason) { if (isCurrent()) setError(message(reason)) }
+    finally { if (isCurrent()) setChoosing(false) }
   }
 
   async function retryTransfer(item: SFTPTransfer) {
