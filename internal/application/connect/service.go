@@ -183,19 +183,7 @@ func resolveAccount(accounts []jumpserver.Account, reference string, options Opt
 		return jumpserver.Account{ID: strings.ToUpper(reference), Username: strings.ToUpper(reference)}, nil
 	}
 	if reference != "" {
-		matches := make([]jumpserver.Account, 0, 1)
-		for _, account := range accounts {
-			if account.ID == reference || strings.EqualFold(account.Name, reference) || strings.EqualFold(account.Alias, reference) || strings.EqualFold(account.Username, reference) {
-				matches = append(matches, account)
-			}
-		}
-		if len(matches) == 0 {
-			return jumpserver.Account{}, fmt.Errorf("%w: %q", ErrAccountNotFound, reference)
-		}
-		if len(matches) > 1 {
-			return jumpserver.Account{}, fmt.Errorf("%w: %q matched %d accounts", ErrAccountAmbiguous, reference, len(matches))
-		}
-		return matches[0], nil
+		return ResolvePermittedAccount(accounts, reference)
 	}
 	if len(accounts) == 0 {
 		return jumpserver.Account{}, ErrAccountNotFound

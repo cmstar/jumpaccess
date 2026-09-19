@@ -22,6 +22,8 @@ JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServe
 
 Alias 固定归属于 Profile，必须定位一个 Asset，Account 可为空。Organization 不是独立归属：GUI 创建 Alias 时根据当前 Profile 的 Organization 查询并验证 Asset，再把该 Organization 与 Asset ID 一并保存；用户不能为同一 Alias 另选一个无关 Organization。绑定 Account 时只能从该 Asset 当前获准的 Account 中选择，清空 Account 表示连接时再询问。
 
+GUI 创建 Alias 必须在保存时原子确认名称未占用，并发创建同名 Alias 只能有一个成功；失败不能覆盖已保存映射。CLI `alias set` 保留显式设置和替换映射的能力。
+
 ## 关键流程
 
 GUI 的 Profile 卡片在右上角提供“启用”按钮，当前 Profile 显示“使用中”；底部保留认证、编辑和删除操作，空间不足时换行。卡片不展示 Organization。资产页切换组织时仍立即保存到对应 Profile，启动时加载当前 Profile 上次选择的组织；重新启用其他 Profile 时恢复它自己的组织选择，不自动选取组织列表第一项。
@@ -40,6 +42,8 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 当前 GUI 登录会打开系统浏览器，并要求用户把 JumpServer 确认页中的 `jms://` 链接或完整确认页 URL 粘贴回应用。登录尝试的 state 与 PKCE verifier 只保存在当前 GUI 进程内；私有协议注册与跨进程回调尚未实现。
 
 ### 目标解析
+
+显式 Account 引用按 ID 精确匹配，或按名称、Alias、Username 忽略大小写匹配。多个 Account 匹配同一引用时必须报歧义；CLI 连接、GUI 创建 Alias 和修改绑定账号共用该规则，不能通过取第一项隐式消除歧义。
 
 1. 根据显式参数或当前设置确定 Profile 和 Organization。
 2. 优先在该 Profile 范围内解析 Alias，否则查询 JumpServer Asset。

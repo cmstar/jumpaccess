@@ -115,10 +115,22 @@ func (s Service) lockProfile(name string) (func() error, error) {
 }
 
 func (s Service) SetAlias(profileName, name string, alias projectconfig.Alias) error {
+	return s.saveAlias(profileName, name, alias, true)
+}
+
+// CreateAlias 在同一配置事务内检查名称与写入，防止并发创建覆盖已有 Alias。
+func (s Service) CreateAlias(profileName, name string, alias projectconfig.Alias) error {
+	return s.saveAlias(profileName, name, alias, false)
+}
+
+func (s Service) saveAlias(profileName, name string, alias projectconfig.Alias, replace bool) error {
 	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
 		resolvedName, profile, err := resolveProfile(*value, profileName)
 		if err != nil {
 			return err
+		}
+		if _, exists := profile.Aliases[name]; exists && !replace {
+			return fmt.Errorf("alias %q already exists in profile %q", name, resolvedName)
 		}
 		if profile.Aliases == nil {
 			profile.Aliases = make(map[string]projectconfig.Alias)

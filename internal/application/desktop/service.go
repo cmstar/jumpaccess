@@ -8,6 +8,7 @@ import (
 	"time"
 
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
+	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/guiconfig"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
@@ -35,7 +36,7 @@ type SettingsService interface {
 	DeleteProfile(string) error
 	UseProfile(string) error
 	SetProfileOrganization(string, string) error
-	SetAlias(string, string, projectconfig.Alias) error
+	CreateAlias(string, string, projectconfig.Alias) error
 	DeleteAlias(string, string) error
 	RenameAlias(string, string, string) error
 	SetAliasAccount(string, string, string) error
@@ -220,7 +221,7 @@ func (s Service) CreateAlias(ctx context.Context, request CreateAliasRequest) (A
 		return AliasView{}, err
 	}
 	alias := projectconfig.Alias{Asset: detail.ID, Account: account, Organization: organization}
-	if err := s.Settings.SetAlias(profileName, name, alias); err != nil {
+	if err := s.Settings.CreateAlias(profileName, name, alias); err != nil {
 		return AliasView{}, err
 	}
 	return AliasView{Name: name, Asset: alias.Asset, Account: alias.Account, Organization: alias.Organization}, nil
@@ -491,13 +492,12 @@ func resolveAccount(accounts []jumpserver.Account, reference string) (string, er
 	if reference == "" {
 		return "", nil
 	}
-	for _, account := range accounts {
-		if account.ID == reference || strings.EqualFold(account.Name, reference) || strings.EqualFold(account.Alias, reference) || strings.EqualFold(account.Username, reference) {
-			if account.ID != "" {
-				return account.ID, nil
-			}
-			return account.Username, nil
-		}
+	account, err := connectapp.ResolvePermittedAccount(accounts, reference)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("account %q is not permitted by asset", reference)
+	if account.ID != "" {
+		return account.ID, nil
+	}
+	return account.Username, nil
 }
