@@ -20,13 +20,13 @@ for (const [os, target] of [['macOS', 'darwin/amd64'], ['macOS', 'darwin/arm64']
     const result = spawnSync(bash, ['--noprofile', '--norc', '-c',
       `wails() { printf '%s\\n' "$@"; }\n${script.replaceAll('${{ matrix.target }}', target)}`], {
       encoding: 'utf8',
-      env: { ...process.env, RUNNER_OS: os, BASH_COMPAT: '43' },
+      env: { ...process.env, RUNNER_OS: os, BASH_COMPAT: '43', GITHUB_WORKSPACE: '/tmp/jumpaccess' },
     })
     assert.ifError(result.error)
     assert.equal(result.status, 0, result.stderr)
     assert.deepEqual(result.stdout.trim().split(/\r?\n/), [
       'build', '-clean', '-platform', target, '-trimpath', '-m', '-nosyncgomod',
-      ...(os === 'Windows' ? ['-webview2', 'embed'] : []),
+      ...(os === 'Windows' ? ['-webview2', 'embed'] : ['-ldflags', '-extld=/tmp/jumpaccess/scripts/darwin-link.sh']),
     ])
   })
 }

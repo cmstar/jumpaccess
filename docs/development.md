@@ -172,6 +172,8 @@ $env:CGO_LDFLAGS = '-O2 -g -Wl,--fatal-warnings'
 
 失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64 和 macOS arm64 三项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
 
+macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scripts/darwin-link.sh` 调用 clang。Go 1.25 会为本项目和 Wails 2.14.0 中各个含 Objective-C 的 CGO 包追加 `-lobjc`，触发 [Go #67799](https://github.com/golang/go/issues/67799) 所述的重复库警告。脚本只保留首个 `-lobjc`，其他参数、严格警告与链接失败退出码均保持原样；不关闭重复库警告。上游修复后可移除脚本与两处 GUI 构建的 `-extld` 参数。本机 macOS 严格构建也应向 Wails 的 `-ldflags` 传入该脚本的绝对路径。
+
 ## 自动发布
 
 `.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步拒绝不符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的标签。标签指向的提交必须已经包含该工作流。发布顺序为：

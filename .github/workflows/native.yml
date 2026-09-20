@@ -92,6 +92,8 @@ jobs:
           options=(-clean -platform ${{ matrix.target }} -trimpath -m -nosyncgomod)
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             options+=(-webview2 embed)
+          else
+            options+=(-ldflags "-extld=$GITHUB_WORKSPACE/scripts/darwin-link.sh")
           fi
           wails build "${options[@]}"
 

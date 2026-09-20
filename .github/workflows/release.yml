@@ -290,7 +290,7 @@ jobs:
               -trimpath \
               -m \
               -nosyncgomod \
-              -ldflags "-s -w -X main.version=$VERSION"
+              -ldflags "-s -w -X main.version=$VERSION -extld=$GITHUB_WORKSPACE/scripts/darwin-link.sh"
           )
 
           app="$GITHUB_WORKSPACE/cmd/jumpaccess/build/bin/JumpAccess.app"
