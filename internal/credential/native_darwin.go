@@ -113,7 +113,7 @@ func (nativeBackend) Delete(key string) error {
 		return err
 	}
 	defer C.CFRelease(C.CFTypeRef(query))
-	status := C.SecItemDelete(query)
+	status := C.SecItemDelete(C.CFDictionaryRef(query))
 	if status == C.errSecItemNotFound {
 		return ErrNotFound
 	}
