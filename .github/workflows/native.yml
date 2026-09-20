@@ -88,12 +88,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          options=()
+          # macOS 系统 Bash 在 set -u 下不能展开空数组，基础参数始终保留。
+          options=(-clean -platform ${{ matrix.target }} -trimpath -m -nosyncgomod)
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             options+=(-webview2 embed)
           fi
-          wails build \
-            -clean -platform ${{ matrix.target }} -trimpath -m -nosyncgomod "${options[@]}"
+          wails build "${options[@]}"
 
       - name: 标记检查失败
         if: failure()

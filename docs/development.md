@@ -153,6 +153,8 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 
 ## 跨平台持续检查与警告策略
 
+GUI 构建脚本保持兼容 macOS 系统 Bash：启用 `set -u` 时，参数数组需包含基础构建参数，避免展开空数组。`node --test scripts/*.test.mjs` 会用 Wails 替身验证三个目标平台的实参；Windows 默认查找 Git 安装目录中的 Bash，也可通过 `JUMPACCESS_TEST_BASH` 指定路径。
+
 `.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
 
 Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。

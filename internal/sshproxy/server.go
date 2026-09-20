@@ -80,10 +80,16 @@ func handleGlobalRequests(requests <-chan *ssh.Request) {
 }
 
 func bridgeSession(local ssh.Channel, localRequests <-chan *ssh.Request, upstream ssh.Channel, upstreamRequests <-chan *ssh.Request) {
-	defer local.Close()
+	var requestMu sync.Mutex
+	defer func() {
+		// 上游可能在应答 shell/exec 后立即退出；先转发在途应答，再关闭本地通道。
+		requestMu.Lock()
+		defer requestMu.Unlock()
+		_ = local.Close()
+	}()
 	defer upstream.Close()
 
-	go forwardRequests(localRequests, upstream, allowedLocalRequest)
+	go forwardRequests(localRequests, upstream, allowedLocalRequest, &requestMu)
 	outputDone := make(chan struct{})
 	upstreamRequestDone := make(chan struct{})
 	go func() {
@@ -145,8 +151,9 @@ func copyInput(destination ssh.Channel, source ssh.Channel) {
 	_ = destination.CloseWrite()
 }
 
-func forwardRequests(requests <-chan *ssh.Request, destination ssh.Channel, allowed func(string) bool) {
+func forwardRequests(requests <-chan *ssh.Request, destination ssh.Channel, allowed func(string) bool, requestMu *sync.Mutex) {
 	for request := range requests {
+		requestMu.Lock()
 		accepted := false
 		var err error
 		if allowed(request.Type) {
@@ -155,6 +162,7 @@ func forwardRequests(requests <-chan *ssh.Request, destination ssh.Channel, allo
 		if request.WantReply {
 			_ = request.Reply(err == nil && accepted, nil)
 		}
+		requestMu.Unlock()
 	}
 }
 
