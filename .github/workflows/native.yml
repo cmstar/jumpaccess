@@ -1,0 +1,103 @@
+name: Native Checks
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-checks-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: 原生检查 (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows/amd64
+            runner: windows-latest
+            linker_flags: "-Wl,--fatal-warnings"
+            executable: jumpctl.exe
+          - target: darwin/amd64
+            runner: macos-15-intel
+            linker_flags: "-Wl,-fatal_warnings"
+            executable: jumpctl
+          - target: darwin/arm64
+            runner: macos-15
+            linker_flags: "-Wl,-fatal_warnings"
+            executable: jumpctl
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: "-O2 -g -Werror"
+      CGO_CXXFLAGS: "-O2 -g -Werror"
+      CGO_LDFLAGS: "-O2 -g ${{ matrix.linker_flags }}"
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cmd/jumpaccess/frontend/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: cmd/jumpaccess/frontend
+        run: npm ci
+
+      - name: 运行原生 Go 测试
+        run: go test -count=1 ./...
+
+      - name: 运行原生 Go 静态检查
+        run: go vet ./...
+
+      - name: 构建 CLI
+        run: go build -trimpath -o "$RUNNER_TEMP/${{ matrix.executable }}" ./cmd/jumpctl
+
+      - name: 安装匹配项目版本的 Wails CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          wails_version="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$wails_version"
+
+      - name: 构建 GUI
+        working-directory: cmd/jumpaccess
+        shell: bash
+        run: |
+          set -euo pipefail
+          options=()
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            options+=(-webview2 embed)
+          fi
+          wails build \
+            -clean -platform ${{ matrix.target }} -trimpath -m -nosyncgomod "${options[@]}"
+
+      - name: 标记检查失败
+        if: failure()
+        shell: bash
+        run: |
+          echo "::error title=原生检查失败 (${{ matrix.target }})::测试、静态检查或构建失败；编译及链接警告按错误处理，请查看上方失败步骤。"
+          echo '原生检查失败。请查看失败步骤中的文件、行号和诊断；禁止通过全局关闭警告或忽略退出码放行。' >> "$GITHUB_STEP_SUMMARY"

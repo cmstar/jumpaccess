@@ -151,11 +151,30 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 - 正式 ZIP、tar 或安装包仍应把两份文本作为独立文件一并分发，方便不执行程序的接收者阅读。嵌入是单文件分发的保障，不替代正式归档中的显式材料。
 - 新增或升级生产依赖时，必须重新检查目标平台的实际 package graph，更新第三方声明，并验证 `jumpctl licenses`。只用于测试、文档生成且不进入发布二进制的模块不需要混入发布声明。
 
+## 跨平台持续检查与警告策略
+
+`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
+
+Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。
+
+本机 Windows PowerShell 验证前可在当前会话设置以下参数，再运行下文测试与构建入口；它们不会更改用户级 `go env -w` 配置。macOS 本地验证使用相同的 CGO 开关和编译参数，但把链接参数换成 `-Wl,-fatal_warnings`。
+
+```powershell
+$env:CGO_ENABLED = '1'
+$env:CGO_CFLAGS = '-O2 -g -Werror'
+$env:CGO_CXXFLAGS = '-O2 -g -Werror'
+$env:CGO_LDFLAGS = '-O2 -g -Wl,--fatal-warnings'
+```
+
+默认没有警告豁免。确实无法立即修复的诊断必须在改动中写明具体文件或依赖版本、诊断名称、保留理由和移除条件；自有 C/Objective-C 代码仅在最小调用范围内用 diagnostic push/pop 将指定诊断降为 warning，保留日志。禁止全局 `-w`、`-Wno-error`、`continue-on-error` 或忽略构建退出码；第三方依赖警告优先升级或修复依赖，不预设整类豁免。
+
+失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64 和 macOS arm64 三项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
+
 ## 自动发布
 
 `.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步拒绝不符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的标签。标签指向的提交必须已经包含该工作流。发布顺序为：
 
-1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试。
+1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64 和 macOS arm64 的原生测试和严格构建。
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。

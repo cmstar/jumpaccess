@@ -17,6 +17,11 @@ jobs:
     name: 验证发布标签与测试
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: "-O2 -g -Werror"
+      CGO_CXXFLAGS: "-O2 -g -Werror"
+      CGO_LDFLAGS: "-O2 -g -Wl,--fatal-warnings"
     outputs:
       metadata_version: ${{ steps.version.outputs.metadata_version }}
       version: ${{ steps.version.outputs.version }}
@@ -72,12 +77,21 @@ jobs:
       - name: 测试发布脚本
         run: node --test scripts/*.test.mjs
 
+  verify-native:
+    name: 验证跨平台原生测试与构建
+    needs: verify
+    uses: ./.github/workflows/native.yml
+
   build-windows:
     name: 构建 Windows CLI 与 GUI
-    needs: verify
+    needs: [verify, verify-native]
     runs-on: windows-latest
     timeout-minutes: 30
     env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: "-O2 -g -Werror"
+      CGO_CXXFLAGS: "-O2 -g -Werror"
+      CGO_LDFLAGS: "-O2 -g -Wl,--fatal-warnings"
       METADATA_VERSION: ${{ needs.verify.outputs.metadata_version }}
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
@@ -103,6 +117,7 @@ jobs:
         shell: pwsh
         run: |
           $wailsVersion = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
+          if ($LASTEXITCODE -ne 0) { throw '读取 Wails 版本失败' }
           go install "github.com/wailsapp/wails/v2/cmd/wails@$wailsVersion"
 
       - name: 临时注入 Wails 产品版本
@@ -119,11 +134,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path $assets, $cliStage, $guiStage | Out-Null
 
           go build -trimpath -ldflags $ldflags -o (Join-Path $cliStage 'jumpctl.exe') ./cmd/jumpctl
+          if ($LASTEXITCODE -ne 0) { throw 'Windows CLI 构建失败' }
 
           $wails = Join-Path (go env GOPATH) 'bin/wails.exe'
           Push-Location cmd/jumpaccess
           try {
             & $wails build -clean -trimpath -m -nosyncgomod -webview2 embed -ldflags $ldflags
+            if ($LASTEXITCODE -ne 0) { throw 'Windows GUI 构建失败' }
           } finally {
             Pop-Location
           }
@@ -163,7 +180,7 @@ jobs:
 
   build-darwin-cli:
     name: 构建 macOS CLI (${{ matrix.arch }})
-    needs: verify
+    needs: [verify, verify-native]
     strategy:
       fail-fast: false
       matrix:
@@ -175,6 +192,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: "-O2 -g -Werror"
+      CGO_CXXFLAGS: "-O2 -g -Werror"
+      CGO_LDFLAGS: "-O2 -g -Wl,-fatal_warnings"
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
       - name: 检出标签代码
@@ -217,10 +238,14 @@ jobs:
 
   build-darwin-gui:
     name: 构建 macOS Universal GUI
-    needs: verify
+    needs: [verify, verify-native]
     runs-on: macos-15
     timeout-minutes: 40
     env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: "-O2 -g -Werror"
+      CGO_CXXFLAGS: "-O2 -g -Werror"
+      CGO_LDFLAGS: "-O2 -g -Wl,-fatal_warnings"
       METADATA_VERSION: ${{ needs.verify.outputs.metadata_version }}
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
@@ -301,6 +326,7 @@ jobs:
     name: 创建 GitHub Release
     needs:
       - verify
+      - verify-native
       - build-windows
       - build-darwin-cli
       - build-darwin-gui
