@@ -1132,6 +1132,33 @@ test('删除 Alias 使用应用内确认对话框', async () => {
   }
 })
 
+test.each(['资产搜索', '创建 Alias', '编辑 Alias', '快速连接'])('%s 禁用自动文本更正并保留手动大小写输入', async (target) => {
+  const user = userEvent.setup()
+  render(<App backend={makeBackend()} />)
+  const row = await screen.findByTestId('asset-row-asset-1')
+  let input: HTMLElement
+  if (target === '资产搜索') {
+    input = screen.getByRole('searchbox', { name: '搜索资产或 Alias' })
+  } else if (target === '快速连接') {
+    await user.keyboard('{Control>}k{/Control}')
+    input = await screen.findByRole('combobox', { name: '搜索资产或别名' })
+  } else {
+    if (target === '创建 Alias') {
+      await user.click(within(screen.getByRole('complementary', { name: '资产详情' })).getByRole('button', { name: '添加 Alias' }))
+    } else {
+      await user.click(within(row).getByRole('button', { name: '编辑 production-web' }))
+    }
+    input = within(await screen.findByRole('dialog', { name: target })).getByLabelText('Alias 名称')
+  }
+  // DOM 测试验证字段约定；macOS 原生更正是否被抑制仍需实机验证。
+  expect(input).toHaveAttribute('autocorrect', 'off')
+  expect(input).toHaveAttribute('autocapitalize', 'none')
+  expect(input).toHaveAttribute('spellcheck', 'false')
+  await user.clear(input)
+  await user.type(input, 'a Mixed-ID ')
+  expect(input).toHaveValue('a Mixed-ID ')
+})
+
 test('编辑 Alias 名称时保留资产和默认账号', async () => {
   const renamedAlias = { ...assetPage.results[0].aliases[0], name: 'primary-web' }
   const backend = makeBackend({ renameAlias: vi.fn().mockResolvedValue(renamedAlias) })
