@@ -55,6 +55,11 @@ func (w *fakeDesktopWindow) GetPosition(context.Context) (int, int) { return w.x
 func (w *fakeDesktopWindow) GetSize(context.Context) (int, int)     { return w.width, w.height }
 func (w *fakeDesktopWindow) IsMaximized(context.Context) bool       { return w.maximized }
 func (w *fakeDesktopWindow) IsNormal(context.Context) bool          { return w.normal }
+func (w *fakeDesktopWindow) IsFullscreen(context.Context) bool      { return false }
+func (w *fakeDesktopWindow) Fullscreen(context.Context)             {}
+func (w *fakeDesktopWindow) Unfullscreen(context.Context)           {}
+func (w *fakeDesktopWindow) Maximize(context.Context)               { w.maximized = true; w.normal = false }
+func (w *fakeDesktopWindow) Unmaximize(context.Context)             { w.maximized = false; w.normal = true }
 func (w *fakeDesktopWindow) SetPosition(_ context.Context, x, y int) {
 	w.setX, w.setY, w.positionSet = x, y, true
 }

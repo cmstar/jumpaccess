@@ -19,6 +19,7 @@ export interface Preferences {
   terminalCursorBlink: boolean
   terminalScrollbarVisibility: TerminalScrollbarVisibility
   terminalShowStatusBar: boolean
+  terminalFullscreenHideToolbar: boolean
   terminalColorScheme: string
   terminalRightClickAction: TerminalRightClickAction
   terminalWarnOnMultiLinePaste: boolean
@@ -231,6 +232,7 @@ export interface Backend {
   setAliasAccount(request: { profile: string; name: string; account: string }): Promise<void>
   minimizeWindow(): Promise<void>
   ensureWindowVisible(): Promise<void>
+  setWindowFullscreen(enabled: boolean): Promise<void>
   savePreferences(preferences: Preferences): Promise<void>
   chooseTerminalBackground(currentPath: string): Promise<string>
   chooseDownloadFolder(currentPath: string): Promise<string>
@@ -282,7 +284,7 @@ type GoPreferences = {
   Downloads: { Mode: Preferences['downloadMode']; Directory: string }
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; ShowStatusBar: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
+  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; ShowStatusBar: boolean; FullscreenHideToolbar: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean; NewTabPosition: NewTabPosition }
 }
 
@@ -313,6 +315,7 @@ type DesktopBinding = {
   SetAliasAccount(request: Parameters<Backend['setAliasAccount']>[0]): Promise<void>
   MinimizeWindow(): Promise<void>
   EnsureWindowVisible(): Promise<void>
+  SetWindowFullscreen(enabled: boolean): Promise<void>
   SavePreferences(preferences: GoPreferences): Promise<void>
   ChooseTerminalBackground(currentPath: string): Promise<string>
   ChooseDownloadFolder(currentPath: string): Promise<string>
@@ -363,6 +366,8 @@ declare global {
       Quit?(): void
       WindowMinimise?(): void
       WindowIsMaximised?(): Promise<boolean>
+      WindowIsFullscreen?(): Promise<boolean>
+      WindowIsMinimised?(): Promise<boolean>
       WindowToggleMaximise?(): void
       OnFileDrop?(callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean): void
       OnFileDropOff?(): void
@@ -395,6 +400,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalCursorBlink: value.Terminal.CursorBlink,
     terminalScrollbarVisibility: value.Terminal.ScrollbarVisibility,
     terminalShowStatusBar: value.Terminal.ShowStatusBar,
+    terminalFullscreenHideToolbar: value.Terminal.FullscreenHideToolbar,
     terminalColorScheme: value.Terminal.ColorScheme,
     terminalRightClickAction: value.Terminal.RightClickAction,
     terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
@@ -421,6 +427,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       CursorBlink: value.terminalCursorBlink,
       ScrollbarVisibility: value.terminalScrollbarVisibility,
       ShowStatusBar: value.terminalShowStatusBar,
+      FullscreenHideToolbar: value.terminalFullscreenHideToolbar,
       ColorScheme: value.terminalColorScheme,
       RightClickAction: value.terminalRightClickAction,
       WarnOnMultiLinePaste: value.terminalWarnOnMultiLinePaste,
@@ -466,6 +473,7 @@ export const wailsBackend: Backend = {
   setAliasAccount: (request) => binding().SetAliasAccount(request),
   minimizeWindow: () => binding().MinimizeWindow(),
   ensureWindowVisible: () => binding().EnsureWindowVisible(),
+  setWindowFullscreen: enabled => binding().SetWindowFullscreen(enabled),
   savePreferences: (preferences) => binding().SavePreferences(fromPreferences(preferences)),
   chooseTerminalBackground: (currentPath) => binding().ChooseTerminalBackground(currentPath),
   chooseDownloadFolder: (currentPath) => binding().ChooseDownloadFolder(currentPath),

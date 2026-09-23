@@ -128,6 +128,12 @@ Host production-web
 
 `proxy` 模式不打开浏览器，也不提示选择 Account。缺少登录、Refresh Token 失效、目标或 Account 不唯一、上游主机尚未信任时，进程会在 SSH banner 之前失败，只向 stderr 写入可操作错误并返回非零状态。先运行 `jumpctl auth login` 完成授权；未知上游 gateway 需要先用 `jumpctl ssh` 进行一次人工指纹确认。
 
+## SSH 终端全屏
+
+在 SSH Tab 按 F11 切换全屏，Windows 也支持 Alt+Enter；再按一次恢复原窗口位置、大小或最大化状态。全屏隐藏 Tab 栏和底部状态栏，鼠标移到顶部中央可显示会话名称和退出按钮。Esc 仍用于终端操作。
+
+“设置 → 终端行为 → 全屏时隐藏工具栏”默认开启；关闭后，全屏保留 SSH 工具栏、传输进度和取消按钮。全屏切换不重建终端或中断传输，断连后仍可按 Enter 重连。关闭程序后，下次以全屏前的窗口状态启动。
+
 ## SSH 终端内上传和下载（ZMODEM）
 
 桌面客户端支持在 SSH 会话中使用 `rz` / `sz`，远端需安装 `lrzsz`，本机不需要额外安装这两个命令。

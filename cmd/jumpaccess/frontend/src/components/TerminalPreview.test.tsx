@@ -25,6 +25,7 @@ const preferences: Preferences = {
   terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true,
   terminalScrollbarVisibility: 'active',
   terminalShowStatusBar: true,
+  terminalFullscreenHideToolbar: true,
   terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
 }
 

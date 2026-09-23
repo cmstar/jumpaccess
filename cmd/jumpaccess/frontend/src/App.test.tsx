@@ -187,6 +187,7 @@ const bootstrapState: BootstrapState = {
     terminalCursorBlink: true,
     terminalScrollbarVisibility: 'active',
     terminalShowStatusBar: true,
+    terminalFullscreenHideToolbar: true,
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
@@ -247,6 +248,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     setAliasAccount: vi.fn().mockResolvedValue(undefined),
     minimizeWindow: vi.fn().mockResolvedValue(undefined),
     ensureWindowVisible: vi.fn().mockResolvedValue(undefined),
+    setWindowFullscreen: vi.fn().mockResolvedValue(undefined),
     savePreferences: vi.fn().mockResolvedValue(undefined),
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
     getAuthStatus: vi.fn().mockResolvedValue(bootstrapState.profiles[0].auth),
@@ -1533,6 +1535,82 @@ test('配色保存失败时恢复已保存方案与预览', async () => {
   await screen.findByText('cannot save preferences')
   expect(screen.getByRole('combobox', { name: '配色方案 Nord' })).toBeVisible()
   expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
+})
+
+test('SSH 全屏快捷键隔离输入、忽略长按并复用终端，Esc 不退出', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  fireEvent.keyDown(window, { key: 'F11' })
+  expect(backend.setWindowFullscreen).not.toHaveBeenCalled()
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  const host = await screen.findByLabelText('production-web SSH 终端')
+  const remote = vi.fn()
+  host.addEventListener('keydown', remote)
+  fireEvent.keyDown(host, { key: 'F11' })
+  await waitFor(() => expect(document.querySelector('.app-shell')).toHaveClass('terminal-fullscreen'))
+  expect(remote).not.toHaveBeenCalled()
+  expect(document.querySelector('.titlebar')).toHaveAttribute('hidden')
+  expect(document.querySelector('.terminal-header')).toHaveAttribute('hidden')
+  expect(document.querySelector('.terminal-statusbar')).not.toBeInTheDocument()
+  fireEvent.keyDown(host, { key: 'F11', repeat: true })
+  fireEvent.keyDown(host, { key: 'Escape' })
+  expect(backend.setWindowFullscreen).toHaveBeenCalledTimes(1)
+  fireEvent.keyDown(host, { key: 'Enter', altKey: true })
+  await waitFor(() => expect(document.querySelector('.app-shell')).not.toHaveClass('terminal-fullscreen'))
+  expect(backend.setWindowFullscreen).toHaveBeenLastCalledWith(false)
+  expect(screen.getByLabelText('production-web SSH 终端')).toBe(host)
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+})
+
+test('全屏工具栏开关位于终端行为并保存，关闭后全屏保留工具栏', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const panel = screen.getByRole('heading', { name: '终端行为' }).closest('section')!
+  const toggle = within(panel).getByRole('switch', { name: '全屏时隐藏工具栏' })
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await user.click(toggle)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalFullscreenHideToolbar: false })))
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  fireEvent.keyDown(window, { key: 'F11' })
+  await waitFor(() => expect(document.querySelector('.app-shell')).toHaveClass('terminal-fullscreen'))
+  expect(document.querySelector('.terminal-header')).not.toHaveAttribute('hidden')
+  await user.click(screen.getByRole('button', { name: '退出全屏' }))
+  await waitFor(() => expect(document.querySelector('.app-shell')).not.toHaveClass('terminal-fullscreen'))
+})
+
+test('全屏中快速连接先恢复窗口，切换失败时不打开弹窗', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  fireEvent.keyDown(window, { key: 'F11' })
+  await waitFor(() => expect(document.querySelector('.app-shell')).toHaveClass('terminal-fullscreen'))
+  vi.mocked(backend.setWindowFullscreen).mockRejectedValueOnce(new Error('退出全屏失败'))
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+  await screen.findByText('退出全屏失败')
+  expect(screen.queryByRole('dialog', { name: '快速连接' })).not.toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+  await screen.findByRole('dialog', { name: '快速连接' })
+  expect(document.querySelector('.app-shell')).not.toHaveClass('terminal-fullscreen')
+})
+
+test('全屏工具栏偏好保存失败后恢复最近成功值', async () => {
+  const backend = makeBackend({ savePreferences: vi.fn().mockRejectedValue(new Error('fullscreen preference failed')) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await user.click(screen.getByRole('switch', { name: '全屏时隐藏工具栏' }))
+  await screen.findByText('fullscreen preference failed')
+  expect(screen.getByRole('switch', { name: '全屏时隐藏工具栏' })).toHaveAttribute('aria-checked', 'true')
 })
 
 test('SSH 状态栏开关位于终端样式，默认开启，保存后已有会话隐藏且可恢复', async () => {

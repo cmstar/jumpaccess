@@ -95,6 +95,7 @@ const preferences: Preferences = {
   terminalCursorBlink: true,
   terminalScrollbarVisibility: 'active',
   terminalShowStatusBar: true,
+  terminalFullscreenHideToolbar: true,
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,

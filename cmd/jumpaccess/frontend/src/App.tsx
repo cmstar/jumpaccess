@@ -42,6 +42,7 @@ import './App.css'
 import { AssetIcon } from './components/AssetIcon'
 import { NotificationProvider, useNotifications } from './components/Notifications'
 import { useCopyText } from './components/useCopyText'
+import { useTerminalFullscreen } from './model/useTerminalFullscreen'
 import { DeveloperSettings } from './components/DeveloperSettings'
 import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
@@ -389,6 +390,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const selectedAsset = assets.results.find((asset) => asset.id === selectedAssetID) ?? assets.results[0]
   const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
   const activeTab = workspace.tabs.find((tab) => tab.id === workspace.activeTabID)
+  const terminalFullscreen = useTerminalFullscreen(backend, activeTab, showError, () => showInfo(navigator.platform.toLowerCase().includes('mac') ? '已进入全屏，按 F11 退出；鼠标移到顶部可显示退出按钮。' : '已进入全屏，按 F11 或 Alt+Enter 退出；鼠标移到顶部可显示退出按钮。'))
   const filteredAssets = useMemo(() => assets.results.filter((asset) => {
     if (aliasFilter === 'with-alias') return asset.aliases.length > 0
     if (aliasFilter === 'without-alias') return asset.aliases.length === 0
@@ -660,15 +662,16 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        setQuickOpen(true)
+        event.stopPropagation()
+        if (!event.repeat) void terminalFullscreen.runWindowed(() => setQuickOpen(true))
       } else if (event.key === '/' && activeTab?.kind === 'assets' && !(event.target instanceof HTMLInputElement)) {
         event.preventDefault()
         searchRef.current?.focus()
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeTab?.kind])
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [activeTab?.kind, terminalFullscreen.runWindowed])
 
   useEffect(() => {
     const ensureWindowVisible = () => {
@@ -1168,8 +1171,9 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   }
 
   return (
-    <TerminalBackgroundProvider backend={backend} settings={bootstrap.preferences.terminalBackground}><main className={`app-shell ${navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'windows'}`}>
+    <TerminalBackgroundProvider backend={backend} settings={bootstrap.preferences.terminalBackground}><main className={`app-shell ${navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'windows'}${terminalFullscreen.fullscreen ? ' terminal-fullscreen' : ''}`}>
       <TitleBar
+        fullscreen={terminalFullscreen.fullscreen}
         backend={backend}
         activeTabID={workspace.activeTabID}
         auth={currentAuth}
@@ -1184,6 +1188,9 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         showTabCloseButtons={bootstrap.preferences.showTabCloseButtons}
         tabs={workspace.tabs}
       />
+      {terminalFullscreen.fullscreen && activeTab?.kind === 'ssh' ? <div className="fullscreen-exit-area">
+        <div className="fullscreen-exit-controls"><span>{tabTitle(activeTab)} · {activeTab.descriptor.account}</span><button className="button secondary small" type="button" onClick={() => void terminalFullscreen.exit()} title="退出全屏 (F11)"><X />退出全屏</button></div>
+      </div> : null}
       <section className="workspace">
         {activeTab?.kind === 'assets' ? <header className="asset-context-bar">
           <div className="context-switchers">
@@ -1210,7 +1217,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         ) : null}
 
         {workspace.tabs.filter((tab): tab is SFTPTab => tab.kind === 'sftp').map((tab) => <div className="sftp-tab-content" hidden={tab.id !== workspace.activeTabID} key={tab.id}><SFTPPane active={tab.id === workspace.activeTabID} backend={backend} tab={tab} onReconnect={() => void beginSFTPConnection(tab.id, tab.descriptor)} onDisconnect={() => void requestSFTPClose(tab, true)} /></div>)}
-        {activeTab?.kind === 'ssh' ? <SSHView backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void connectSFTPFromSSH(activeTab)} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onRestart={() => void restartSSHConnection(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? { text: disconnectedMessage, start: 0 }} preferences={bootstrap.preferences} tab={activeTab} /> : null}
+        {activeTab?.kind === 'ssh' ? <SSHView fullscreen={terminalFullscreen.fullscreen} backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void terminalFullscreen.runWindowed(() => connectSFTPFromSSH(activeTab))} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onRestart={() => void restartSSHConnection(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? { text: disconnectedMessage, start: 0 }} preferences={bootstrap.preferences} tab={activeTab} /> : null}
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点和认证状态。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">使用中</span> : <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>启用</button>}</div><h2>{item.name}</h2><dl><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void copyText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.auth.loggedIn ? <><button className="button ghost small" disabled={refreshingProfiles.has(item.name)} onClick={() => void refreshProfileAuth(item.name)}><RefreshCcw className={refreshingProfiles.has(item.name) ? 'spin' : ''} />{refreshingProfiles.has(item.name) ? '刷新中…' : '刷新认证'}</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -1244,7 +1251,8 @@ function tabIcon(tab: AppTab) {
   return <TerminalSquare />
 }
 
-function TitleBar({ backend, activeTabID, auth, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+function TitleBar({ backend, activeTabID, auth, fullscreen, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+  fullscreen: boolean
   backend: Backend
   activeTabID: string
   auth: ReturnType<typeof authPresentation>
@@ -1270,8 +1278,8 @@ function TitleBar({ backend, activeTabID, auth, onActivate, onClose, onMinimize,
     const flags = window.wails?.flags
     if (mac || !flags) return
     // Wails 2.14 的边缘光标检测不判断最大化，需同步关闭并清理上次命中的边缘。
-    flags.enableResize = !value
-    if (value) {
+    flags.enableResize = !value && !fullscreen
+    if (value || fullscreen) {
       if (flags.resizeEdge) document.documentElement.style.cursor = flags.defaultCursor ?? ''
       flags.resizeEdge = undefined
     }
@@ -1282,18 +1290,21 @@ function TitleBar({ backend, activeTabID, auth, onActivate, onClose, onMinimize,
   }
   useEffect(() => {
     if (mac) return
+    let disposed = false
     const syncWindowState = () => {
       const state = runtime?.WindowIsMaximised?.()
-      if (state) void state.then(applyWindowState).catch(() => undefined)
+      if (state) void state.then(value => { if (!disposed) applyWindowState(value) }).catch(() => undefined)
+      else applyWindowState(false)
     }
     syncWindowState()
     window.addEventListener('resize', syncWindowState)
     window.addEventListener('focus', syncWindowState)
     return () => {
+      disposed = true
       window.removeEventListener('resize', syncWindowState)
       window.removeEventListener('focus', syncWindowState)
     }
-  }, [mac, runtime])
+  }, [mac, runtime, fullscreen])
   const activateFromKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex = index
     if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
@@ -1306,7 +1317,7 @@ function TitleBar({ backend, activeTabID, auth, onActivate, onClose, onMinimize,
     const tabButtons = event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
     tabButtons?.[nextIndex]?.focus()
   }
-  return <header className="titlebar">
+  return <header className="titlebar" hidden={fullscreen}>
     <div className="titlebar-brand" title="JumpAccess"><AppLogo /></div>
     <div aria-label="工作区 Tab" className="tab-strip" role="tablist">
       {tabs.map((tab, index) => <div
@@ -1413,10 +1424,11 @@ function StartPage({ onAction }: { onAction: (action: SingletonTabKind | 'quick'
   </section>
 }
 
-function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onRestart, onReconnect, output, preferences, tab }: {
+function SSHView({ fullscreen, backend, transfer, onTransferCommand, onCancelTransfer, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onRestart, onReconnect, output, preferences, tab }: {
   transfer?: ZmodemState
   onTransferCommand: (command: string) => void
   onCancelTransfer: () => void
+  fullscreen: boolean
   backend: Backend
   currentDirectory: string
   canConnectSFTP: boolean
@@ -1469,8 +1481,10 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
   const latencyTitle = latencyAvailable
     ? `${statusLabel} · 到 JumpServer SSH 网关的往返延迟 ${latency.milliseconds} ms`
     : status === 'active' ? `${statusLabel} · 正在检测 JumpServer SSH 网关延迟` : statusLabel
-  return <section className={`terminal-panel tab-terminal${preferences.terminalShowStatusBar ? '' : ' terminal-statusbar-hidden'}`}>
-    <div className="terminal-header">
+  const showStatusBar = preferences.terminalShowStatusBar && !fullscreen
+  const hideToolbar = fullscreen && preferences.terminalFullscreenHideToolbar
+  return <section className={`terminal-panel tab-terminal${showStatusBar ? '' : ' terminal-statusbar-hidden'}${hideToolbar ? ' terminal-toolbar-hidden' : ''}`}>
+    <div className="terminal-header" hidden={hideToolbar}>
       <div className="terminal-toolbar">
         <div className="terminal-toolbar-info">
           <strong className="terminal-toolbar-name">{descriptor.alias || assetName}</strong>
@@ -1496,7 +1510,7 @@ function SSHView({ backend, transfer, onTransferCommand, onCancelTransfer, canCo
       <SSHTransferProgress key={session.id} state={transfer} onCancel={onCancelTransfer} />
     </div>
     <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output.text} outputStart={output.start} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
-    {preferences.terminalShowStatusBar ? <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div> : null}
+    {showStatusBar ? <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div> : null}
   </section>
 }
 
@@ -1896,6 +1910,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             </div>
             <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
             <div className="setting-row"><span><strong>选中文本时按回车复制</strong><small id="terminal-copy-on-enter-help">按回车复制选中文本并取消选择，不向终端发送回车。</small></span><button aria-label="选中文本时按回车复制" aria-describedby="terminal-copy-on-enter-help" role="switch" aria-checked={preferences.terminalCopyOnEnter} className={preferences.terminalCopyOnEnter ? 'switch on' : 'switch'} onClick={() => update({ terminalCopyOnEnter: !preferences.terminalCopyOnEnter })}><span /></button></div>
+            <div className="setting-row"><span><strong>全屏时隐藏工具栏</strong><small id="terminal-fullscreen-toolbar-help">关闭后，全屏保留 SSH 工具栏、传输进度和取消按钮。开启后可先退出全屏再操作。</small></span><button aria-label="全屏时隐藏工具栏" aria-describedby="terminal-fullscreen-toolbar-help" type="button" role="switch" aria-checked={preferences.terminalFullscreenHideToolbar} className={preferences.terminalFullscreenHideToolbar ? 'switch on' : 'switch'} onClick={() => update({ terminalFullscreenHideToolbar: !preferences.terminalFullscreenHideToolbar })}><span /></button></div>
             <div className="terminal-style-fields download-settings-fields">
               <div className="terminal-style-row">
                 <div><label htmlFor="download-mode">下载保存位置</label><small className="setting-help" id="download-mode-help">用于 SSH 中的 sz 命令及下载按钮。记忆目录首次使用或失效时从系统下载目录开始，自动保存目录不可用时会询问。</small></div>

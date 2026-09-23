@@ -107,6 +107,12 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 
 直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
+### 桌面 SSH 全屏
+
+全屏由应用层 `useTerminalFullscreen` 拦截捕获阶段的键盘事件，通过桌面适配器 `SetWindowFullscreen` 串行调用 Wails 原生窗口接口。桌面适配器保留进入前的普通边界与最大化标记，全屏期间退出程序使用该快照保存配置；退出后复用显示器恢复逻辑。macOS 禁用 Esc 自动退出全屏，并等待动画边界稳定。前端在原生状态确认后隐藏框体，复用现有 xterm 与 ResizeObserver；系统退出全屏时同步恢复界面，最小化不视为退出。
+
+`terminal.fullscreen_hide_toolbar` 默认 true，控制全屏时 SSH 工具栏（含传输区域）是否隐藏，独立于普通窗口的状态栏设置。设置、演示数据与 Wails 偏好映射保持一致；浏览器演示报告不支持原生全屏，不使用网页全屏模拟桌面窗口状态。
+
 ### 桌面 ZMODEM
 
 取消传输先使旧异步回调失效，再经发送队列发送 8 个 CAN 和 10 个退格组成的取消序列；发送队列的先前失败不得阻止取消信号。协议库 `abort()` 后会把剩余数据当作普通终端输出，因此控制器在解析入口隔离取消后的在途数据，立即丢弃并完成输出确认，不继续写入下载文件。取消信号发送成功后等待 500 ms 无数据的静默窗口，每个迟到数据块重新计时；本地文件清理与静默窗口都结束后才恢复输入和显示取消结果。静默窗口是流恢复策略，不代表远端明确确认；期间的 Shell 提示符可能被一并丢弃。终端保留原有传输进度行中的 `Transfer cancelled`，不额外打印要求按 Enter 刷新的提示，也不主动向远端发送回车。10 秒仍未停止或取消信号发送失败时提示重新连接 SSH，并继续隔离数据，不误报取消完成。销毁会话清除计时器和等待任务。

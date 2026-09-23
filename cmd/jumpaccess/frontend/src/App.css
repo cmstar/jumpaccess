@@ -2569,6 +2569,45 @@ details > summary::-webkit-details-marker {
 }
 
 .terminal-header { min-width: 0; }
+.app-shell.terminal-fullscreen,
+.terminal-panel.terminal-toolbar-hidden {
+  grid-template-rows: minmax(0, 1fr);
+}
+.titlebar[hidden], .terminal-header[hidden] { display: none; }
+.fullscreen-exit-area {
+  position: fixed;
+  z-index: 110;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  height: 8px;
+}
+.fullscreen-exit-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  color: var(--text);
+  background: var(--surface);
+  transform: translateY(-100%);
+  transition: transform 120ms ease;
+}
+.fullscreen-exit-controls span {
+  max-width: min(50vw, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fullscreen-exit-controls button { flex-shrink: 0; }
+.fullscreen-exit-area:hover, .fullscreen-exit-area:focus-within { height: auto; }
+.fullscreen-exit-area:hover .fullscreen-exit-controls,
+.fullscreen-exit-area:focus-within .fullscreen-exit-controls { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .fullscreen-exit-controls { transition: none; }
+}
 .ssh-transfer-progress {
   display: flex;
   align-items: center;
