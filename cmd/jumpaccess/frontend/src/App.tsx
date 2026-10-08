@@ -209,7 +209,13 @@ function accountLabel(account: Account): string {
 
 function formatSyncTime(value: Date | null): string {
   if (!value) return '尚未同步'
-  return value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const now = new Date()
+  const time = value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  if (value.getFullYear() === now.getFullYear() && value.getMonth() === now.getMonth() && value.getDate() === now.getDate()) {
+    return time
+  }
+  const date = value.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  return `${date} ${time}`
 }
 
 function filterQuickAssets(assets: Asset[], query: string, limit = 20): Asset[] {

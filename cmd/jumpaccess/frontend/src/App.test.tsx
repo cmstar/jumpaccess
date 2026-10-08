@@ -838,6 +838,34 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
   expect(await screen.findByText('production 资产同步成功')).toBeInTheDocument()
 })
 
+test.each([
+  { name: '当天', synced: [2026, 9, 8], today: [2026, 9, 8], expected: '11:19:28' },
+  { name: '跨日', synced: [2026, 9, 7], today: [2026, 9, 8], expected: '2026/10/07 11:19:28' },
+  { name: '跨月同日', synced: [2026, 8, 8], today: [2026, 9, 8], expected: '2026/09/08 11:19:28' },
+  { name: '跨年同月同日', synced: [2025, 9, 8], today: [2026, 9, 8], expected: '2025/10/08 11:19:28' },
+])('最近同步按本地日期显示时间：$name', async ({ synced, today, expected }) => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(new Date(synced[0], synced[1], synced[2], 11, 19, 28))
+    const backend = makeBackend()
+    const { rerender } = render(<App backend={backend} />)
+    expect(await screen.findByText('最近同步 11:19:28')).toBeInTheDocument()
+
+    vi.setSystemTime(new Date(today[0], today[1], today[2], 12))
+    rerender(<App backend={backend} />)
+    expect(screen.getByText(`最近同步 ${expected}`)).toBeInTheDocument()
+    expect(backend.listAssets).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('首次资产加载完成前显示尚未同步', async () => {
+  const backend = makeBackend({ listAssets: vi.fn().mockReturnValue(new Promise<AssetPage>(() => {})) })
+  render(<App backend={backend} />)
+  expect(await screen.findByText('最近同步 尚未同步')).toBeInTheDocument()
+})
+
 test('资产列表每页 100 条，前后翻页使用对应偏移量', async () => {
   const results = Array.from({ length: 101 }, (_, index) => ({
     ...assetPage.results[0], id: `asset-${index + 1}`, name: `分页资产-${index + 1}`, aliases: [],
