@@ -142,6 +142,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 - macOS 使用 `TitleBarHiddenInset` 并保留左侧原生 traffic lights，前端不渲染右侧窗口控制按钮。
 - Windows 通过 `EnumDisplayMonitors` 与显示器工作区恢复窗口；macOS 通过 AppKit `NSScreen` 恢复窗口。不得把 Wails 在不同平台返回的窗口坐标直接当作统一的虚拟桌面绝对坐标持久化。
 - 终端字体候选在 Windows 通过 GDI 枚举并按 fixed-pitch 指标筛选，在 macOS 通过 CoreText family 与 monospace trait 筛选；其他目标或原生接口失败时返回空候选，由前端保留 `monospace` 和手工输入能力。
+- xterm 6.0.0 优先使用 OffscreenCanvas 测量字符尺寸，但 macOS WKWebView 的本机字体匹配可能与 DOM 显示不同。`TerminalFitAddon` 在 macOS WebKit 首次 fit 时安装 `terminalCharMeasurement.ts` 的 DOM 测量策略，每次计算行列数前重新测量；采用相同字体、字号和普通字重的隐藏 DOM 元素，重复 32 个字符降低取整误差，并通过 offset 尺寸避开祖先 transform。隐藏时保留最后有效 DOM 尺寸，首次隐藏时不沿用 Canvas 尺寸；释放适配器时还原策略并移除测量元素，不修改全局 Canvas API。由于 xterm 没有公开测量扩展点，此处依赖 `_core._charSizeService._measureStrategy`，升级时必须核对这些字段并运行 `TerminalFitAddon.fontMeasurement.test.ts`，该测试使用真实 xterm，模拟 Canvas 16.99px / DOM 11.16px 的差异，覆盖网格、resize 事件、字号、行高、隐藏恢复与销毁。原生验收仍需在 macOS WKWebView 使用实际安装的字体检查，Windows 模拟测试不代表完成原生验证。相关上游报告见 [WebKit #316777](https://bugs.webkit.org/show_bug.cgi?id=316777)，尚不能据此认定所有字体异常都由同一内部原因引起。
 
 ## 许可证与发布物
 

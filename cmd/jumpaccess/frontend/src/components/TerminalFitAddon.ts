@@ -1,10 +1,12 @@
 import { FitAddon } from '@xterm/addon-fit'
 import type { Terminal } from '@xterm/xterm'
+import { createTerminalDomMeasurement } from './terminalCharMeasurement'
 
 // addon-fit 0.11 在 scrollback 非零时始终预留滚动条宽度。
 // 按样式中的实际宽度计算列数，隐藏时完全回收；保留历史缓冲区和原有 fit 生命周期。
 export class TerminalFitAddon extends FitAddon {
   private targetTerminal?: Terminal
+  private domMeasurement?: ReturnType<typeof createTerminalDomMeasurement>
 
   override activate(terminal: Terminal) {
     super.activate(terminal)
@@ -12,6 +14,12 @@ export class TerminalFitAddon extends FitAddon {
   }
 
   override proposeDimensions() {
+    // open 后才有字符尺寸服务。先修正 macOS WebKit 度量，再计算列数；
+    // 每次 fit 都重测，覆盖首次隐藏以及隐藏期间修改字体、字号的情况。
+    if (this.domMeasurement === undefined && this.targetTerminal?.element) {
+      this.domMeasurement = createTerminalDomMeasurement(this.targetTerminal)
+    }
+    this.domMeasurement?.measure()
     const dimensions = super.proposeDimensions()
     const terminal = this.targetTerminal
     const element = terminal?.element
@@ -28,5 +36,12 @@ export class TerminalFitAddon extends FitAddon {
       dimensions.cols = Math.max(2, Math.floor(width / cellWidth))
     }
     return dimensions
+  }
+
+  override dispose() {
+    this.domMeasurement?.dispose()
+    this.domMeasurement = undefined
+    this.targetTerminal = undefined
+    super.dispose()
   }
 }
