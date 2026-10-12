@@ -333,6 +333,27 @@ beforeEach(() => {
   terminalMock.writes = []
 })
 
+test.each([
+  ['0xProto Nerd Font Mono', '"0xProto Nerd Font Mono"'],
+  ['"0xProto Nerd Font Mono"', '"0xProto Nerd Font Mono"'],
+  ["'0xProto Nerd Font Mono'", "'0xProto Nerd Font Mono'"],
+])('SSH 使用字体配置 %s 初始化并原地更新字体，保留输出和选区', (terminalFontFamily, expected) => {
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
+  const view = (font: string) => <TerminalPane backend={backend} output="history" preferences={{ ...preferences, terminalFontFamily: font }} session={activeSession} />
+  const { rerender } = render(view(terminalFontFamily))
+  expect(terminalMock.options?.fontFamily).toBe(expected)
+  const instances = terminalMock.instances
+  terminalMock.selection = 'history'
+  terminalMock.writes = []
+  rerender(view('monospace'))
+  expect(terminalMock.options?.fontFamily).toBe('monospace')
+  rerender(view('0xProto Nerd Font Mono'))
+  expect(terminalMock.options?.fontFamily).toBe('"0xProto Nerd Font Mono"')
+  expect(terminalMock.instances).toBe(instances)
+  expect(terminalMock.selection).toBe('history')
+  expect(terminalMock.writes).toEqual([])
+})
+
 test('配色和字体即时更新且保留终端选区，外围主题不改变终端配色', () => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
   const initial = { ...preferences, terminalColorScheme: 'nord' }

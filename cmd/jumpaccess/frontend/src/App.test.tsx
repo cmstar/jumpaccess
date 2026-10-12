@@ -119,8 +119,9 @@ test('SSH 传输按钮在断开按钮之前，切换 Tab 不重复处理传输�
   await waitFor(() => expect(screen.getByLabelText('上传文件（ZMODEM）')).toBeEnabled())
 })
 
-const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
+const { terminalKeyHandlers, terminalOptions, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
+  terminalOptions: [] as Array<Record<string, unknown>>,
   terminalOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   terminalState: {
     inputs: [] as string[],
@@ -133,7 +134,7 @@ const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites 
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
-    constructor(public options: Record<string, unknown>) {}
+    constructor(public options: Record<string, unknown>) { terminalOptions.push(options) }
     cols = 120
     rows = 34
     parser = {
@@ -1833,6 +1834,26 @@ test('鼠标右键与字号使用一致的横向布局并可切换为上下文�
   expect(copySwitch).toHaveAttribute('aria-checked', 'false')
   await user.click(copySwitch)
   await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalCopyOnEnter: true })))
+})
+
+test('下拉选择数字开头的系统字体后，保存原名并向 SSH 和预览传入有效字体设置', async () => {
+  terminalOptions.length = 0
+  const backend = makeBackend({ listMonospaceFonts: vi.fn().mockResolvedValue(['0xProto Nerd Font Mono']) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(terminalOptions).toHaveLength(1))
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await screen.findByRole('region', { name: '终端预览' })
+  await user.click(screen.getByRole('button', { name: '展开字体列表' }))
+  await user.click(await screen.findByRole('option', { name: '0xProto Nerd Font Mono' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalFontFamily: '0xProto Nerd Font Mono' })))
+  expect(screen.getByLabelText('字体')).toHaveValue('0xProto Nerd Font Mono')
+  expect(terminalOptions).toHaveLength(3)
+  for (const options of terminalOptions.slice(1)) expect(options.fontFamily).toBe('"0xProto Nerd Font Mono"')
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(terminalOptions.at(-1)?.fontFamily).toBe('"0xProto Nerd Font Mono"')
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
 })
 
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {

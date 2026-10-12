@@ -31,6 +31,17 @@ const preferences: Preferences = {
 
 beforeEach(() => { mock.options.length = 0; vi.clearAllMocks() })
 
+test.each(['终端预览', '背景图预览'])('%s 自动处理数字开头的字体名，已有引号不重复添加', label => {
+  const view = (terminalFontFamily: string) => <TerminalPreview preferences={{ ...preferences, terminalFontFamily }} label={label} />
+  const { rerender } = render(view('0xProto Nerd Font Mono'))
+  expect(mock.options[0].fontFamily).toBe('"0xProto Nerd Font Mono"')
+  rerender(view('"0xProto Nerd Font Mono"'))
+  expect(mock.options[0].fontFamily).toBe('"0xProto Nerd Font Mono"')
+  expect(mock.options).toHaveLength(1)
+  expect(mock.write).toHaveBeenCalledTimes(1)
+  expect(mock.focus).not.toHaveBeenCalled()
+})
+
 test.each(['终端预览', '背景图预览'])('%s 保留超过一屏的示例历史，以便展示和操作滚动条', label => {
   render(<TerminalPreview preferences={preferences} label={label} />)
   expect(mock.options[0].scrollback).toBeGreaterThan(0)
