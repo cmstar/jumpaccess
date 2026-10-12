@@ -1860,7 +1860,11 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
 
   return <section className="full-pane settings-page" hidden={hidden}>
     <PageHeading eyebrow="桌面偏好" title="设置">
-      <button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button>
+      <div className="settings-heading-actions">
+        <div className="settings-content">
+          <button className="button secondary" onClick={onOpenConfig}><FileCode2 />打开 config.toml</button>
+        </div>
+      </div>
     </PageHeading>
     <div className="settings-layout">
       <nav aria-label="设置导航" className="settings-nav">
@@ -1873,7 +1877,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
         ><Icon /><span>{label}</span></button>)}
       </nav>
       <div className="settings-scroll" data-testid="settings-scroll" onScroll={syncActiveSection} ref={scrollRef}>
-        <div className="settings-stack">
+        <div className="settings-content settings-stack">
           <section className="settings-card" id="settings-appearance">
             <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>控制窗口、菜单与设置页的主题，终端内容使用独立配色。</p></div></div>
             <div className="segmented-control" aria-label="界面主题">
