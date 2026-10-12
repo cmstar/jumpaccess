@@ -110,6 +110,9 @@ func TestCLITransferWithIndependentPeer(t *testing.T) {
 				if _, err := os.Stat(filepath.Join(dir, "binary (1).dat")); !os.IsNotExist(err) {
 					t.Fatal("disconnect left partial download")
 				}
+				if strings.Contains(display.String(), "Elapsed") {
+					t.Fatal("断连后的未完成文件不应显示成功统计")
+				}
 				return
 			}
 			if processErr != nil {
@@ -117,6 +120,9 @@ func TestCLITransferWithIndependentPeer(t *testing.T) {
 			}
 			if !strings.Contains(display.String(), "100%") || !strings.HasSuffix(display.String(), "shell$ ") {
 				t.Fatalf("terminal = %q", display.String())
+			}
+			if strings.Count(display.String(), "Elapsed ") != 1 || !strings.Contains(display.String(), " - Avg ") {
+				t.Fatalf("缺少单文件完成统计：%q", display.String())
 			}
 			if mode != "receive" {
 				got, err := os.ReadFile(filepath.Join(dir, "binary (1).dat"))
@@ -177,5 +183,8 @@ func TestCancelRestoresKeyboardWithoutSendingLocalInput(t *testing.T) {
 	}
 	if strings.Contains(remote.String(), "private-local-path") {
 		t.Fatal("local path leaked into remote shell")
+	}
+	if strings.Contains(display.String(), "Elapsed") {
+		t.Fatal("取消选择不应显示成功统计")
 	}
 }
