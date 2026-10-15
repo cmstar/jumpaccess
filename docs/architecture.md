@@ -1,16 +1,18 @@
 # 架构说明
 
+本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
+
 ## 当前状态
 
 JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
-JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享能力，并允许多个可执行入口复用这些能力：
+JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能力，由多个可执行入口复用：
 
 - `jumpctl` 既可以作为独立 SSH 客户端运行，也可以作为通用 SSH `ProxyCommand` 被外部客户端调用。
 - `jumpaccess` 是基于 Wails 2 的桌面入口，负责认证、资源管理、直接 SSH 和 SFTP 文件传输，不提供 ProxyCommand 或其他代理能力。
-- OAuth、配置、JumpServer API、目标解析、Token 管理和 SSH 能力应位于可复用核心中，不能依赖具体 CLI 或未来 GUI 的表现层。
+- OAuth、配置、JumpServer API、目标解析、Token 管理和 SSH 能力位于可复用核心中，不能依赖具体 CLI 或 GUI 的表现层。
 
 本项目不安装 Windows Service，也不依赖 JumpServer 桌面 Client 才能完成认证或连接。JumpServer Client `v4.1.6` 仅作为首个协议与行为分析基线。
 
@@ -20,13 +22,13 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 - 桌面入口采用 Wails 2.14，前端采用 React、TypeScript 和 Vite；Wails 仅位于表现层，不进入共享核心。
 - Wails 的 `bindings` build tag 入口只提供可反射的桌面适配器与默认窗口参数，不装配运行时服务或读取用户数据；真实桌面入口才解析应用目录并校验配置。
 - OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；Windows Credential Manager 与 macOS Keychain 只承载 ProxyCommand host key。
-- SSH、OAuth 和 JumpServer API 的具体 Go 依赖将在实现和测试时选定，本文不提前指定。
+- SSH 使用 `golang.org/x/crypto/ssh`，SFTP 使用 `github.com/pkg/sftp`；OAuth 与 JumpServer API 通过 Go 标准库 `net/http` 实现。CLI 使用 Cobra，TOML 读写使用 `github.com/BurntSushi/toml`；具体版本以根目录 `go.mod` 为准。
 
-## 目标系统组成与模块职责
+## 系统组成与模块职责
 
-以下表格同时记录已建立的边界和后续目标；未实现项会明确标注：
+以下表格记录当前模块职责；同一模块中的未实施能力会明确标注：
 
-| 逻辑部分 | 目标职责 |
+| 逻辑部分 | 当前职责与边界 |
 | --- | --- |
 | 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
 | 应用层 | `internal/application/settings` 承载 Profile、Organization 与 Alias 修改，`internal/application/auth` 承载登录状态与 Token 生命周期，`internal/application/resources` 和 `internal/application/connect` 分别负责资源查询与连接编排 |

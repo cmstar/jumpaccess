@@ -4,10 +4,15 @@ JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `j
 
 ## 按需阅读
 
-- 项目定位和当前状态：`README.md`
-- 系统边界、模块关系或技术选择：`docs/architecture.md`
-- Profile、Organization、Asset、Account、Alias、Token 和 Session 规则：`docs/domain.md`
-- 工程布局、测试、安全和跨平台约束：`docs/development.md`
+- 项目定位和当前状态：[README.md](README.md)
+- 系统边界、模块关系或技术选择：[架构说明](docs/architecture.md)；涉及重要取舍时通过[决策记录](docs/decisions/README.md)的当前有效索引核对状态、范围、实施状态和后续说明。考据历史原因时再读历史索引，历史正文不直接作为当前编码要求。
+- Profile、Organization、Asset、Account、Alias、Token 和 Session 规则：[业务说明](docs/domain.md)
+- 工程布局、测试、安全和跨平台约束：[开发说明](docs/development.md)；专项开发约束通过[项目规范](docs/standards/README.md)定位。
+- CLI 命令、参数和输出契约：[CLI 命令参考](docs/cli.md)
+- 具体需求、功能、重构或迁移：[需求与设计](docs/specs/README.md)，先查当前方案，再按需查历史版本。
+- 部署、回滚和排障：[操作手册](docs/runbooks/README.md)，执行前核对适用范围与验证状态。
+
+按任务选择相关文档，不要求每次通读整个 `docs/`。
 
 ## Agent 工作规则
 
@@ -18,9 +23,10 @@ JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `j
 - `sz` / `rz`（ZMODEM）是 CLI 与 GUI 的共同能力。修改协议适配、上传／下载行为、进度、结果文案或统计时，必须同时检查两端实现和测试，并在交付前分别核对 CLI、GUI 的结果。具体路径、验证要求和例外见 [CLI 与 GUI 共同行为变更](docs/development.md#cli-与-gui-共同行为变更)。
 - `docs/screenshots` 保存人工触发生成的文档截图。只有用户明确要求生成或重新生成截图时才可调用截图脚本；界面修改、测试、构建和发布均不自动触发截图，也不要求同步更新截图。
 - 区分目标设计与当前实现，结论以当前代码和测试为准。
-- 修改架构、领域规则、对外 CLI 契约或开发流程时，同步更新对应文档。
+- 修改架构、领域规则、对外 CLI 契约或开发流程时，同步更新描述当前情况的基础文档、专项规范和方案，以及相关索引。
+- 历史决策正文保留原意，不随代码演进改写；决策变化先读 [docs/decisions/README.md](docs/decisions/README.md)，只维护状态、范围、链接和索引，追加带日期的后续说明；新的重要取舍另建记录。
 - 生产行为变更采用 RED–GREEN–REFACTOR，并在结束前运行与修改最相关的检查。
 - 不把产品能力写成 Tabby 专用能力；`ProxyCommand` 面向所有兼容客户端。
 - 不提交密码、Token、Cookie、私钥、生产数据或含秘密的测试输出；真实账号只用于本机手工 smoke test。
 - 未经明确确认，不执行破坏性数据操作、迁移或发布。
-- 受保护内容：当前尚无证据表明存在项目特有的生成物或禁止改动目录；工程建立后应据实补充。
+- 受保护内容：Wails bindings、前端构建产物和桌面二进制由生成流程维护；图标从 `appicon.svg` 更新并重新生成。具体路径和维护方式见[生成物与构建资源](docs/development.md#生成物与构建资源)；文档截图仍遵守上述人工触发规则。

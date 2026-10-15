@@ -54,7 +54,12 @@ jumpctl version
 
 ## 本地开发、测试与构建
 
+### 开发环境
+
+CLI 与 GUI 共用 Go 1.25 或更高版本，具体依赖以 `go.mod` 为准。
+
 GUI 额外需要：
+
 - Node.js 24
 - [Wails 2](https://wails.io/)
 
@@ -67,7 +72,7 @@ wails doctor
 
 如果仅做一次性构建，也可以不安装 Wails CLI，直接使用 `go run "github.com/wailsapp/wails/v2/cmd/wails"` 代替 `wails` 命令。
 
-### 构建 CLI
+### 本地运行与测试 CLI
 
 本地测试和运行：
 
@@ -77,13 +82,13 @@ go vet ./...
 go run ./cmd/jumpctl
 ```
 
-构建 CLI：
+### 构建 CLI
 
 ```powershell
 go build -trimpath ./cmd/jumpctl
 ```
 
-### 构建 GUI
+### 本地运行、测试与构建 GUI
 
 安装前端依赖：
 
@@ -105,7 +110,7 @@ wails dev
 wails build
 ```
 
-构建结果默认输出在 `cmd/jumpaccess/build/bin` 目录，单一可执行文件。
+构建结果默认输出在 `cmd/jumpaccess/build/bin` 目录：Windows 为 `jumpaccess.exe`，macOS 为 `JumpAccess.app` 应用包。平台检查和发布约定见[开发说明](docs/development.md)。
 
 ## 使用 jumpctl
 
@@ -178,6 +183,12 @@ jumpctl ssh my-server --download-dir "D:\Downloads"
 - [业务说明](docs/domain.md)
 - [开发说明](docs/development.md)
 - [CLI 命令参考](docs/cli.md)
+- [项目规范与索引](docs/standards/README.md)
+- [当前与历史决策索引](docs/decisions/README.md)
+- [需求、设计与历史版本索引](docs/specs/README.md)
+- [操作手册与索引](docs/runbooks/README.md)
+
+安装、开发环境、运行命令或发布方式变化时更新本页；各文档的内容归属和维护时机见[文档维护](docs/development.md#文档维护)。
 
 ## 自动 Release
 

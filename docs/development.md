@@ -11,6 +11,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 - 工程采用单个 Go module，支持多个入口适配器共享核心逻辑。
 - 可执行入口包括 `jumpctl` 与 `jumpaccess`；GUI 不得迫使 OAuth、配置、JumpServer API、目标解析或 SSH 逻辑复制一份。
 - GUI 使用 Wails 2.14，前端使用 React、TypeScript 和 Vite。Wails 项目根位于 `cmd/jumpaccess`，与根 Go module 共用依赖。
+- 前端开发和 CI 使用 Node.js 24；前端依赖和脚本以 `cmd/jumpaccess/frontend/package.json` 与 `package-lock.json` 为准。
 - 桌面应用图标的唯一设计源为 `cmd/jumpaccess/build/appicon.svg`；`appicon.png` 是由该 SVG 渲染的 1024×1024 构建输入，Windows 多尺寸图标为 `cmd/jumpaccess/build/windows/icon.ico`。三者使用同一“终端 chevron 穿过跳板网关”标记，不以生成式栅格图作为发布源。
 - Windows 和 macOS 都是目标平台。
 - JumpServer Client `v4.1.6` 是首个协议行为参考，不应成为运行时依赖。
@@ -46,7 +47,7 @@ GUI 的原生文件选择器、工具栏、Tab 和顶部通知，以及 CLI 的�
 
 用户明确要求只修改某一入口时，按其范围执行，并在交付说明中标明另一入口是否受影响。新增或调整入口差异时，在对应架构／领域文档中记录原因和适用边界；不能仅以“CLI 和 GUI 是两份实现”为由形成差异。
 
-## 目标目录边界
+## 目录边界
 
 当前目录边界：
 
@@ -86,6 +87,34 @@ docs/               # 长期项目知识
 ```
 
 桌面入口继续使用根目录的同一个 `go.mod`。`cmd/jumpaccess/frontend` 保存 React 前端，`cmd/jumpaccess/build` 保存 Windows 与 macOS 构建资源；入口层只处理表现与进程交互，核心用例不依赖 CLI 框架或 Wails。
+
+## 文档维护
+
+按职责维护现有文档，完整规则保留一个主要归属，其他入口使用摘要或链接。本项目当前的开发约束以本文和 [AGENTS.md](../AGENTS.md) 为入口；出现需要长期单独维护的专项规范时，再通过 [standards/README.md](standards/README.md) 登记。
+
+| 文档入口 | 内容归属与更新时机 |
+| --- | --- |
+| [README.md](../README.md) | 面向使用者的简介、环境、安装、运行和发布入口；这些入口变化时同步更新 |
+| [AGENTS.md](../AGENTS.md) / [CLAUDE.md](../CLAUDE.md) | Agent 按需阅读和工作规则；约束变化时更新 AGENTS，CLAUDE 保持引用同一入口 |
+| [architecture.md](architecture.md) | 当前系统组成、模块职责、依赖、数据流和技术选择；架构边界变化时更新，未实施设计明确标注 |
+| [domain.md](domain.md) | 业务对象、关系、流程、规则和术语；需求或业务边界变化时更新 |
+| [development.md](development.md) | 工程布局、配置、安全、测试、构建和发布约束；工具链、命令或开发流程变化时更新 |
+| [cli.md](cli.md) | 当前 CLI 对外契约；命令、参数、输出或兼容性变化时同步更新，继续保留现有路径 |
+| [standards/README.md](standards/README.md) | 专项规范用途、维护约定及规范索引；新增或修改专项约束时维护 |
+| [decisions/README.md](decisions/README.md) | 决策的历史依据与当前、历史两类索引；重要取舍或有效范围变化时维护状态与后续说明 |
+| [specs/README.md](specs/README.md) | 当前需求与设计、历史版本两类索引；具体方案确定、实施或替代时更新状态和引用 |
+| [runbooks/README.md](runbooks/README.md) | 操作手册与验证状态索引；流程需要独立交接，或命令、环境、权限变化时维护 |
+
+四个目录 README 使用固定格式的六张索引表，无专题文档时保留空表；新增、移动、替代或废弃文档时，同步维护索引和相对链接。既有基础文档和 CLI 参考不为填充目录而拆分或复制。已确定决策的原始正文保留历史原意，具体维护边界见[决策记录](decisions/README.md)。
+
+本项目的文档结构省略 `.agents/skills/`，不要求为保留空目录创建 `.agents/`。通用脚手架校验涉及该目录时，按本项目明确例外报告，其余结构与内容仍需检查。
+
+## 生成物与构建资源
+
+- `cmd/jumpaccess/frontend/wailsjs/` 由 Wails 生成绑定，接口变更从 Go 适配器和前端调用处修改，再由 Wails 生成，不手工修补绑定产物。
+- `cmd/jumpaccess/frontend/dist/` 保存前端构建产物，`cmd/jumpaccess/build/bin/` 保存桌面构建输出；通过对应构建命令更新，不把产物作为源码修改。`frontend/dist/gitkeep` 是受版本控制的 embed 占位文件，应保留；前端构建脚本会重新创建它。
+- 图标以 `cmd/jumpaccess/build/appicon.svg` 为设计源，PNG 与 Windows ICO 按[桌面构建资源说明](../cmd/jumpaccess/build/README.md)生成。平台 manifest、plist 等构建资源按实际需求维护。
+- `docs/screenshots/` 只在用户明确要求时通过截图脚本更新；界面修改、测试、构建和发布均不自动触发。
 
 ## 配置与凭据
 
@@ -225,17 +254,21 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 ## 当前验证入口
 
+以下命令从仓库根目录开始执行；前端 npm 脚本通过 `--prefix` 定位到前端目录，Wails 命令在桌面入口目录执行：
+
 ```powershell
 go test ./...
 go vet ./...
 go build -trimpath ./cmd/jumpctl
+npm --prefix cmd/jumpaccess/frontend ci
+npm --prefix cmd/jumpaccess/frontend test
+npm --prefix cmd/jumpaccess/frontend run build
+node --test scripts/*.test.mjs
 cd cmd/jumpaccess
-npm ci
-npm test
-npm run build
 wails build
-node --test ../../scripts/*.test.mjs
 ```
+
+仅修改文档时，核对新增文件、内容归属、六张索引表、相对链接与 `git diff --check`；文档中的命令需与实际脚本入口核对。未运行的构建、平台检查或真实环境流程不得标记为已验证。
 
 Windows 发布或人工验收构建不得使用 `wails build -nopackage`：Wails 2.14 会因此跳过平台资源生成，裸 EXE 不包含应用图标和版本资源。更新 `appicon.svg` 后应重新渲染 `appicon.png`，移除旧的 `build/windows/icon.ico` 并执行一次 `wails build`，由 Wails 重新生成 256、128、64、48、32 和 16 像素的 Windows 图标。
 
