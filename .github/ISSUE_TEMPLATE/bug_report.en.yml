@@ -1,0 +1,74 @@
+name: Bug report (English)
+description: Report an error or unexpected behavior so we can reproduce and fix it.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues and PRs first. See the [contributing guide](https://github.com/cmstar/jumpaccess/blob/master/CONTRIBUTING.md) (Chinese) for the collaboration process.
+        Do not include passwords, tokens, cookies, private keys, OAuth callback URLs, or production data. Sanitize logs, configuration, and screenshots before posting.
+  - type: input
+    id: version
+    attributes:
+      label: JumpAccess version and source (optional)
+      description: For downloaded binaries, you may provide the version or download source; CLI users can run jumpctl version. If running or building from cloned source, you may provide the Git commit. Share what you know; leave blank if unknown.
+      placeholder: Version, Git commit, or download source (any known information)
+    validations:
+      required: false
+  - type: dropdown
+    id: entry
+    attributes:
+      label: Affected entry points
+      description: Select all that apply. Choose “Not sure” if you are unsure.
+      multiple: true
+      options:
+        - CLI (jumpctl)
+        - Desktop GUI (jumpaccess)
+        - SSH ProxyCommand (external client)
+        - Build, installation, or documentation
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your OS version and CPU architecture. For terminal or connection issues, add relevant details where possible; write “unknown” if needed.
+      placeholder: |
+        Operating system and version:
+        CPU architecture (amd64 / arm64, etc.):
+        Terminal or external SSH client and version (if applicable):
+        JumpServer version (if applicable):
+        Remote operating system and shell (if applicable):
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction steps
+      description: Start with any prerequisites, then list the steps, sanitized commands, or configuration snippets.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen after following these steps?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include relevant error messages and whether the issue reproduces every time.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Logs, screenshots, and additional context
+      description: Optionally add sanitized logs, screenshots, a known working version, or workarounds you have tried. Paste or drag images here to attach screenshots.

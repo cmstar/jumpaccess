@@ -1,0 +1,47 @@
+name: Feature request (English)
+description: Describe your use case, current limitations, and the capability you would like to add or improve.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues and PRs first. See the [contributing guide](https://github.com/cmstar/jumpaccess/blob/master/CONTRIBUTING.md) (Chinese) for the collaboration process.
+        Start with the problem you need to solve. Use synthetic or sanitized examples and attachments; do not include real credentials or production data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Use case and problem
+      description: What are you trying to do, and what limitation makes the current approach difficult?
+    validations:
+      required: true
+  - type: dropdown
+    id: entry
+    attributes:
+      label: Intended entry points
+      description: Select all that apply. Choose “Not sure” if you are unsure.
+      multiple: true
+      options:
+        - CLI (jumpctl)
+        - Desktop GUI (jumpaccess)
+        - SSH ProxyCommand (external client)
+        - Build, installation, or documentation
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Desired behavior or proposed solution
+      description: Describe the outcome you want. Examples of commands, interactions, or workflows are welcome; a technical implementation plan is not required.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optionally explain why existing features, other tools, or workarounds do not meet your needs.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optionally add platform scope, compatibility requirements, references, or sanitized screenshots.

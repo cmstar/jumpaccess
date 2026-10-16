@@ -176,8 +176,13 @@ jumpctl ssh my-server --download-dir "D:\Downloads"
 
 `jumpctl proxy` 保持透传，由外部终端或 SSH 客户端处理 ZMODEM，不使用 CLI 本地文件选择和下载目录逻辑。
 
+## 参与贡献
+
+欢迎反馈问题、提出功能建议和提交 PR。开始前请阅读[贡献指南](CONTRIBUTING.md)；[新建 Issue](https://github.com/cmstar/jumpaccess/issues/new/choose) 时可选择中文或英文表单，PR 模板任选一种语言填写即可。
+
 ## 文档索引
 
+- [贡献指南与协作流程](CONTRIBUTING.md)
 - [Agent 工作入口](AGENTS.md)
 - [架构说明](docs/architecture.md)
 - [业务说明](docs/domain.md)

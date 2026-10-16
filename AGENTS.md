@@ -5,6 +5,7 @@ JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `j
 ## 按需阅读
 
 - 项目定位和当前状态：[README.md](README.md)
+- Issue、PR 和审查合并流程：[贡献指南](CONTRIBUTING.md)。
 - 系统边界、模块关系或技术选择：[架构说明](docs/architecture.md)；涉及重要取舍时通过[决策记录](docs/decisions/README.md)的当前有效索引核对状态、范围、实施状态和后续说明。考据历史原因时再读历史索引，历史正文不直接作为当前编码要求。
 - Profile、Organization、Asset、Account、Alias、Token 和 Session 规则：[业务说明](docs/domain.md)
 - 工程布局、测试、安全和跨平台约束：[开发说明](docs/development.md)；专项开发约束通过[项目规范](docs/standards/README.md)定位。

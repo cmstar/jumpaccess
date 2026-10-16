@@ -1,0 +1,47 @@
+name: 功能建议（中文）
+description: 说明使用场景、当前限制和希望增加或改进的能力。
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请搜索已有 Issue 和 PR，协作约定见[贡献指南](https://github.com/cmstar/jumpaccess/blob/master/CONTRIBUTING.md)。
+        请先说明需要解决的问题；示例和附件请使用合成或脱敏数据，不要包含真实凭据或生产数据。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景与问题
+      description: 你在什么场景下遇到了什么限制？当前做法有什么不便？
+    validations:
+      required: true
+  - type: dropdown
+    id: entry
+    attributes:
+      label: 期望覆盖的入口
+      description: 可多选；不确定时请选择“不确定”。
+      multiple: true
+      options:
+        - CLI（jumpctl）
+        - 桌面 GUI（jumpaccess）
+        - SSH ProxyCommand（外部客户端）
+        - 构建、安装或文档
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望行为或建议方案
+      description: 说明希望达成的结果。可以提供命令、交互或流程示例，不要求已有技术实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+      description: 可说明已有功能、其他工具或临时办法为何不能满足需求。
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 可补充平台范围、兼容性要求、参考资料或脱敏截图。
