@@ -8,6 +8,8 @@ JumpAccess 面向需要通过 JumpServer 访问远程 Asset 的用户。用户�
 
 JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServer 仍然是用户授权、Organization、Asset、Account 及会话访问策略的权威来源。
 
+拟议的 Agent 接入场景见 [MCP 设计草案](specs/agent-mcp.md)，尚未实施。Agent 通过共享服务查询资源、复用固定目标与身份的逻辑连接，并独立执行命令；工作目录和环境变量随命令指定。连接、执行与历史记录的边界集中维护在草案中，现有人用 SSH Session 规则仍以本文已实现内容为准。
+
 ## 核心对象
 
 | 对象 | 英文/代码名称 | 定义与关系 |
