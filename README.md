@@ -24,7 +24,9 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 当前源码中的 GUI 在“设置 → Agent MCP”提供 Streamable HTTP 服务，Token 与监听设置统一保存至 `config.toml`，支持手动启动、停止和重启。配置框内的修改保存后在下次启动或重启时生效。多个 Agent 可以共用同一服务查询 Profile、组织、资产、授权账号和 Alias；需要先完成相应 Profile 的 JumpServer 登录。
 
-当前仅提供只读查询，尚未提供 MCP SSH 操作和 CLI MCP 命令。GUI 不自动启动服务，退出应用会停止服务。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
+当前开发版同时提供 SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。CLI MCP 命令尚未实现。
+
+GUI 不自动启动 MCP 服务，退出应用会停止服务。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
 
 ## 安装
 

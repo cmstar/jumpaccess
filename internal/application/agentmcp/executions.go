@@ -45,6 +45,7 @@ type ExecutionView struct {
 	DispatchState       string         `json:"dispatch_state"`
 	RemoteState         string         `json:"remote_state"`
 	RemoteMayContinue   bool           `json:"remote_may_continue"`
+	TerminationScope    string         `json:"termination_scope"`
 	AcceptedAt          time.Time      `json:"accepted_at"`
 	PrepareDeadlineAt   time.Time      `json:"prepare_deadline_at"`
 	StartedAt           *time.Time     `json:"started_at,omitempty"`
@@ -57,31 +58,35 @@ type ExecutionView struct {
 	TimeoutStrategy     string         `json:"timeout_strategy"`
 	CancelRequested     bool           `json:"cancel_requested"`
 	CancelConfirmed     bool           `json:"cancel_confirmed"`
+	CancelError         *Fault         `json:"cancel_error,omitempty"`
 	Output              OutputView     `json:"output"`
 }
 type execution struct {
-	view           ExecutionView
-	input          ExecuteInput
-	record         *requestRecord
-	connection     *connection
-	ctx            context.Context
-	cancel         context.CancelFunc
-	changed        chan struct{}
-	done           chan struct{}
-	channel        ssh.Channel
-	client         *ssh.Client
-	output         list.List
-	outputBytes    int
-	outputSequence uint64
-	droppedBytes   int64
-	incomplete     bool
-	marker         string
-	contextFailed  bool
-	control        *controlResult
-	controlInvalid bool
-	stopDone       chan struct{}
-	detached       bool
-	exitReceived   bool
+	view             ExecutionView
+	input            ExecuteInput
+	record           *requestRecord
+	connection       *connection
+	ctx              context.Context
+	cancel           context.CancelFunc
+	changed          chan struct{}
+	done             chan struct{}
+	channel          ssh.Channel
+	client           *ssh.Client
+	output           list.List
+	outputBytes      int
+	outputSequence   uint64
+	droppedBytes     int64
+	incomplete       bool
+	marker           string
+	contextFailed    bool
+	control          *controlResult
+	controlInvalid   bool
+	stopDone         chan struct{}
+	dispatchReady    chan struct{}
+	dispatchAccepted bool
+	stopUnconfirmed  bool
+	detached         bool
+	exitReceived     bool
 }
 
 func terminal(status string) bool {
@@ -189,6 +194,9 @@ func (e *Engine) Execute(ctx context.Context, in ExecuteInput) (ExecutionView, e
 	e.waitExecution(ctx, job, wait, false)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.executions[job.view.ID] != job {
+		return ExecutionView{}, fault("EXECUTION_EXPIRED", "等待期间执行详细结果已回收")
+	}
 	return e.executionView(job, 0, 64<<10), nil
 }
 
@@ -224,6 +232,9 @@ func (e *Engine) GetExecution(ctx context.Context, in GetExecutionInput) (Execut
 	e.waitExecution(ctx, job, wait, true)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.executions[job.view.ID] != job {
+		return ExecutionView{}, fault("EXECUTION_EXPIRED", "等待期间执行详细结果已回收")
+	}
 	return e.executionView(job, in.Cursor, in.MaxBytes), nil
 }
 func (e *Engine) waitExecution(ctx context.Context, job *execution, ms int, anyChange bool) {
@@ -299,6 +310,8 @@ func (e *Engine) finishExecution(job *execution, status, reason string, err *Fau
 	}
 	if status == "unknown" && job.detached {
 		reason = "detached"
+	} else if status == "unknown" && job.stopUnconfirmed {
+		reason = "cancel_unconfirmed"
 	}
 	now := e.opts.Now()
 	job.view.Status = status
@@ -309,8 +322,13 @@ func (e *Engine) finishExecution(job *execution, status, reason string, err *Fau
 		job.view.RemoteState = "unknown"
 		job.view.RemoteMayContinue = true
 		job.incomplete = true
+		job.view.TerminationScope = "unknown"
 	} else if job.view.ExitCode != nil || job.view.ExitSignal != "" {
 		job.view.RemoteState = "finished"
+		job.view.TerminationScope = "command"
+		if job.view.TimeoutStrategy == "remote_required" && (status == "timed_out" || job.view.CancelConfirmed) {
+			job.view.TerminationScope = "managed_group"
+		}
 	}
 	if job.connection.view.ActiveExecutionID == job.view.ID {
 		job.connection.view.ActiveExecutionID = ""
@@ -421,39 +439,42 @@ func (e *Engine) runExecution(job *execution) {
 	}
 	job.view.DispatchState = "possibly_sent"
 	job.view.RemoteState = "unknown"
+	job.dispatchReady = make(chan struct{})
 	e.mu.Unlock()
 	command := localCommand(job.input, job.marker)
 	if job.input.TimeoutStrategy == "remote_required" {
 		command = remoteCommand(job.input, job.marker)
 	}
-	ack := make(chan struct {
+	type execAck struct {
 		ok  bool
 		err error
-	}, 1)
+	}
+	ack := make(chan execAck, 1)
 	go func() {
 		ok, err := ch.SendRequest("exec", true, ssh.Marshal(struct{ Command string }{command}))
-		ack <- struct {
-			ok  bool
-			err error
-		}{ok, err}
+		ack <- execAck{ok, err}
 	}()
+	var response execAck
 	select {
-	case r := <-ack:
-		if r.err != nil {
-			e.invalidate(job.connection, client)
-			e.finishExecution(job, "unknown", "exec_ack", fault("EXEC_ACK_LOST", "执行应答丢失，不能重放"))
-			return
-		}
-		if !r.ok {
-			e.mu.Lock()
-			job.view.RemoteState = "not_started"
-			e.mu.Unlock()
-			e.finishExecution(job, "failed", "exec_rejected", fault("EXEC_REJECTED", "服务端拒绝 exec"))
-			return
-		}
+	case response = <-ack:
 	case <-channelCtx.Done():
+		response.err = channelCtx.Err()
+	}
+	// 所有应答路径先释放取消发送者，再进入可能等待 stopDone 的终态清理。
+	e.mu.Lock()
+	job.dispatchAccepted = response.err == nil && response.ok
+	close(job.dispatchReady)
+	e.mu.Unlock()
+	if response.err != nil {
 		e.invalidate(job.connection, client)
-		e.finishExecution(job, "unknown", "exec_ack", fault("EXEC_ACK_LOST", "执行应答超时，不能重放"))
+		e.finishExecution(job, "unknown", "exec_ack", fault("EXEC_ACK_LOST", "执行应答丢失或超时，不能重放"))
+		return
+	}
+	if !response.ok {
+		e.mu.Lock()
+		job.view.RemoteState = "not_started"
+		e.mu.Unlock()
+		e.finishExecution(job, "failed", "exec_rejected", fault("EXEC_REJECTED", "服务端拒绝 exec"))
 		return
 	}
 	e.mu.Lock()
@@ -464,10 +485,14 @@ func (e *Engine) runExecution(job *execution) {
 	}
 	job.view.RemoteState = "running"
 	job.view.StartedAt = &now
-	job.connection.view.ExecCapability = "supported"
+	if job.connection.client == client && job.connection.view.TransportGeneration == generation {
+		job.connection.view.ExecCapability = "supported"
+	}
 	e.notifyExecution(job)
 	e.mu.Unlock()
-	go func() { _ = ch.CloseWrite() }()
+	if job.input.TimeoutStrategy == "local" {
+		go func() { _ = ch.CloseWrite() }()
+	}
 	e.collectExecution(job, ch, requests)
 }
 

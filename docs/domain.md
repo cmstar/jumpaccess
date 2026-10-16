@@ -8,7 +8,7 @@ JumpAccess 面向需要通过 JumpServer 访问远程 Asset 的用户。用户�
 
 JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServer 仍然是用户授权、Organization、Asset、Account 及会话访问策略的权威来源。
 
-开发中的 Agent 接入场景见 [MCP 设计草案](specs/agent-mcp.md)。当前 GUI 可启动共享核心，支持明确选择 Profile／组织的只读查询，按资产 ID 获取详情，Alias 歧义不选择首项，查询不改变人类当前选择。CLI MCP 入口、连接复用与命令执行仍待接通。其生命周期边界集中维护在草案中，现有人用 SSH Session 规则仍以本文已实现内容为准。
+开发中的 Agent 接入场景见 [MCP 设计草案](specs/agent-mcp.md)。GUI 可启动共享核心，支持资源查询、固定目标与登录身份的 SSH 连接复用和非交互命令执行；CLI MCP 入口仍待接通。Alias 歧义不选择首项，查询和执行不改变人类当前选择；工作目录和环境随命令传入。Agent 的逻辑连接、任务与人用 SSH Session 独立管理，生命周期、取消和未知结果边界集中维护在设计中。
 
 共享登录服务为每次成功登录分配新的登录标识，普通 Token 刷新保留该标识；退出、修改站点或删除 Profile 会移除对应凭据，重新登录得到新标识。旧凭据在首次需要固定身份时补齐标识，不要求用户重新登录，也不使用 Access Token 或未经验证的用户名作为稳定身份。该机制为后续 Agent 连接绑定提供基础，不改变现有人类 SSH 会话的生命周期。
 

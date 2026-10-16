@@ -30,24 +30,27 @@ type Instance struct {
 }
 
 type Status struct {
-	State           string     `json:"state"`
-	Instance        *Instance  `json:"instance"`
-	Config          config.MCP `json:"config"`
-	TokenConfigured bool       `json:"tokenConfigured"`
-	RestartRequired bool       `json:"restartRequired"`
-	Error           string     `json:"error"`
+	State           string       `json:"state"`
+	Instance        *Instance    `json:"instance"`
+	Config          config.MCP   `json:"config"`
+	TokenConfigured bool         `json:"tokenConfigured"`
+	RestartRequired bool         `json:"restartRequired"`
+	Error           string       `json:"error"`
+	Counts          *EngineStats `json:"counts,omitempty"`
+	StopWarning     string       `json:"stopWarning,omitempty"`
 }
 
 type HandlerFactory func(Instance, config.MCP, string) http.Handler
 
 // Runtime 的生存期属于宿主进程，不属于启动请求或 MCP 协议会话。
 type Runtime struct {
-	settings  Settings
-	host      string
-	handler   HandlerFactory
-	mu        sync.Mutex
-	active    *runningServer
-	lastError string
+	settings    Settings
+	host        string
+	handler     HandlerFactory
+	mu          sync.Mutex
+	active      *runningServer
+	lastError   string
+	stopWarning string
 }
 
 type runningServer struct {
@@ -57,6 +60,12 @@ type runningServer struct {
 	cancel   context.CancelFunc
 	unlock   func() error
 	stopping bool
+	engine   managedEngine
+}
+
+type managedEngine interface {
+	Shutdown(context.Context) error
+	Stats() EngineStats
 }
 
 func NewRuntime(settings Settings, host string, handler HandlerFactory) *Runtime {
@@ -113,14 +122,15 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 		return Status{}, err
 	}
 	info := Instance{ID: hex.EncodeToString(id[:]), Host: r.host, URL: cfg.URL(), StartedAt: time.Now().UTC(), Config: cfg.WithoutToken(), ConfigFingerprint: configFingerprint(cfg)}
-	handler := r.handler(info, cfg.WithoutToken(), cfg.Token)
-	if handler == nil {
-		return Status{}, fmt.Errorf("MCP 协议处理器不可用")
-	}
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Address())
 	if err != nil {
 		r.lastError = "MCP 监听失败，请检查地址或端口占用"
 		return Status{}, fmt.Errorf("%s: %w", r.lastError, err)
+	}
+	handler := r.handler(info, cfg.WithoutToken(), cfg.Token)
+	if handler == nil {
+		listener.Close()
+		return Status{}, fmt.Errorf("MCP 协议处理器不可用")
 	}
 	if tlsConfig != nil {
 		listener = tls.NewListener(listener, tlsConfig)
@@ -128,9 +138,13 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 	base, cancel := context.WithCancel(context.Background())
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 65 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return base }}
 	run := &runningServer{info: info, server: server, cancel: cancel, unlock: unlock, done: make(chan struct{})}
+	run.engine, _ = handler.(managedEngine)
 	if err := r.writeInstance(info); err != nil {
 		cancel()
 		listener.Close()
+		if run.engine != nil {
+			_ = run.engine.Shutdown(ctx)
+		}
 		return Status{}, err
 	}
 	r.active, r.lastError, keep = run, "", true
@@ -177,6 +191,16 @@ func (r *Runtime) stopLocked(ctx context.Context) error {
 		return nil
 	}
 	run.stopping = true
+	r.stopWarning = ""
+	if run.engine != nil {
+		cleanup, finish := context.WithTimeout(ctx, 4*time.Second)
+		cleanupError := run.engine.Shutdown(cleanup)
+		finish()
+		stats := run.engine.Stats()
+		if cleanupError != nil || stats.Executions > 0 || stats.UnknownExecutions > 0 {
+			r.stopWarning = "服务已停止跟踪部分任务，无法确认其远端结果；请核对服务器状态，勿直接重跑原命令。"
+		}
+	}
 	run.cancel()
 	err := run.server.Shutdown(ctx)
 	if err != nil {
@@ -190,6 +214,11 @@ func (r *Runtime) stopLocked(ctx context.Context) error {
 func (r *Runtime) clearLocked(run *runningServer) {
 	run.cancel()
 	_ = run.server.Close()
+	if !run.stopping && run.engine != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		_ = run.engine.Shutdown(ctx)
+		cancel()
+	}
 	_ = os.Remove(r.instancePath())
 	_ = run.unlock()
 	r.active = nil
@@ -230,7 +259,7 @@ func (r *Runtime) Status(ctx context.Context) (Status, error) {
 }
 
 func (r *Runtime) localStatus(cfg config.MCP, hasToken bool) Status {
-	status := Status{State: "stopped", Config: cfg, TokenConfigured: hasToken, Error: r.lastError}
+	status := Status{State: "stopped", Config: cfg, TokenConfigured: hasToken, Error: r.lastError, StopWarning: r.stopWarning}
 	if r.lastError != "" {
 		status.State = "failed"
 	}
@@ -239,6 +268,10 @@ func (r *Runtime) localStatus(cfg config.MCP, hasToken bool) Status {
 		status.State = "running"
 		status.Instance = &info
 		status.RestartRequired = configFingerprint(cfg) != info.ConfigFingerprint
+		if r.active.engine != nil {
+			counts := r.active.engine.Stats()
+			status.Counts = &counts
+		}
 	}
 	return status
 }

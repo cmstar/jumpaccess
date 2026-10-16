@@ -3,6 +3,7 @@ package agentmcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -60,7 +61,14 @@ func TestRemoteWatchdogThroughSSH(t *testing.T) {
 		cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "--", "sh", "-c", command)
 		cmd.Stdout = ch
 		cmd.Stderr = ch.Stderr()
-		err := cmd.Run()
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer stdin.Close()
+		go func() { _, _ = io.Copy(stdin, ch) }()
+		err = cmd.Run()
 		code := uint32(0)
 		if err != nil {
 			code = 125
@@ -99,6 +107,123 @@ func TestRemoteWatchdogThroughSSH(t *testing.T) {
 	if channels.Load() != 4 {
 		t.Fatalf("capability probe not cached: channels=%d", channels.Load())
 	}
+}
+
+// 网关只转发 exec 和 stdin，不响应 SSH signal；覆盖真实验收中出现的链路差异。
+func TestRemoteCancelWithoutSSHSignalForwarding(t *testing.T) {
+	distro := os.Getenv("JUMPACCESS_TEST_WSL")
+	if distro == "" {
+		t.Skip("需要本机 Linux")
+	}
+	e, c := watchdogStdinFixture(t, distro, true)
+	in := executeInput(e, c, 2)
+	in.TimeoutStrategy = "remote_required"
+	in.TimeoutMS = 10000
+	in.Command = "printf cancel-ready; exec sleep 20"
+	job, err := e.Execute(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitOutput(t, e, job.ID, "cancel-ready")
+	if _, err := e.CancelExecution(context.Background(), CancelInput{ExecutionID: job.ID}); err != nil {
+		t.Fatal(err)
+	}
+	job = awaitExecution(t, e, job.ID)
+	if job.Status != "cancelled" || !job.CancelConfirmed || job.RemoteMayContinue || job.TerminationScope != "managed_group" {
+		t.Fatalf("未通过 stdin 停止受控任务：%+v", job)
+	}
+	// 控制输入不会传给业务命令；旧取消也不能干扰同连接的新任务。
+	in = executeInput(e, c, 3)
+	in.TimeoutStrategy = "remote_required"
+	in.Command = "if read ignored; then printf BAD_STDIN; else printf stdin-eof; fi; sleep 0.2"
+	next, err := e.Execute(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = e.CancelExecution(context.Background(), CancelInput{ExecutionID: job.ID})
+	next = awaitExecution(t, e, next.ID)
+	if next.Status != "completed" || next.CancelRequested || next.ExitCode == nil || *next.ExitCode != 0 || outputText(next) != "stdin-eof" {
+		t.Fatalf("控制输入或旧取消影响新命令：%+v", next)
+	}
+}
+
+func TestRemoteProbeRejectsMissingStdinControl(t *testing.T) {
+	distro := os.Getenv("JUMPACCESS_TEST_WSL")
+	if distro == "" {
+		t.Skip("需要本机 Linux")
+	}
+	e, c := watchdogStdinFixture(t, distro, false)
+	in := executeInput(e, c, 2)
+	in.TimeoutStrategy = "remote_required"
+	in.Command = "printf SHOULD_NOT_RUN"
+	job, err := e.Execute(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(12 * time.Second)
+	for !terminal(job.Status) && time.Now().Before(deadline) {
+		job, err = e.GetExecution(context.Background(), GetExecutionInput{ExecutionID: job.ID, WaitMS: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if job.Status != "failed" || job.Error == nil || job.Error.Code != "REMOTE_DEADLINE_UNAVAILABLE" || job.DispatchState != "not_sent" || outputText(job) != "" {
+		t.Fatalf("控制链路不可用时仍发送了原始命令：%+v", job)
+	}
+}
+
+func watchdogStdinFixture(t *testing.T, distro string, forward bool) (*Engine, ConnectionView) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return execFixture(t, func(ch ssh.Channel, command string) {
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "--", "sh", "-c", command)
+		cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer stdin.Close()
+		if forward {
+			go func() { _, _ = io.Copy(stdin, ch) }()
+		} else {
+			_ = stdin.Close()
+		}
+		code := uint32(0)
+		if err := cmd.Run(); err != nil {
+			code = 125
+		}
+		exitSSH(ch, code)
+	})
+}
+
+func awaitOutput(t *testing.T, e *Engine, id, expected string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		v, err := e.GetExecution(context.Background(), GetExecutionInput{ExecutionID: id, WaitMS: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(outputText(v), expected) {
+			return
+		}
+		if terminal(v.Status) {
+			t.Fatalf("命令未到达 ready：%+v", v)
+		}
+	}
+	t.Fatal("等待 ready 超时")
+}
+
+func outputText(v ExecutionView) string {
+	var out strings.Builder
+	for _, c := range v.Output.Chunks {
+		out.WriteString(c.Data)
+	}
+	return out.String()
 }
 
 func TestLocalDeadlineAndDrain(t *testing.T) {

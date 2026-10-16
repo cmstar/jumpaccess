@@ -1,5 +1,6 @@
 .mcp-settings .mcp-service-controls, .mcp-settings .mcp-actions, .mcp-settings .mcp-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mcp-settings .mcp-service-controls { justify-content: space-between; margin-bottom: 12px; }
+.mcp-settings .mcp-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 0; color: var(--muted); font-size: 13px; }
 .mcp-settings .mcp-state { display: flex; align-items: center; gap: 8px; }
 .mcp-settings .mcp-state > span { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .mcp-settings .mcp-state.running > span { background: var(--accent); }

@@ -20,8 +20,10 @@ func remoteCommand(in ExecuteInput, marker string) string {
 	return pythonCommand(payload)
 }
 func pythonCommand(payload []byte) string {
-	return "python3 -c " + shellQuote(watchdogScript) + " " + shellQuote(base64.StdEncoding.EncodeToString(payload))
+	return "exec python3 -c " + shellQuote(watchdogScript) + " " + shellQuote(base64.StdEncoding.EncodeToString(payload))
 }
+
+func stopMessage(marker string) string { return marker + ":stop\n" }
 
 type controlResult struct {
 	Event      string `json:"event"`
@@ -40,7 +42,7 @@ func (e *Engine) probeDeadline(ctx context.Context, job *execution, client *ssh.
 		return nil
 	}
 	if capability == "unsupported" {
-		return fault("REMOTE_DEADLINE_UNAVAILABLE", "目标未提供可验证的 POSIX/Python 3 远端时限能力")
+		return fault("REMOTE_DEADLINE_UNAVAILABLE", "目标未提供可验证的 POSIX/Python 3 远端时限与停止控制能力")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, e.opts.Limits.ChannelTimeout)
 	defer cancel()
@@ -50,36 +52,62 @@ func (e *Engine) probeDeadline(ctx context.Context, job *execution, client *ssh.
 	}
 	defer e.closeChannel(ch, client, job.connection)
 	payload, _ := json.Marshal(map[string]any{"probe": true, "marker": job.marker})
-	var buffer limitedProbe
-	finished := make(chan bool, 1)
+	buffer := limitedProbe{ready: make(chan struct{}), marker: job.marker}
+	type probeResult struct{ supported, transportFailed bool }
+	finished := make(chan probeResult, 1)
 	go func() {
 		ok, err := ch.SendRequest("exec", true, ssh.Marshal(struct{ Command string }{pythonCommand(payload)}))
 		if err != nil || !ok {
-			finished <- false
+			finished <- probeResult{transportFailed: err != nil}
 			return
 		}
-		_ = ch.CloseWrite()
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() { defer wg.Done(); _, _ = io.Copy(io.Discard, ch) }()
 		go func() { defer wg.Done(); _, _ = io.Copy(&buffer, ch.Stderr()) }()
-		success := false
-		for req := range requests {
-			if req.Type == "exit-status" {
-				var v struct{ Code uint32 }
-				if ssh.Unmarshal(req.Payload, &v) == nil {
-					success = v.Code == 0
+		exited := make(chan probeResult, 1)
+		go func() {
+			result := probeResult{transportFailed: true}
+			for req := range requests {
+				if req.Type == "exit-status" {
+					var v struct{ Code uint32 }
+					if ssh.Unmarshal(req.Payload, &v) == nil {
+						result = probeResult{supported: v.Code == 0}
+					}
 				}
+				_ = req.Reply(false, nil)
 			}
-			_ = req.Reply(false, nil)
+			wg.Wait()
+			exited <- result
+		}()
+		select {
+		case <-buffer.ready:
+			if _, err := io.WriteString(ch, stopMessage(job.marker)); err != nil {
+				finished <- probeResult{transportFailed: true}
+				return
+			}
+		case result := <-exited:
+			result.supported = false
+			finished <- result
+			return
+		case <-probeCtx.Done():
+			return
 		}
-		wg.Wait()
-		finished <- success
+		select {
+		case result := <-exited:
+			result.supported = result.supported && strings.Contains(buffer.text(), "\x1e"+job.marker+`:{"event":"probe","supported":true}`+"\x1f")
+			finished <- result
+		case <-probeCtx.Done():
+		}
 	}()
 	ok := false
 	select {
-	case success := <-finished:
-		ok = success && strings.Contains(buffer.text(), "\x1e"+job.marker+`:{"event":"probe","supported":true}`+"\x1f")
+	case result := <-finished:
+		if result.transportFailed || probeCtx.Err() != nil {
+			e.invalidate(job.connection, client)
+			return fault("REMOTE_DEADLINE_UNAVAILABLE", "远端控制探测通信失败或取消，原始命令未发送")
+		}
+		ok = result.supported
 	case <-probeCtx.Done():
 		e.invalidate(job.connection, client)
 		return fault("REMOTE_DEADLINE_UNAVAILABLE", "远端时限探测超时或取消，原始命令未发送")
@@ -95,14 +123,17 @@ func (e *Engine) probeDeadline(ctx context.Context, job *execution, client *ssh.
 	}
 	e.mu.Unlock()
 	if !ok {
-		return fault("REMOTE_DEADLINE_UNAVAILABLE", "目标未提供可验证的 POSIX/Python 3 远端时限能力")
+		return fault("REMOTE_DEADLINE_UNAVAILABLE", "目标未提供可验证的 POSIX/Python 3 远端时限与停止控制能力")
 	}
 	return nil
 }
 
 type limitedProbe struct {
-	mu    sync.Mutex
-	value []byte
+	mu     sync.Mutex
+	value  []byte
+	ready  chan struct{}
+	marker string
+	once   sync.Once
 }
 
 func (b *limitedProbe) Write(p []byte) (int, error) {
@@ -110,6 +141,9 @@ func (b *limitedProbe) Write(p []byte) (int, error) {
 	defer b.mu.Unlock()
 	n := min(len(p), 8192-len(b.value))
 	b.value = append(b.value, p[:n]...)
+	if strings.Contains(string(b.value), "\x1e"+b.marker+`:{"event":"ready"}`+"\x1f") {
+		b.once.Do(func() { close(b.ready) })
+	}
 	return len(p), nil
 }
 func (b *limitedProbe) text() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.value) }

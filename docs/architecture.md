@@ -2,9 +2,11 @@
 
 本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
 
-开发中的 [Agent MCP 接入](specs/agent-mcp.md)目标是由 CLI 命令或 GUI 控制面板启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例。两端使用相同配置和单一 Bearer Token，运行状态与人类 SSH 会话独立。当前 GUI 设置已接入共享核心，支持配置与 Token 统一保存、HTTP 鉴权、单实例启停和重启，以及只读资源查询。核心已具备请求去重、固定身份的 SSH 连接池和有界历史回收；SSH 操作工具与 CLI MCP 入口尚未开放。GUI 只负责展示与管理，切换页面不停止服务，退出宿主则停止自身实例。
+开发中的 [Agent MCP 接入](specs/agent-mcp.md)由 GUI 启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例；CLI 宿主入口仍待实现。共享核心负责单 Token 鉴权、资源查询、请求去重、固定身份的 SSH 连接池、命令任务、输出、超时、取消和有界回收。逻辑连接与任务由服务实例持有，独立于 Agent 的 HTTP 会话和人类终端；自动重连保持同一实例内的逻辑 ID，已可能发送的命令不重放。GUI 负责配置、启停和共享数量展示，切换页面不停止服务，退出宿主使用有限时间清理；无法确认的远端结果仍按未知处理。
 
 ## 当前状态
+
+MCP 默认远端时限模式的非交互命令在各自的执行通道内携带停止控制，业务命令的标准输入保持关闭。共享核心先验证控制能经实际 SSH 路径送达目标，再开放该模式；取消、确认期限和清理均归属于具体任务，不依赖网关转发 SSH 信号，也不影响后续复用连接的任务。
 
 JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 

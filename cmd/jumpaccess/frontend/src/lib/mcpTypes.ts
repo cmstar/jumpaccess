@@ -14,6 +14,8 @@ export interface MCPStatus {
   tokenConfigured: boolean
   restartRequired: boolean
   error: string
+  counts?: { connections: number; ssh_connections: number; connecting: number; executions: number; unknown_executions: number; draining: boolean }
+  stopWarning?: string
 }
 
 export interface MCPBackend {

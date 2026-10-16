@@ -29,6 +29,7 @@ export function MCPSettings({ backend, active }: { backend?: MCPBackend; active:
   const [status, setStatus] = useState<MCPStatus | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
+  const [serviceAction, setServiceAction] = useState<'stop' | 'restart' | null>(null)
   const [error, setError] = useState('')
   const [configError, setConfigError] = useState('')
   const [statusError, setStatusError] = useState('')
@@ -99,6 +100,11 @@ export function MCPSettings({ backend, active }: { backend?: MCPBackend; active:
     const field = kind === 'certificate' ? 'tlsCert' : 'tlsKey'
     void run(() => backend!.chooseTLSFile(kind, draftRef.current?.[field] || ''), path => { if (path) edit({ [field]: path }) }, 'config')
   }
+  function stopOrRestart(action: 'stop' | 'restart') {
+    if (!backend || busyRef.current) return
+    setServiceAction(action)
+    void run(() => backend[action](), acceptStatus, 'service', true).finally(() => setServiceAction(null))
+  }
 
   const running = status?.state === 'running', external = status?.state === 'external'
   const stateLabel = statusError ? '状态获取失败' : !status ? '读取状态中' : ({ running: '运行中', stopped: '已停止', external: '其他进程占用', failed: '服务异常' }[status.state])
@@ -113,10 +119,13 @@ export function MCPSettings({ backend, active }: { backend?: MCPBackend; active:
         <strong className={`mcp-state ${running || external ? 'running' : ''}`}><span />{stateLabel}</strong>
         <div className="mcp-actions">
           <button type="button" className={`button ${!running && !external ? 'primary' : 'secondary'} small`} disabled={controlsLocked || running || dirty || !status?.tokenConfigured || Boolean(statusError)} onClick={() => void run(() => backend.start(), acceptStatus, 'service', true)}><Play />启动</button>
-          <button type="button" className="button secondary small" disabled={controlsLocked || !running} onClick={() => void run(() => backend.stop(), acceptStatus, 'service', true)}><Square />停止</button>
-          <button type="button" className={`button ${status?.restartRequired && !dirty ? 'primary' : 'secondary'} small`} disabled={controlsLocked || !running || dirty || Boolean(statusError)} onClick={() => void run(() => backend.restart(), acceptStatus, 'service', true)}><RotateCw />重启</button>
+          <button type="button" className="button secondary small" disabled={controlsLocked || !running} onClick={() => stopOrRestart('stop')}><Square />{serviceAction === 'stop' ? '停止中…' : '停止'}</button>
+          <button type="button" className={`button ${status?.restartRequired && !dirty ? 'primary' : 'secondary'} small`} disabled={controlsLocked || !running || dirty || Boolean(statusError)} onClick={() => stopOrRestart('restart')}><RotateCw />{serviceAction === 'restart' ? '重启中…' : '重启'}</button>
         </div>
       </div>
+      {running && status?.counts && <div className="mcp-counts" aria-label="MCP 共享状态"><span>逻辑连接 {status.counts.connections}</span><span>SSH 连接 {status.counts.ssh_connections}</span><span>连接中 {status.counts.connecting}</span><span>执行中 {status.counts.executions}</span>{status.counts.unknown_executions > 0 && <span>结果未知 {status.counts.unknown_executions}</span>}</div>}
+      {serviceAction ? <p className="setting-help" role="status">正在请求停止并清理任务…</p> : running && (status?.counts?.executions || 0) > 0 && <p className="setting-help">停止或重启会请求停止当前共享任务；无法确认结果时，远端命令可能继续运行。</p>}
+      {status?.stopWarning && <p className="mcp-error" role="alert">{status.stopWarning}</p>}
       {external && <p className="setting-help">宿主：{status?.instance?.host || '未知'}。请到启动服务的进程中停止或重启服务。</p>}
       {actualURL && <div className="mcp-address"><span>当前服务地址</span><code aria-label="MCP 实际地址">{actualURL}</code><button type="button" className="icon-button" aria-label="复制当前服务地址" title="复制当前服务地址" onClick={() => void copyText(actualURL)}><Copy /></button></div>}
       {status?.instance && ['0.0.0.0', '::'].includes(status.instance.config.listenHost) && <p className="setting-help">Agent 接入时请将通配监听地址替换为本机实际 IP。</p>}

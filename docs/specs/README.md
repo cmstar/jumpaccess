@@ -21,7 +21,7 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 只读 HTTP 服务与统一配置面板已接通；CLI MCP 与 SSH 操作待实现 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 宿主已提供资源查询、SSH 复用与命令任务；CLI MCP 待实现 |
 
 ## 历史版本索引
 

@@ -14,6 +14,20 @@ function backend(overrides: Partial<MCPBackend> = {}): MCPBackend {
 }
 function view(value: MCPBackend, active = true) { return <NotificationProvider><MCPSettings backend={value} active={active} /></NotificationProvider> }
 
+test('显示共享连接和任务数量，停止期间说明清理，停止后保留未知结果提示', async () => {
+  let finish!: (value: MCPStatus) => void
+  const api = backend({ status: vi.fn().mockResolvedValue({ ...running, counts: { connections: 2, ssh_connections: 1, connecting: 1, executions: 3, unknown_executions: 0, draining: false } }), stop: vi.fn().mockImplementation(() => new Promise<MCPStatus>(resolve => { finish = resolve })) })
+  render(view(api))
+  expect(await screen.findByLabelText('MCP 共享状态')).toHaveTextContent('逻辑连接 2')
+  expect(screen.getByLabelText('MCP 共享状态')).toHaveTextContent('执行中 3')
+  await userEvent.click(screen.getByRole('button', { name: '停止' }))
+  expect(screen.getByRole('button', { name: '停止中…' })).toBeDisabled()
+  expect(screen.getByText('正在请求停止并清理任务…')).toBeInTheDocument()
+  await act(async () => finish({ ...stopped, stopWarning: '服务已停止跟踪部分任务，无法确认其远端结果。' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法确认其远端结果')
+  expect(screen.queryByLabelText('MCP 共享状态')).not.toBeInTheDocument()
+})
+
 test('初始化不自动启动；Token 明文单栏，缺少 Token 时不能启动', async () => {
   const api = backend({ status: vi.fn().mockResolvedValue({ ...stopped, config: { ...config, token: '' }, tokenConfigured: false }) })
   render(view(api))

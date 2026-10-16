@@ -75,11 +75,12 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 7 {
+	if err != nil || len(tools.Tools) != 15 {
 		t.Fatal("查询工具集合不完整", err)
 	}
 	for _, tool := range tools.Tools {
-		if tool.InputSchema == nil || tool.OutputSchema == nil || tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+		mutating := tool.Name == "open_connection" || tool.Name == "close_connection" || tool.Name == "execute_command" || tool.Name == "cancel_execution"
+		if tool.InputSchema == nil || tool.OutputSchema == nil || tool.Annotations == nil || tool.Annotations.ReadOnlyHint == mutating {
 			t.Fatal("工具缺少契约或只读标记", tool.Name)
 		}
 	}
