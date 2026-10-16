@@ -39,6 +39,8 @@ type ExecutionView struct {
 	ConnectionID        string         `json:"connection_id"`
 	Target              ResolvedTarget `json:"target"`
 	TransportGeneration uint64         `json:"transport_generation"`
+	ConnectAttempts     int            `json:"connect_attempts"`
+	Reconnected         bool           `json:"reconnected"`
 	Status              string         `json:"status"`
 	DispatchState       string         `json:"dispatch_state"`
 	RemoteState         string         `json:"remote_state"`
@@ -281,6 +283,9 @@ func (e *Engine) finishExecution(job *execution, status, reason string, err *Fau
 	if stopDone != nil {
 		<-stopDone
 	}
+	if job.channel != nil {
+		e.closeChannel(job.channel, job.client, job.connection)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if terminal(job.view.Status) {
@@ -377,29 +382,29 @@ func (e *Engine) runExecution(job *execution) {
 		e.finishExecution(job, "failed", "identity", asFault(err, "IDENTITY_CHANGED", "无法确认原登录身份"))
 		return
 	}
-	client, generation, err := e.transport(prepare, job.connection, true)
+	client, generation, err := e.prepareTransport(prepare, job)
 	if err != nil {
-		e.finishExecution(job, "failed", "prepare", asFault(err, "CONNECT_FAILED", "无法恢复连接"))
-		return
-	}
-	if job.input.TimeoutStrategy == "remote_required" {
-		if err := e.probeDeadline(prepare, job, client); err != nil {
-			e.finishExecution(job, "failed", "capability", asFault(err, "REMOTE_DEADLINE_UNAVAILABLE", "远端时限能力不可用"))
-			return
-		}
-	}
-	if err := e.opts.Validate(prepare, job.view.Target); err != nil {
-		e.finishExecution(job, "failed", "identity", asFault(err, "IDENTITY_CHANGED", "无法确认原登录身份"))
+		e.finishExecution(job, "failed", "prepare", asFault(err, "CONNECT_FAILED", "无法准备连接"))
 		return
 	}
 	channelCtx, channelCancel := context.WithTimeout(prepare, e.opts.Limits.ChannelTimeout)
 	defer channelCancel()
 	ch, requests, err := e.openChannel(channelCtx, client, job.connection)
+	// 此时原始命令尚未发送；仅健康旧连接的首次失效允许一次恢复。
+	if err != nil && prepare.Err() == nil && job.view.ConnectAttempts == 0 {
+		e.invalidate(job.connection, client)
+		client, generation, err = e.prepareTransport(prepare, job)
+		if err == nil {
+			channelCancel()
+			channelCtx, channelCancel = context.WithTimeout(prepare, e.opts.Limits.ChannelTimeout)
+			defer channelCancel()
+			ch, requests, err = e.openChannel(channelCtx, client, job.connection)
+		}
+	}
 	if err != nil {
 		e.finishExecution(job, "failed", "channel", fault("CHANNEL_FAILED", "无法打开执行通道"))
 		return
 	}
-	defer ch.Close()
 	e.mu.Lock()
 	job.channel = ch
 	job.client = client
@@ -547,12 +552,11 @@ func (e *Engine) collectExecution(job *execution, ch ssh.Channel, requests <-cha
 			e.mu.Lock()
 			job.incomplete = true
 			e.mu.Unlock()
-			ch.Close()
+			e.closeChannel(ch, job.client, job.connection)
 			requests = nil
 			stdout = nil
 			stderr = nil
 		case <-deadline.C:
-			ch.Close()
 			e.invalidate(job.connection, job.client)
 			if !exited {
 				e.finishExecution(job, "unknown", "local_deadline", nil)
@@ -565,7 +569,6 @@ func (e *Engine) collectExecution(job *execution, ch ssh.Channel, requests <-cha
 			stdout = nil
 			stderr = nil
 		case <-job.ctx.Done():
-			ch.Close()
 			e.invalidate(job.connection, job.client)
 			if !exited {
 				e.finishExecution(job, "unknown", "tracking_stopped", nil)

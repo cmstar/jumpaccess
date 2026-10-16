@@ -48,7 +48,7 @@ func (e *Engine) probeDeadline(ctx context.Context, job *execution, client *ssh.
 	if err != nil {
 		return fault("REMOTE_DEADLINE_UNAVAILABLE", "远端时限探测通道不可用")
 	}
-	defer ch.Close()
+	defer e.closeChannel(ch, client, job.connection)
 	payload, _ := json.Marshal(map[string]any{"probe": true, "marker": job.marker})
 	var buffer limitedProbe
 	finished := make(chan bool, 1)

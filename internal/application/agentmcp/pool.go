@@ -103,22 +103,26 @@ type Engine struct {
 	executionHistory []*execution
 	outputQueue      list.List
 	outputBytes      int
+	pages            *Queries
 }
 
 type ConnectionView struct {
-	ID                       string         `json:"connection_id"`
-	Target                   ResolvedTarget `json:"target"`
-	Status                   string         `json:"status"`
-	TransportGeneration      uint64         `json:"transport_generation"`
-	TransportConnected       bool           `json:"transport_connected"`
-	CreatedAt                time.Time      `json:"created_at"`
-	LastUsedAt               time.Time      `json:"last_used_at"`
-	ActiveExecutionID        string         `json:"active_execution_id,omitempty"`
-	ClosedAt                 *time.Time     `json:"closed_at,omitempty"`
-	CloseReason              string         `json:"close_reason,omitempty"`
-	LastError                *Fault         `json:"last_error,omitempty"`
-	ExecCapability           string         `json:"exec_capability"`
-	RemoteDeadlineCapability string         `json:"remote_deadline_capability"`
+	ID                        string         `json:"connection_id"`
+	Target                    ResolvedTarget `json:"target"`
+	Status                    string         `json:"status"`
+	TransportGeneration       uint64         `json:"transport_generation"`
+	TransportConnected        bool           `json:"transport_connected"`
+	CreatedAt                 time.Time      `json:"created_at"`
+	LastUsedAt                time.Time      `json:"last_used_at"`
+	ActiveExecutionID         string         `json:"active_execution_id,omitempty"`
+	ClosedAt                  *time.Time     `json:"closed_at,omitempty"`
+	CloseReason               string         `json:"close_reason,omitempty"`
+	LastError                 *Fault         `json:"last_error,omitempty"`
+	ExecCapability            string         `json:"exec_capability"`
+	RemoteDeadlineCapability  string         `json:"remote_deadline_capability"`
+	LastDisconnectReason      string         `json:"last_disconnect_reason,omitempty"`
+	RetryAfterMS              int64          `json:"retry_after_ms"`
+	RecentUnknownExecutionIDs []string       `json:"recent_unknown_execution_ids"`
 }
 
 type connection struct {
@@ -131,6 +135,7 @@ type connection struct {
 	closing    bool
 	forceClose bool
 	closeDone  chan struct{}
+	retryAt    time.Time
 }
 type dialAttempt struct {
 	done   chan struct{}
@@ -174,6 +179,7 @@ func NewEngine(opts EngineOptions) *Engine {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e := &Engine{opts: opts, ctx: ctx, cancel: cancel, requests: newRequests(opts.Instance, opts.Limits.Requests, opts.Limits.ActiveRequests), connections: make(map[string]*connection), opens: make(map[string]*openOperation), executions: make(map[string]*execution)}
+	e.pages = NewQueries(opts.Instance, nil, nil, nil)
 	go func() {
 		timer := time.NewTicker(opts.MaintenanceInterval)
 		defer timer.Stop()
@@ -303,7 +309,7 @@ func (e *Engine) open(op *openOperation, input Target, reuse bool) {
 		}
 		e.mu.Unlock()
 		if err == nil {
-			_, _, err = e.transport(ctx, c, false)
+			_, _, _, err = e.transport(ctx, c, false)
 		}
 	}
 	e.mu.Lock()
@@ -318,25 +324,29 @@ func (e *Engine) open(op *openOperation, input Target, reuse bool) {
 }
 
 // transport 的拨号由连接拥有；一个请求的取消不取消其他等待者。
-func (e *Engine) transport(ctx context.Context, c *connection, admittedExecution bool) (*ssh.Client, uint64, error) {
+func (e *Engine) transport(ctx context.Context, c *connection, admittedExecution bool) (*ssh.Client, uint64, bool, error) {
 	e.mu.Lock()
 	if e.closing || (c.closing && (!admittedExecution || c.forceClose)) || c.view.Status == "closed" {
 		e.mu.Unlock()
-		return nil, 0, fault("CONNECTION_CLOSED", "连接已关闭或正在关闭")
+		return nil, 0, false, fault("CONNECTION_CLOSED", "连接已关闭或正在关闭")
 	}
 	if c.client != nil {
 		client, generation := c.client, c.view.TransportGeneration
 		e.mu.Unlock()
-		return client, generation, nil
+		return client, generation, false, nil
 	}
 	dial := c.dial
 	if dial == nil {
+		if e.opts.Now().Before(c.retryAt) {
+			e.mu.Unlock()
+			return nil, 0, false, &Fault{Code: "RECONNECT_COOLDOWN", Message: "上次建连失败，短暂冷却后可为新的尝试使用新请求键", Retryable: true}
+		}
 		if e.transportCount() >= e.opts.Limits.Transports {
 			if old := e.idleLRU(c, true); old != nil {
 				e.dropLocked(old, "capacity")
 			} else {
 				e.mu.Unlock()
-				return nil, 0, fault("LIMIT_EXCEEDED", "SSH 连接已满且均忙碌")
+				return nil, 0, false, fault("LIMIT_EXCEEDED", "SSH 连接已满且均忙碌")
 			}
 		}
 		dialCtx, cancel := context.WithTimeout(e.ctx, e.opts.Limits.ConnectTimeout)
@@ -348,18 +358,18 @@ func (e *Engine) transport(ctx context.Context, c *connection, admittedExecution
 	e.mu.Unlock()
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return nil, 0, true, ctx.Err()
 	case <-dial.done:
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if dial.err != nil {
-		return nil, 0, dial.err
+		return nil, 0, true, dial.err
 	}
 	if c.client == nil || (c.closing && (!admittedExecution || c.forceClose)) {
-		return nil, 0, fault("CONNECTION_CLOSED", "连接已关闭")
+		return nil, 0, true, fault("CONNECTION_CLOSED", "连接已关闭")
 	}
-	return c.client, c.view.TransportGeneration, nil
+	return c.client, c.view.TransportGeneration, true, nil
 }
 
 func (e *Engine) dial(ctx context.Context, c *connection, dial *dialAttempt) {
@@ -384,6 +394,7 @@ func (e *Engine) dial(ctx context.Context, c *connection, dial *dialAttempt) {
 		dial.err = err
 		if c.view.Status != "closed" {
 			c.view.Status = "disconnected"
+			c.retryAt = e.opts.Now().Add(e.opts.Limits.Cooldown)
 			c.view.LastError = asFault(err, "CONNECT_FAILED", "SSH 建连失败")
 		}
 	} else {
@@ -391,6 +402,7 @@ func (e *Engine) dial(ctx context.Context, c *connection, dial *dialAttempt) {
 		c.view.TransportGeneration++
 		c.view.Status = "ready"
 		c.view.LastError = nil
+		c.retryAt = time.Time{}
 		c.view.ExecCapability = "unknown"
 		c.view.RemoteDeadlineCapability = "unknown"
 		c.lastPing = e.opts.Now()
@@ -441,6 +453,16 @@ func (e *Engine) findConnection(id string) (*connection, error) {
 func (e *Engine) view(c *connection) ConnectionView {
 	v := c.view
 	v.TransportConnected = c.client != nil
+	if c.closing && v.Status != "closed" {
+		v.Status = "draining"
+	}
+	v.RetryAfterMS = max(int64(0), c.retryAt.Sub(e.opts.Now()).Milliseconds())
+	v.RecentUnknownExecutionIDs = []string{}
+	for _, job := range e.executions {
+		if job.view.ConnectionID == v.ID && job.view.Status == "unknown" {
+			v.RecentUnknownExecutionIDs = append(v.RecentUnknownExecutionIDs, job.view.ID)
+		}
+	}
 	return v
 }
 func (e *Engine) CloseConnection(ctx context.Context, in CloseInput) (ConnectionView, error) {
@@ -517,6 +539,7 @@ func (e *Engine) transportCount() int {
 }
 func (e *Engine) dropLocked(c *connection, reason string) {
 	c.ping = false
+	c.view.LastDisconnectReason = reason
 	if c.client != nil {
 		c.client.Close()
 		c.client = nil
