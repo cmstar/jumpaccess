@@ -122,13 +122,15 @@ type ConnectionView struct {
 }
 
 type connection struct {
-	view     ConnectionView
-	client   *ssh.Client
-	dial     *dialAttempt
-	refs     int
-	ping     bool
-	lastPing time.Time
-	closing  bool
+	view       ConnectionView
+	client     *ssh.Client
+	dial       *dialAttempt
+	refs       int
+	ping       bool
+	lastPing   time.Time
+	closing    bool
+	forceClose bool
+	closeDone  chan struct{}
 }
 type dialAttempt struct {
 	done   chan struct{}
@@ -301,7 +303,7 @@ func (e *Engine) open(op *openOperation, input Target, reuse bool) {
 		}
 		e.mu.Unlock()
 		if err == nil {
-			_, _, err = e.transport(ctx, c)
+			_, _, err = e.transport(ctx, c, false)
 		}
 	}
 	e.mu.Lock()
@@ -316,9 +318,9 @@ func (e *Engine) open(op *openOperation, input Target, reuse bool) {
 }
 
 // transport 的拨号由连接拥有；一个请求的取消不取消其他等待者。
-func (e *Engine) transport(ctx context.Context, c *connection) (*ssh.Client, uint64, error) {
+func (e *Engine) transport(ctx context.Context, c *connection, admittedExecution bool) (*ssh.Client, uint64, error) {
 	e.mu.Lock()
-	if e.closing || c.closing || c.view.Status == "closed" {
+	if e.closing || (c.closing && (!admittedExecution || c.forceClose)) || c.view.Status == "closed" {
 		e.mu.Unlock()
 		return nil, 0, fault("CONNECTION_CLOSED", "连接已关闭或正在关闭")
 	}
@@ -354,7 +356,7 @@ func (e *Engine) transport(ctx context.Context, c *connection) (*ssh.Client, uin
 	if dial.err != nil {
 		return nil, 0, dial.err
 	}
-	if c.client == nil || c.closing {
+	if c.client == nil || (c.closing && (!admittedExecution || c.forceClose)) {
 		return nil, 0, fault("CONNECTION_CLOSED", "连接已关闭")
 	}
 	return c.client, c.view.TransportGeneration, nil
@@ -372,7 +374,7 @@ func (e *Engine) dial(ctx context.Context, c *connection, dial *dialAttempt) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err == nil && (ctx.Err() != nil || e.closing || c.closing || c.view.Status == "closed" || c.dial != dial) {
+	if err == nil && (ctx.Err() != nil || e.closing || (c.closing && (c.forceClose || c.view.ActiveExecutionID == "")) || c.view.Status == "closed" || c.dial != dial) {
 		err = fault("CONNECTION_CLOSED", "建连期间连接已关闭")
 	}
 	if err != nil {
@@ -441,23 +443,43 @@ func (e *Engine) view(c *connection) ConnectionView {
 	v.TransportConnected = c.client != nil
 	return v
 }
-func (e *Engine) CloseConnection(_ context.Context, in CloseInput) (ConnectionView, error) {
-	if in.Mode != "" && in.Mode != "if_idle" {
-		return ConnectionView{}, fault("INVALID_ARGUMENT", "当前关闭模式无效")
+func (e *Engine) CloseConnection(ctx context.Context, in CloseInput) (ConnectionView, error) {
+	if in.Mode != "" && in.Mode != "if_idle" && in.Mode != "drain" && in.Mode != "force" {
+		return ConnectionView{}, fault("INVALID_ARGUMENT", "关闭模式必须是 if_idle、drain 或 force")
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	c, err := e.findConnection(in.ConnectionID)
 	if err != nil {
+		e.mu.Unlock()
 		return ConnectionView{}, err
 	}
 	if c.view.Status == "closed" {
-		return e.view(c), nil
+		v := e.view(c)
+		e.mu.Unlock()
+		return v, nil
 	}
-	if !idle(c) {
+	if (in.Mode == "" || in.Mode == "if_idle") && !idle(c) {
+		e.mu.Unlock()
 		return ConnectionView{}, fault("CONNECTION_BUSY", "连接正在使用，不能按空闲方式关闭")
 	}
-	e.closeLocked(c, "explicit")
+	if in.Mode == "" || in.Mode == "if_idle" {
+		e.closeLocked(c, "explicit")
+		v := e.view(c)
+		e.mu.Unlock()
+		return v, nil
+	}
+	e.beginCloseLocked(c, in.Mode == "force")
+	done := c.closeDone
+	e.mu.Unlock()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.view(c), nil
 }
 func idle(c *connection) bool {
@@ -518,6 +540,9 @@ func (e *Engine) closeLocked(c *connection, reason string) {
 	c.view.Status = "closed"
 	c.view.ClosedAt = &now
 	c.view.CloseReason = reason
+	if c.closeDone != nil {
+		close(c.closeDone)
+	}
 	e.closed = append(e.closed, c)
 	e.pruneLocked()
 }
@@ -581,16 +606,6 @@ func (e *Engine) keepalive(c *connection, client *ssh.Client) {
 			e.dropLocked(c, "keepalive")
 		}
 	}
-}
-func (e *Engine) Shutdown(_ context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.closing = true
-	e.cancel()
-	for _, c := range e.connections {
-		e.closeLocked(c, "service_stop")
-	}
-	return nil
 }
 func asFault(err error, code, message string) *Fault {
 	if err == nil {

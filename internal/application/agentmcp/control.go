@@ -1,6 +1,9 @@
 package agentmcp
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // 仅移除本执行随机标识包围的控制记录，普通 stderr 保持原始字节。
 type controlWriter struct {
@@ -43,7 +46,20 @@ func (w *controlWriter) Write(p []byte) (int, error) {
 			w.job.contextFailed = true
 			w.engine.mu.Unlock()
 		} else {
-			w.output(w.pending[:end+1])
+			var result controlResult
+			if json.Unmarshal([]byte(payload), &result) == nil && (result.Event == "result" || result.Event == "context_failed" || result.Event == "not_started") {
+				w.engine.mu.Lock()
+				if result.Event == "context_failed" {
+					w.job.contextFailed = true
+				} else if w.job.control != nil {
+					w.job.controlInvalid = true
+				} else {
+					w.job.control = &result
+				}
+				w.engine.mu.Unlock()
+			} else {
+				w.output(w.pending[:end+1])
+			}
 		}
 		w.pending = w.pending[end+1:]
 	}

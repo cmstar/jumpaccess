@@ -75,6 +75,11 @@ type execution struct {
 	incomplete     bool
 	marker         string
 	contextFailed  bool
+	control        *controlResult
+	controlInvalid bool
+	stopDone       chan struct{}
+	detached       bool
+	exitReceived   bool
 }
 
 func terminal(status string) bool {
@@ -271,9 +276,24 @@ func (e *Engine) notifyExecution(job *execution) {
 }
 func (e *Engine) finishExecution(job *execution, status, reason string, err *Fault) {
 	e.mu.Lock()
+	stopDone := job.stopDone
+	e.mu.Unlock()
+	if stopDone != nil {
+		<-stopDone
+	}
+	e.mu.Lock()
 	defer e.mu.Unlock()
 	if terminal(job.view.Status) {
 		return
+	}
+	if job.view.CancelRequested && job.view.DispatchState == "not_sent" {
+		status = "cancelled"
+		reason = "before_send"
+		err = nil
+		job.view.CancelConfirmed = true
+	}
+	if status == "unknown" && job.detached {
+		reason = "detached"
 	}
 	now := e.opts.Now()
 	job.view.Status = status
@@ -357,13 +377,19 @@ func (e *Engine) runExecution(job *execution) {
 		e.finishExecution(job, "failed", "identity", asFault(err, "IDENTITY_CHANGED", "无法确认原登录身份"))
 		return
 	}
-	client, generation, err := e.transport(prepare, job.connection)
+	client, generation, err := e.transport(prepare, job.connection, true)
 	if err != nil {
 		e.finishExecution(job, "failed", "prepare", asFault(err, "CONNECT_FAILED", "无法恢复连接"))
 		return
 	}
 	if job.input.TimeoutStrategy == "remote_required" {
-		e.finishExecution(job, "failed", "capability", fault("REMOTE_DEADLINE_UNAVAILABLE", "当前代次尚未验证远端时限能力"))
+		if err := e.probeDeadline(prepare, job, client); err != nil {
+			e.finishExecution(job, "failed", "capability", asFault(err, "REMOTE_DEADLINE_UNAVAILABLE", "远端时限能力不可用"))
+			return
+		}
+	}
+	if err := e.opts.Validate(prepare, job.view.Target); err != nil {
+		e.finishExecution(job, "failed", "identity", asFault(err, "IDENTITY_CHANGED", "无法确认原登录身份"))
 		return
 	}
 	channelCtx, channelCancel := context.WithTimeout(prepare, e.opts.Limits.ChannelTimeout)
@@ -383,10 +409,18 @@ func (e *Engine) runExecution(job *execution) {
 		e.finishExecution(job, "cancelled", "before_send", nil)
 		return
 	}
+	if channelCtx.Err() != nil {
+		e.mu.Unlock()
+		e.finishExecution(job, "failed", "prepare_deadline", fault("PREPARATION_TIMEOUT", "执行准备超时，原始命令未发送"))
+		return
+	}
 	job.view.DispatchState = "possibly_sent"
 	job.view.RemoteState = "unknown"
 	e.mu.Unlock()
 	command := localCommand(job.input, job.marker)
+	if job.input.TimeoutStrategy == "remote_required" {
+		command = remoteCommand(job.input, job.marker)
+	}
 	ack := make(chan struct {
 		ok  bool
 		err error
@@ -420,13 +454,15 @@ func (e *Engine) runExecution(job *execution) {
 	e.mu.Lock()
 	now := e.opts.Now()
 	job.view.DispatchState = "acknowledged"
-	job.view.Status = "running"
+	if !job.view.CancelRequested {
+		job.view.Status = "running"
+	}
 	job.view.RemoteState = "running"
 	job.view.StartedAt = &now
 	job.connection.view.ExecCapability = "supported"
 	e.notifyExecution(job)
 	e.mu.Unlock()
-	_ = ch.CloseWrite()
+	go func() { _ = ch.CloseWrite() }()
 	e.collectExecution(job, ch, requests)
 }
 
@@ -454,7 +490,12 @@ func (e *Engine) collectExecution(job *execution, ch ssh.Channel, requests <-cha
 		writer.flush()
 		close(stderr)
 	}()
-	deadline := time.NewTimer(time.Duration(job.view.TimeoutMS) * time.Millisecond)
+	duration := time.Duration(job.view.TimeoutMS) * time.Millisecond
+	if job.view.TimeoutStrategy == "remote_required" {
+		duration += 15 * time.Second
+	}
+	duration = min(duration, time.Until(job.view.PrepareDeadlineAt.Add(time.Duration(job.view.TimeoutMS)*time.Millisecond+15*time.Second)))
+	deadline := time.NewTimer(duration)
 	defer deadline.Stop()
 	var drain *time.Timer
 	var drainC <-chan time.Time
@@ -488,6 +529,11 @@ func (e *Engine) collectExecution(job *execution, ch ssh.Channel, requests <-cha
 				}
 			}
 			e.mu.Unlock()
+			if exited {
+				e.mu.Lock()
+				job.exitReceived = true
+				e.mu.Unlock()
+			}
 			if exited && drain == nil {
 				drain = time.NewTimer(5 * time.Second)
 				defer drain.Stop()
@@ -540,9 +586,30 @@ func (e *Engine) collectExecution(job *execution, ch ssh.Channel, requests <-cha
 			job.view.RemoteState = "not_started"
 			job.view.ExitCode = nil
 		}
+		control, invalid := job.control, job.controlInvalid
+		remote := job.view.TimeoutStrategy == "remote_required"
+		wrapperOK := job.view.ExitCode != nil && *job.view.ExitCode == 0
+		if remote && control != nil && !invalid && wrapperOK {
+			job.view.ExitCode = control.ExitCode
+			job.view.ExitSignal = control.ExitSignal
+			job.view.CancelConfirmed = control.Cancelled
+			if control.Event == "not_started" {
+				job.view.RemoteState = "not_started"
+			}
+		}
 		e.mu.Unlock()
 		if contextFailed {
 			e.finishExecution(job, "failed", "context", fault("EXECUTION_CONTEXT_FAILED", "无法切换到命令指定目录，原始命令未开始"))
+		} else if remote && (control == nil || invalid || !wrapperOK) {
+			e.mu.Lock()
+			job.view.ExitCode = nil
+			job.view.ExitSignal = ""
+			e.mu.Unlock()
+			e.finishExecution(job, "unknown", "control_missing", fault("EXECUTION_UNKNOWN", "远端执行控制记录缺失或矛盾，无法确认原始命令结果"))
+		} else if remote && control.TimedOut {
+			e.finishExecution(job, "timed_out", "remote_deadline", nil)
+		} else if remote && control.Cancelled {
+			e.finishExecution(job, "cancelled", "remote_stop", nil)
 		} else {
 			e.finishExecution(job, "completed", "exit", nil)
 		}
