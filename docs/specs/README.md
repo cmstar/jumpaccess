@@ -21,7 +21,7 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；共享 HTTP 核心已建立，资源查询与产品入口待接通 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；共享 HTTP 核心及只读资源工具已建立，产品入口待接通 |
 
 ## 历史版本索引
 
