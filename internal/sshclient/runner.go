@@ -57,6 +57,7 @@ func (r Runner) Run(ctx context.Context, connection jumpserver.ClientConnection)
 		defer func() { _ = term.Restore(int(input.Fd()), state) }()
 		transferContext, stopTransfer := context.WithCancel(ctx)
 		defer stopTransfer()
+		go r.syncTerminalSize(transferContext, session, terminal)
 		transferred := make(chan error, 1)
 		go func() {
 			transferred <- clitransfer.Run(transferContext, r.Stdin, r.Stdout, session, transferReader, clitransfer.Options{DownloadDirectory: r.DownloadDirectory})
@@ -92,6 +93,31 @@ func (r Runner) Run(ctx context.Context, connection jumpserver.ClientConnection)
 		}()
 	}
 	return session.Wait()
+}
+
+func (r Runner) syncTerminalSize(ctx context.Context, session *Session, last TerminalOptions) {
+	// 定期读取输出终端尺寸，兼容 macOS 和 Windows，并覆盖建连期间发生的变化。
+	// 只发送有效且变化后的尺寸；会话结束时与输入输出转发一起停止。
+	output := r.Stdout.(*os.File)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		columns, rows, err := term.GetSize(int(output.Fd()))
+		if err == nil && columns > 0 && rows > 0 && (columns != last.Columns || rows != last.Rows) {
+			if err := session.Resize(columns, rows); err != nil {
+				return
+			}
+			last.Columns, last.Rows = columns, rows
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (r Runner) terminalOptions() (TerminalOptions, *os.File, error) {

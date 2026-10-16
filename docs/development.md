@@ -115,6 +115,7 @@ docs/               # 长期项目知识
 
 - CLI 使用 Cobra 的唯一前缀匹配，进程级开关只初始化一次。`internal/cli/prefix.go` 为命令组统一校验未匹配的子命令，并校验 `help` 的目标路径；内置 `help`、`completion` 在构建命令树时初始化。新增命令需考虑同层级名称和别名的前缀冲突，测试完整名称优先、唯一缩写、歧义不执行及位置参数和选项值保持原样。
 - 普通交互命令可以使用 stdout/stderr 与用户沟通。
+- CLI 直接 SSH 会话在建连后立即复查本地 PTY 尺寸，并每 200ms 检查窗口、分屏或字号变化；只在有效尺寸变化时发送 SSH `window-change`，会话退出后停止。macOS 回归测试使用本地真实 PTY 和模拟 SSH 服务端覆盖放大、缩小和正常退出，不连接真实服务器。
 - `jumpctl proxy` 的 stdout 专用于 SSH 协议数据；日志、诊断和可操作错误只写 stderr。
 - Proxy 模式不得启动浏览器或请求交互选择。认证或目标解析失败时返回明确的非零退出码。
 - Windows 的 `proxy` 在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，只有 stdin、stdout 均不是 Console 句柄且当前控制台仅附着 `jumpctl` 一个进程，才以 best-effort 调用 `FreeConsole`。共享终端、交互句柄或任何检查失败时保持附着；非 Windows 平台不执行该优化。
