@@ -2,9 +2,9 @@ package credential
 
 import "time"
 
-// Token is the sensitive OAuth state stored in the operating system's native
-// credential store. It must never be serialized into config.toml or logs.
+// Token 保存于私有凭据文件，不得写入普通配置或日志。
 type Token struct {
+	LoginID      string    `json:"login_id,omitempty"`
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	TokenType    string    `json:"token_type,omitempty"`

@@ -40,6 +40,9 @@ func TestServiceLoginDefaultsToManualFlowAndStoresNativeCredential(t *testing.T)
 	if err != nil || stored.AccessToken != "secret" {
 		t.Fatalf("stored token = %#v, %v", stored, err)
 	}
+	if stored.LoginID == "" {
+		t.Fatal("CLI 共享登录服务未保存登录代际")
+	}
 }
 
 func TestServiceStatusReportsMissingCredentialWithoutExposingAnError(t *testing.T) {

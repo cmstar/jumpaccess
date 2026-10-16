@@ -118,6 +118,7 @@ func (m Manager) ensure(ctx context.Context, profile string, force bool) (creden
 	if err != nil {
 		return credential.Token{}, err
 	}
+	refreshed.LoginID = token.LoginID
 	if refreshed.RefreshToken == "" {
 		refreshed.RefreshToken = token.RefreshToken
 	}
