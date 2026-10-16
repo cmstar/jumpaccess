@@ -179,3 +179,58 @@ func TestTLSListenerUsesConfiguredCertificate(t *testing.T) {
 		t.Fatalf("TLS MCP 返回 %d", response.StatusCode)
 	}
 }
+
+func TestLANHTTPStillRequiresTokenAndChecksOrigin(t *testing.T) {
+	r, settings, token := runtimeFixture(t)
+	cfg, err := settings.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ListenHost, cfg.AllowLAN = "0.0.0.0", true
+	if err := settings.SaveConfig(context.Background(), cfg); err != nil {
+		t.Fatal("LAN HTTP 配置应可保存", err)
+	}
+	status, err := r.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(status.Instance.URL, "http://") {
+		t.Fatal("未配置证书的 LAN 服务应使用 HTTP")
+	}
+	endpoint := strings.Replace(status.Instance.URL, "0.0.0.0", "127.0.0.1", 1)
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, tc := range []struct {
+		name, token, origin, host string
+		want                      int
+	}{
+		{name: "authorized", token: token, want: http.StatusOK},
+		{name: "missing token", want: http.StatusUnauthorized},
+		{name: "wrong token", token: "invalid-test-token", want: http.StatusUnauthorized},
+		{name: "foreign origin", token: token, origin: "http://foreign.example.test", want: http.StatusForbidden},
+		{name: "foreign host", token: token, host: "foreign.example.test:39287", want: http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("MCP-Protocol-Version", "2025-11-25")
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.host != "" {
+				req.Host = tc.host
+			}
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != tc.want {
+				t.Fatalf("HTTP 状态 = %d, want %d", response.StatusCode, tc.want)
+			}
+		})
+	}
+}

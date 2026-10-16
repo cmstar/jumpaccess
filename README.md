@@ -20,6 +20,12 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 首个兼容性参考基线是 JumpServer Client `v4.1.6` 所使用的协议和接口。它是分析参考，不表示本项目依赖该桌面 Client 才能运行。
 
+## Agent 接入（开发中）
+
+当前源码中的 GUI 在“设置 → Agent MCP”提供 Streamable HTTP 服务，Token 与监听设置统一保存至 `config.toml`，支持手动启动、停止和重启。配置框内的修改保存后在下次启动或重启时生效。多个 Agent 可以共用同一服务查询 Profile、组织、资产、授权账号和 Alias；需要先完成相应 Profile 的 JumpServer 登录。
+
+当前仅提供只读查询，尚未提供 MCP SSH 操作和 CLI MCP 命令。GUI 不自动启动服务，退出应用会停止服务。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
+
 ## 安装
 
 ## 安装 CLI jumpctl

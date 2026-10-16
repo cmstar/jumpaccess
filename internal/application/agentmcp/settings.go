@@ -3,6 +3,7 @@ package agentmcp
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -13,15 +14,13 @@ import (
 	"github.com/cmstar/jumpaccess/internal/filelock"
 )
 
-var (
-	ErrRunning     = errors.New("MCP 实例正在运行或管理操作忙碌，请先停止服务后重试")
-	ErrTokenExists = errors.New("MCP Token 已存在，请使用重新生成或替换操作")
-)
+var ErrRunning = errors.New("MCP 实例正在运行或管理操作忙碌，请先停止服务后重试")
 
 const tokenKey = "mcp/access-token"
 
 type Settings struct {
-	Store       config.Store
+	Store config.Store
+	// 仅兼容旧开发版的独立 Token 文件；显式保存后以 config.toml 为准。
 	Credentials credential.Backend
 	Locker      filelock.Locker
 }
@@ -31,17 +30,40 @@ func (s Settings) Config() (config.MCP, error) {
 	if err != nil {
 		return config.MCP{}, err
 	}
-	return value.MCPSettings(), nil
+	cfg := value.MCPSettings()
+	if cfg.Token == "" && s.Credentials != nil {
+		data, err := s.Credentials.Get(tokenKey)
+		if err != nil && !errors.Is(err, credential.ErrNotFound) {
+			return config.MCP{}, err
+		}
+		defer clear(data)
+		if err == nil {
+			cfg.Token = string(data)
+			if err := config.ValidateMCPToken(cfg.Token); err != nil {
+				return config.MCP{}, err
+			}
+		}
+	}
+	return cfg, nil
 }
 
+// SaveConfig 一次原子写入完整配置；运行中的服务继续使用启动快照。
 func (s Settings) SaveConfig(ctx context.Context, value config.MCP) error {
 	if err := value.Validate(); err != nil {
 		return err
 	}
+	if err := config.ValidateMCPToken(value.Token); err != nil {
+		return err
+	}
+	if value.TLSCert != "" {
+		if _, err := tls.LoadX509KeyPair(value.TLSCert, value.TLSKey); err != nil {
+			return fmt.Errorf("无法加载 MCP TLS 证书和私钥，请检查路径、权限与内容")
+		}
+	}
 	return s.Store.Update(ctx, func(current *config.Config) error { current.MCP = &value; return nil })
 }
 
-// AcquireInstance 同时约束服务生存期与 Token 修改，避免启动读取凭据时发生轮换。
+// AcquireInstance 约束服务生存期，同一应用数据目录只允许一个宿主监听。
 func (s Settings) AcquireInstance(ctx context.Context) (func() error, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -62,76 +84,19 @@ func (s Settings) AcquireInstance(ctx context.Context) (func() error, error) {
 }
 
 func (s Settings) TokenConfigured() (bool, error) {
-	_, err := s.ShowToken()
-	if errors.Is(err, credential.ErrNotFound) {
-		return false, nil
-	}
-	return err == nil, err
+	cfg, err := s.Config()
+	return cfg.Token != "", err
 }
 
-func (s Settings) ShowToken() (string, error) {
-	data, err := s.Credentials.Get(tokenKey)
-	if err != nil {
+// GenerateToken 只生成草稿，不写配置或独立凭据，也不要求服务停止。
+func (s Settings) GenerateToken(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
 		return "", err
-	}
-	defer clear(data)
-	token := string(data)
-	if err := validateToken(token); err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-func (s Settings) SetToken(ctx context.Context, value string) error {
-	if err := validateToken(value); err != nil {
-		return err
-	}
-	unlock, err := s.AcquireInstance(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	return s.saveToken(value)
-}
-
-func (s Settings) GenerateToken(ctx context.Context, replace bool) (string, error) {
-	unlock, err := s.AcquireInstance(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer unlock()
-	if !replace {
-		configured, err := s.TokenConfigured()
-		if err != nil {
-			return "", err
-		}
-		if configured {
-			return "", ErrTokenExists
-		}
 	}
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("生成 MCP Token 失败: %w", err)
 	}
 	defer clear(raw[:])
-	token := base64.RawURLEncoding.EncodeToString(raw[:])
-	if err := s.saveToken(token); err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-func (s Settings) saveToken(value string) error {
-	data := []byte(value)
-	defer clear(data)
-	return s.Credentials.Set(tokenKey, data)
-}
-
-func validateToken(value string) error {
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(value)
-	defer clear(decoded)
-	if err != nil || len(value) != 43 || len(decoded) != 32 {
-		return fmt.Errorf("MCP Token 必须为 32 字节随机值的无填充 Base64url 编码")
-	}
-	return nil
+	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }

@@ -8,7 +8,7 @@ JumpAccess 面向需要通过 JumpServer 访问远程 Asset 的用户。用户�
 
 JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServer 仍然是用户授权、Organization、Asset、Account 及会话访问策略的权威来源。
 
-开发中的 Agent 接入场景见 [MCP 设计草案](specs/agent-mcp.md)。当前共享核心支持明确选择 Profile／组织的只读查询，按资产 ID 获取详情，Alias 歧义不选择首项，查询不改变人类当前选择。产品入口、连接复用与命令执行仍待接通；其生命周期边界集中维护在草案中，现有人用 SSH Session 规则仍以本文已实现内容为准。
+开发中的 Agent 接入场景见 [MCP 设计草案](specs/agent-mcp.md)。当前 GUI 可启动共享核心，支持明确选择 Profile／组织的只读查询，按资产 ID 获取详情，Alias 歧义不选择首项，查询不改变人类当前选择。CLI MCP 入口、连接复用与命令执行仍待接通。其生命周期边界集中维护在草案中，现有人用 SSH Session 规则仍以本文已实现内容为准。
 
 共享登录服务为每次成功登录分配新的登录标识，普通 Token 刷新保留该标识；退出、修改站点或删除 Profile 会移除对应凭据，重新登录得到新标识。旧凭据在首次需要固定身份时补齐标识，不要求用户重新登录，也不使用 Access Token 或未经验证的用户名作为稳定身份。该机制为后续 Agent 连接绑定提供基础，不改变现有人类 SSH 会话的生命周期。
 
@@ -38,7 +38,7 @@ GUI 的 Profile 卡片在右上角提供“启用”按钮，当前 Profile 显�
 
 1. 用户选择 Profile 并执行认证命令。
 2. JumpAccess 打开浏览器，完成 OAuth Authorization Code + PKCE 授权。
-3. Token 写入当前用户私有的 Profile 独立凭据文件，TOML 中不保存秘密。
+3. OAuth Token 写入当前用户私有的 Profile 独立凭据文件，不写入 TOML。MCP 的预共享访问 Token 是独立用途，按其设计与其他 MCP 设置统一保存于 `config.toml`。
 4. 程序发起 API 请求时，根据 Token 有效期决定是否刷新。
 5. 桌面 GUI 从启动到退出持续按配置周期检查所有已保存 Refresh Token 的 Profile，并自动发现运行期间新增、重新登录、退出登录或删除的 Profile；`jumpctl ssh` 和 `jumpctl proxy` 在各自进程运行期间检查所使用的 Profile。
 6. 监督器只在 Access Token 临近过期时请求刷新；刷新结果或失败不得改变现有 SSH Session 的连接状态。

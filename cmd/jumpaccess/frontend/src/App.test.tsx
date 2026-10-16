@@ -1318,11 +1318,12 @@ test('设置页使用左侧导航和右侧单列滚动面板', async () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }))
 
     const navigation = screen.getByRole('navigation', { name: '设置导航' })
-    const navigationLabels = ['外观', '终端样式', '终端背景图', '终端行为', 'Tab 行为', '关于 JumpAccess']
+    const navigationLabels = ['Agent MCP', '外观', '终端样式', '终端背景图', '终端行为', 'Tab 行为', '关于 JumpAccess']
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(navigationLabels)
+    expect(within(navigation).getByRole('button', { name: 'Agent MCP' })).toHaveAttribute('aria-current', 'location')
 
     const scrollContainer = screen.getByTestId('settings-scroll')
-    const sectionIDs = ['settings-appearance', 'settings-terminal-style', 'settings-terminal-background', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
+    const sectionIDs = ['settings-mcp', 'settings-appearance', 'settings-terminal-style', 'settings-terminal-background', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
     expect(Array.from(scrollContainer.querySelectorAll(':scope > .settings-stack > section')).map((section) => section.id)).toEqual(sectionIDs)
 
     await user.click(within(navigation).getByRole('button', { name: '终端行为' }))
@@ -1376,7 +1377,8 @@ test('设置页滚动时同步导航，切换 Tab 后保留视图，关闭后重
 
   const scrollContainer = screen.getByTestId('settings-scroll')
   const sectionOffsets: Record<string, number> = {
-    'settings-appearance': 0,
+    'settings-mcp': 0,
+    'settings-appearance': 120,
     'settings-terminal-style': 220,
     'settings-terminal-background': 300,
     'settings-terminal-behavior': 380,
@@ -1404,7 +1406,7 @@ test('设置页滚动时同步导航，切换 Tab 后保留视图，关闭后重
   expect(scrollContainer).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '打开设置' }))
   expect(screen.getByTestId('settings-scroll')).toHaveProperty('scrollTop', 0)
-  expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: '外观' })).toHaveAttribute('aria-current', 'location')
+  expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: 'Agent MCP' })).toHaveAttribute('aria-current', 'location')
 })
 
 test('新 Tab 打开位置默认在末尾，改为当前右侧后立即应用并保存', async () => {

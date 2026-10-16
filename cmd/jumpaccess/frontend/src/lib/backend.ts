@@ -1,5 +1,6 @@
 import { defaultTerminalBackground, type TerminalBackground } from '../model/terminalBackground'
 import type { NewTabPosition } from '../model/tabs'
+import type { MCPBackend, MCPConfig, MCPStatus } from './mcpTypes'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type TerminalRightClickAction = 'paste' | 'context_menu'
@@ -214,6 +215,7 @@ export interface LoginAttempt {
 }
 
 export interface Backend {
+  mcp?: MCPBackend
   acknowledgeSSHOutput?(id: string, sequence: number): Promise<void>
   zmodem?: import('./zmodemTypes').ZmodemBackend
   bootstrap(): Promise<BootstrapState>
@@ -289,6 +291,13 @@ type GoPreferences = {
 }
 
 type DesktopBinding = {
+  GetMCPStatus(): Promise<MCPStatus>
+  SaveMCPConfig(value: MCPConfig): Promise<MCPStatus>
+  StartMCP(): Promise<MCPStatus>
+  StopMCP(): Promise<MCPStatus>
+  RestartMCP(): Promise<MCPStatus>
+  GenerateMCPToken(): Promise<string>
+  ChooseMCPTLSFile(kind: 'certificate' | 'key', currentPath: string): Promise<string>
   AcknowledgeSSHOutput(id: string, sequence: number): Promise<void>
   ProbeSSHTransferCommands(id: string): Promise<import('./zmodemTypes').TransferCapabilities>
   WriteSSHBinary(id: string, data: string): Promise<void>
@@ -442,6 +451,15 @@ function fromPreferences(value: Preferences): GoPreferences {
 }
 
 export const wailsBackend: Backend = {
+  mcp: {
+    status: () => binding().GetMCPStatus(),
+    saveConfig: value => binding().SaveMCPConfig(value),
+    start: () => binding().StartMCP(),
+    stop: () => binding().StopMCP(),
+    restart: () => binding().RestartMCP(),
+    generateToken: () => binding().GenerateMCPToken(),
+    chooseTLSFile: (kind, currentPath) => binding().ChooseMCPTLSFile(kind, currentPath),
+  },
   acknowledgeSSHOutput: (id, sequence) => binding().AcknowledgeSSHOutput(id, sequence),
   zmodem: {
     probeSSHTransferCommands: id => binding().ProbeSSHTransferCommands(id),

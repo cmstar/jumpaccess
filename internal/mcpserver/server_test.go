@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,13 +31,14 @@ func runtimeFixture(t *testing.T) (*agentmcp.Runtime, agentmcp.Settings, string)
 		t.Fatal(err)
 	}
 	cfg := config.DefaultMCP()
+	token, err := s.GenerateToken(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Token = token
 	cfg.Port = listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	if err := s.SaveConfig(context.Background(), cfg); err != nil {
-		t.Fatal(err)
-	}
-	token, err := s.GenerateToken(context.Background(), false)
-	if err != nil {
 		t.Fatal(err)
 	}
 	r := agentmcp.NewRuntime(s, "test", func(info agentmcp.Instance, cfg config.MCP, token string) http.Handler {
@@ -117,8 +119,10 @@ func TestHTTPMCPRealClientAndSingleInstanceLifecycle(t *testing.T) {
 	if err != nil || status.State != "stopped" || status.Instance != nil {
 		t.Fatal("服务停止后仍宣称运行", err)
 	}
-	if _, err := settings.GenerateToken(ctx, true); err != nil {
+	if unlock, err := settings.AcquireInstance(ctx); err != nil {
 		t.Fatal("停止后锁未释放", err)
+	} else {
+		unlock()
 	}
 	if _, err := r.Start(ctx); err != nil {
 		t.Fatal("服务无法重新启动", err)
@@ -184,7 +188,73 @@ func TestHTTPMCPStartFailureReleasesInstanceLock(t *testing.T) {
 	if _, err := r.Start(context.Background()); err == nil {
 		t.Fatal("端口被占用却报告成功")
 	}
-	if _, err := settings.GenerateToken(context.Background(), true); err != nil {
+	if unlock, err := settings.AcquireInstance(context.Background()); err != nil {
 		t.Fatal("启动失败后实例锁未释放", err)
+	} else {
+		unlock()
+	}
+}
+
+func TestSavedTokenChangesOnlyApplyAfterRestart(t *testing.T) {
+	r, settings, oldToken := runtimeFixture(t)
+	ctx := context.Background()
+	started, err := r.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := agentmcp.NewRuntime(settings, "other", nil)
+	assertAuth := func(token string, want int) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, started.Instance.URL, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "text/event-stream")
+		resp, err := (&http.Client{Timeout: time.Second}).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Fatalf("鉴权状态 %d，期望 %d", resp.StatusCode, want)
+		}
+	}
+	cfg, _ := settings.Config()
+	newToken, _ := settings.GenerateToken(ctx)
+	cfg.Token = newToken
+	if err := settings.SaveConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, runtime := range []*agentmcp.Runtime{r, other} {
+		status, err := runtime.Status(ctx)
+		if err != nil || !status.RestartRequired {
+			t.Fatal("Token 变更应提示重启", err)
+		}
+	}
+	assertAuth(oldToken, http.StatusMethodNotAllowed)
+	assertAuth(newToken, http.StatusUnauthorized)
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(settings.Store.Path), "mcp-instance.json"))
+	if err != nil || strings.Contains(string(data), oldToken) || strings.Contains(string(data), newToken) {
+		t.Fatal("实例描述不得存储 Token", err)
+	}
+	// 保存回正在运行的配置时，无需重启；此后再次变更并重启。
+	cfg.Token = oldToken
+	if err := settings.SaveConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	status, _ := r.Status(ctx)
+	if status.RestartRequired {
+		t.Fatal("恢复运行配置后不应提示重启")
+	}
+	cfg.Token = newToken
+	if err := settings.SaveConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	status, err = r.Restart(ctx)
+	if err != nil || status.RestartRequired || status.Instance.ID == started.Instance.ID {
+		t.Fatal("重启应应用配置并产生新实例", err)
+	}
+	assertAuth(oldToken, http.StatusUnauthorized)
+	assertAuth(newToken, http.StatusMethodNotAllowed)
+	if _, err := other.Restart(ctx); err == nil {
+		t.Fatal("不能重启外部实例")
 	}
 }

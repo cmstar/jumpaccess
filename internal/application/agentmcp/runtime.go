@@ -3,6 +3,7 @@ package agentmcp
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
@@ -17,15 +18,15 @@ import (
 	"time"
 
 	"github.com/cmstar/jumpaccess/internal/config"
-	"github.com/cmstar/jumpaccess/internal/credential"
 )
 
 type Instance struct {
-	ID        string     `json:"id"`
-	Host      string     `json:"host"`
-	URL       string     `json:"url"`
-	StartedAt time.Time  `json:"startedAt"`
-	Config    config.MCP `json:"config"`
+	ID                string     `json:"id"`
+	Host              string     `json:"host"`
+	URL               string     `json:"url"`
+	StartedAt         time.Time  `json:"startedAt"`
+	Config            config.MCP `json:"config"`
+	ConfigFingerprint string     `json:"configFingerprint"`
 }
 
 type Status struct {
@@ -65,6 +66,10 @@ func NewRuntime(settings Settings, host string, handler HandlerFactory) *Runtime
 func (r *Runtime) Start(ctx context.Context) (Status, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.startLocked(ctx)
+}
+
+func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 	if err := ctx.Err(); err != nil {
 		return Status{}, err
 	}
@@ -89,11 +94,7 @@ func (r *Runtime) Start(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	token, err := r.settings.ShowToken()
-	if errors.Is(err, credential.ErrNotFound) {
-		return Status{}, fmt.Errorf("请先配置 MCP 访问 Token")
-	}
-	if err != nil {
+	if err := config.ValidateMCPToken(cfg.Token); err != nil {
 		return Status{}, err
 	}
 	if r.handler == nil {
@@ -111,8 +112,8 @@ func (r *Runtime) Start(ctx context.Context) (Status, error) {
 	if _, err := rand.Read(id[:]); err != nil {
 		return Status{}, err
 	}
-	info := Instance{ID: hex.EncodeToString(id[:]), Host: r.host, URL: cfg.URL(), StartedAt: time.Now().UTC(), Config: cfg}
-	handler := r.handler(info, cfg, token)
+	info := Instance{ID: hex.EncodeToString(id[:]), Host: r.host, URL: cfg.URL(), StartedAt: time.Now().UTC(), Config: cfg.WithoutToken(), ConfigFingerprint: configFingerprint(cfg)}
+	handler := r.handler(info, cfg.WithoutToken(), cfg.Token)
 	if handler == nil {
 		return Status{}, fmt.Errorf("MCP 协议处理器不可用")
 	}
@@ -151,6 +152,26 @@ func (r *Runtime) Start(ctx context.Context) (Status, error) {
 func (r *Runtime) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.stopLocked(ctx)
+}
+
+// Restart 将本进程的停止与启动串行化；不会关闭或接管外部宿主。
+func (r *Runtime) Restart(ctx context.Context) (Status, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active == nil {
+		return Status{}, fmt.Errorf("MCP 服务未在当前进程运行")
+	}
+	if err := ctx.Err(); err != nil {
+		return Status{}, err
+	}
+	if err := r.stopLocked(ctx); err != nil {
+		return Status{}, err
+	}
+	return r.startLocked(ctx)
+}
+
+func (r *Runtime) stopLocked(ctx context.Context) error {
 	run := r.active
 	if run == nil {
 		return nil
@@ -179,10 +200,7 @@ func (r *Runtime) Status(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	hasToken, err := r.settings.TokenConfigured()
-	if err != nil {
-		return Status{}, err
-	}
+	hasToken := cfg.Token != ""
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	status := r.localStatus(cfg, hasToken)
@@ -205,7 +223,7 @@ func (r *Runtime) Status(ctx context.Context) (Status, error) {
 		var info Instance
 		if json.NewDecoder(io.LimitReader(file, 32<<10)).Decode(&info) == nil && info.ID != "" {
 			status.Instance = &info
-			status.RestartRequired = cfg != info.Config
+			status.RestartRequired = configFingerprint(cfg) != info.ConfigFingerprint
 		}
 	}
 	return status, nil
@@ -220,9 +238,17 @@ func (r *Runtime) localStatus(cfg config.MCP, hasToken bool) Status {
 		info := r.active.info
 		status.State = "running"
 		status.Instance = &info
-		status.RestartRequired = cfg != info.Config
+		status.RestartRequired = configFingerprint(cfg) != info.ConfigFingerprint
 	}
 	return status
+}
+
+// 实例描述只保存整体配置指纹，Token 明文仅存在配置文件和鉴权内存中。
+func configFingerprint(cfg config.MCP) string {
+	data, _ := json.Marshal(cfg)
+	defer clear(data)
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func (r *Runtime) instancePath() string {

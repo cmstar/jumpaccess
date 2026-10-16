@@ -100,6 +100,32 @@ func TestVersionCommandPrintsBinaryVersion(t *testing.T) {
 	}
 }
 
+func TestProfileCommandsPreserveMCPSettingsWithoutPrintingToken(t *testing.T) {
+	store := projectconfig.Store{Path: filepath.Join(t.TempDir(), "config.toml")}
+	cfg := projectconfig.Default()
+	mcp := projectconfig.DefaultMCP()
+	mcp.Token = strings.Repeat("A", 43)
+	cfg.MCP = &mcp
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	for _, args := range [][]string{{"profile", "add", "sample", "--url", "https://example.test"}, {"profile", "list"}} {
+		root := NewRoot(Dependencies{Store: store, Stdout: &output, Stderr: &output})
+		root.SetArgs(args)
+		if err := root.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved, err := store.Load()
+	if err != nil || saved.MCPSettings() != mcp {
+		t.Fatal("CLI 修改 Profile 丢失了共享 MCP 设置", err)
+	}
+	if strings.Contains(output.String(), mcp.Token) {
+		t.Fatal("普通 CLI 输出泄露 MCP Token")
+	}
+}
+
 func TestLicensesCommandPrintsProjectAndThirdPartyNotices(t *testing.T) {
 	var stdout bytes.Buffer
 	root := NewRoot(Dependencies{

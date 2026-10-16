@@ -2,7 +2,7 @@
 
 本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
 
-开发中的 [Agent MCP 接入](specs/agent-mcp.md)目标是由 CLI 命令或 GUI 开关启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例。两端使用相同配置和单一 Bearer Token，运行状态与人类 SSH 会话独立。当前共享核心已有配置、Token、HTTP 鉴权、单实例启停和只读资源查询，尚无可启动的产品入口；完整产品边界见方案。
+开发中的 [Agent MCP 接入](specs/agent-mcp.md)目标是由 CLI 命令或 GUI 控制面板启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例。两端使用相同配置和单一 Bearer Token，运行状态与人类 SSH 会话独立。当前 GUI 设置已接入共享核心，支持配置与 Token 统一保存、HTTP 鉴权、单实例启停和重启，以及只读资源查询；CLI MCP 入口、SSH 连接和执行能力尚未实现。GUI 只负责展示与管理，切换页面不停止服务，退出宿主则停止自身实例。
 
 ## 当前状态
 
@@ -37,7 +37,7 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 | 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好、Tab 工作区和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
-| 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
+| 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias、行为配置以及 MCP 网络设置与访问 Token；OAuth 凭据独立保存 |
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |

@@ -2061,17 +2061,17 @@ details > summary::-webkit-details-marker {
   border-bottom: 0;
 }
 
-.download-directory-control {
+.settings-input-action {
   position: relative;
   min-width: 0;
 }
 
-.settings-card .download-directory-control input {
+.settings-card .settings-input-action input {
   margin-top: 0;
   padding-right: 42px;
 }
 
-.download-directory-control .icon-button {
+.settings-input-action .icon-button {
   position: absolute;
   top: 50%;
   right: 4px;
@@ -2080,12 +2080,12 @@ details > summary::-webkit-details-marker {
   transform: translateY(-50%);
 }
 
-.download-directory-control .icon-button svg {
+.settings-input-action .icon-button svg {
   width: 16px;
   height: 16px;
 }
 
-.download-directory-control .icon-button:focus-visible {
+.settings-input-action .icon-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }

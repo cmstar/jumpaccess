@@ -18,7 +18,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 
 ## CLI 与 GUI 共同行为变更
 
-待实施的 [Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。按当前需求分阶段先接入 GUI、后接入 CLI 时，应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。这些 MCP 功能尚未实现。
+开发中的 [Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。按当前需求分阶段先接入 GUI、后接入 CLI 时，应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 GUI 已接入配置、Token、HTTP 服务启停和只读资源工具；CLI MCP 入口和 SSH 操作尚未实现。
 
 以产品能力判断修改范围。CLI 和 GUI 都支持的功能，其业务规则、结果和通用终端输出属于共同契约；代码是否物理共享、用户示例来自哪一端、先定位到哪个文件，都不能据此缩小为单端修改。用户未明确限定入口时，默认要求两端同时生效。
 
@@ -124,9 +124,9 @@ docs/               # 长期项目知识
 
 ## 配置与凭据
 
-- 非敏感配置使用 TOML。
-- MCP 非敏感设置保存于共享配置的可选 `[mcp]` 节，Token 使用独立凭据键和既有私有文件后端；核心装配不启动监听。旧配置读取和普通保存不新增该节，首次显式保存 MCP 设置后，旧版本的严格解码会拒绝它。回退前先停止服务并备份配置，再移除 `[mcp]` 节；不要删除其他配置或 OAuth 凭据。网络配置可保存为待重启配置，Token 变更与服务运行互斥。
-- MCP 使用官方 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 的无协议会话 Streamable HTTP，保留业务状态在共享 Runtime 中。协议检查覆盖 `2025-11-25` 初始化与 `2026-07-28` 发现流程；SDK HTTP 集成测试不替代真实 Agent 客户端验收。HTTP 使用 Bearer、Host／Origin 检查、TLS、请求大小和并发上限，不提供 OAuth 授权服务器或跨域浏览器入口。
+- 非敏感配置使用 TOML；MCP 访问 Token 与网络设置统一保存于该文件，OAuth 凭据仍独立管理。相关边界见 [MCP 设计](specs/agent-mcp.md)。
+- MCP 网络设置与 Token 统一保存在共享配置的可选 `[mcp]` 节，由配置锁保护并原子替换；核心装配不启动监听。旧配置读取和普通保存不新增该节；旧开发版独立 MCP Token 仅在配置中尚无 Token 时兼容读取，读取不写文件，用户显式保存后以 TOML 为准。运行中的服务继续使用启动快照，所有变更均在重启后生效；实例描述只保存去除 Token 的配置和指纹，不保存明文 Token。端口、地址、访问范围、Token 和 TLS 配对由共享核心校验，显式保存时还验证证书与私钥可加载。首次保存 MCP 设置后，旧版本严格解码会拒绝该节；回退前停止服务、备份配置并移除 `[mcp]`，保留其他配置和 OAuth 凭据。
+- MCP 使用官方 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 的无协议会话 Streamable HTTP，保留业务状态在共享 Runtime 中。协议检查覆盖 `2025-11-25` 初始化与 `2026-07-28` 发现流程；SDK HTTP 集成测试不替代真实 Agent 客户端验收。HTTP 使用必填的预共享 Bearer Token、Host／Origin 检查、可选 TLS、请求大小和并发上限，不提供 OAuth 授权服务器或跨域浏览器入口。显式允许 LAN 后可以使用 HTTP + Token；TLS 两项须同时留空或同时填写。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
 - OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。

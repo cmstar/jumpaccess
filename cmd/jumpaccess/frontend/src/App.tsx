@@ -42,6 +42,7 @@ import './App.css'
 import { AssetIcon } from './components/AssetIcon'
 import { NotificationProvider, useNotifications } from './components/Notifications'
 import { useCopyText } from './components/useCopyText'
+import { MCPSettings } from './components/MCPSettings'
 import { useTerminalFullscreen } from './model/useTerminalFullscreen'
 import { DeveloperSettings } from './components/DeveloperSettings'
 import appIconURL from '../../build/appicon.svg'
@@ -1806,7 +1807,7 @@ function DownloadDirectoryInput({ backend, value, onChange }: { backend: Backend
   return <div className="terminal-style-row">
     <div><label htmlFor="download-directory">指定目录</label><small className="setting-help" id="download-directory-help">填写本机文件夹的完整路径。留空或目录不可用时，会询问本次保存位置。</small></div>
     <div>
-      <div className="download-directory-control">
+      <div className="settings-input-action">
         <input id="download-directory" aria-describedby="download-directory-help" title={draft} value={draft} onChange={event => setDraft(event.target.value)} onBlur={() => { if (draft !== value) onChange(draft) }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
         <button aria-label="选择文件夹" title="选择文件夹" className="icon-button" type="button" disabled={busy} onClick={() => void browse()}><FolderOpen /></button>
       </div>
@@ -1816,6 +1817,7 @@ function DownloadDirectoryInput({ backend, value, onChange }: { backend: Backend
 }
 
 const settingsNavigation = [
+  { id: 'mcp', label: 'Agent MCP', icon: Server },
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal-style', label: '终端样式', icon: TerminalSquare },
   { id: 'terminal-background', label: '终端背景图', icon: ImageIcon },
@@ -1831,7 +1833,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
   // 本地编译默认版本为 dev；发布流程注入 tag 版本，包括预发布版本。
   const developmentBuild = version === 'dev'
   const navigation = settingsNavigation.filter(item => item.id !== 'debug' || developmentBuild)
-  const [activeSection, setActiveSection] = useState<SettingsSectionID>('appearance')
+  const [activeSection, setActiveSection] = useState<SettingsSectionID>(settingsNavigation[0].id)
   const scrollRef = useRef<HTMLDivElement>(null)
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
 
@@ -1878,6 +1880,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
       </nav>
       <div className="settings-scroll" data-testid="settings-scroll" onScroll={syncActiveSection} ref={scrollRef}>
         <div className="settings-content settings-stack">
+          <MCPSettings backend={backend.mcp} active={!hidden} />
           <section className="settings-card" id="settings-appearance">
             <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>控制窗口、菜单与设置页的主题，终端内容使用独立配色。</p></div></div>
             <div className="segmented-control" aria-label="界面主题">

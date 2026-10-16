@@ -38,8 +38,9 @@ func TestMCPConfigDecodeAndValidation(t *testing.T) {
 	}
 	for _, raw := range []string{
 		"port = 0", "port = 65536", "token = 'secret'", "listen_host = 'example.com'",
-		"listen_host = '0.0.0.0'", "listen_host = '0.0.0.0'\nallow_lan = true",
+		"listen_host = '0.0.0.0'",
 		"tls_cert = 'cert.pem'", "tls_key = 'key.pem'",
+		"allow_lan = true\ntls_cert = 'cert.pem'", "allow_lan = true\ntls_key = 'key.pem'",
 	} {
 		if _, err := Decode([]byte("version = 1\n[mcp]\n" + raw)); err == nil {
 			t.Fatalf("应拒绝配置 %s", raw)
@@ -52,5 +53,24 @@ func TestMCPConfigDecodeAndValidation(t *testing.T) {
 	}
 	if _, err := Decode([]byte("version = 1\n[mcp]\nlisten_host = '0.0.0.0'\nallow_lan = true\ntls_cert = 'cert.pem'\ntls_key = 'key.pem'")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMCPLANAllowsHTTPWithOptionalTLS(t *testing.T) {
+	for _, host := range []string{"0.0.0.0", "::", "192.0.2.10", "127.0.0.1"} {
+		t.Run(host, func(t *testing.T) {
+			value, err := Decode([]byte("version = 1\n[mcp]\nlisten_host = '" + host + "'\nallow_lan = true"))
+			if err != nil {
+				t.Fatal("显式允许 LAN 后应支持无证书 HTTP", err)
+			}
+			cfg := value.MCPSettings()
+			if !strings.HasPrefix(cfg.URL(), "http://") {
+				t.Fatal("未配置证书时应使用 HTTP")
+			}
+			cfg.TLSCert, cfg.TLSKey = "cert.pem", "key.pem"
+			if err := cfg.Validate(); err != nil || !strings.HasPrefix(cfg.URL(), "https://") {
+				t.Fatal("同时提供证书和私钥时应支持 HTTPS", err)
+			}
+		})
 	}
 }
