@@ -21,7 +21,7 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 产品与架构设计草案，待评审，尚未实施 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；已完成共享配置与 Token 管理底层，服务入口待接通 |
 
 ## 历史版本索引
 

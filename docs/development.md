@@ -125,6 +125,7 @@ docs/               # 长期项目知识
 ## 配置与凭据
 
 - 非敏感配置使用 TOML。
+- MCP 非敏感设置保存于共享配置的可选 `[mcp]` 节，Token 使用独立凭据键和既有私有文件后端；核心装配不启动监听。旧配置读取和普通保存不新增该节，首次显式保存 MCP 设置后，旧版本的严格解码会拒绝它。回退前先停止服务并备份配置，再移除 `[mcp]` 节；不要删除其他配置或 OAuth 凭据。网络配置可保存为待重启配置，Token 变更与服务运行互斥。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
 - OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。

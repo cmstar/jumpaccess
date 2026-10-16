@@ -2,7 +2,7 @@
 
 本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
 
-未实施设计：[Agent MCP 接入](specs/agent-mcp.md)拟由 CLI 命令或 GUI 开关启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例，供多个 Agent 共用连接与执行管理。两端使用相同配置和单一 Bearer Token；MCP 状态由宿主进程持有，与人类 SSH 会话独立。具体产品边界见草案，不代表当前程序已有 MCP 能力。
+开发中的 [Agent MCP 接入](specs/agent-mcp.md)目标是由 CLI 命令或 GUI 开关启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例。两端使用相同配置和单一 Bearer Token，运行状态与人类 SSH 会话独立。当前已完成共享配置与 Token 管理底层，尚无可启动的 MCP 入口；完整产品边界见方案。
 
 ## 当前状态
 

@@ -35,6 +35,7 @@ type Config struct {
 	CurrentProfile string             `toml:"current_profile"`
 	Behavior       Behavior           `toml:"behavior"`
 	Profiles       map[string]Profile `toml:"profiles"`
+	MCP            *MCP               `toml:"mcp,omitempty"`
 }
 
 type Behavior struct {
@@ -71,12 +72,17 @@ func Default() Config {
 
 func Decode(data []byte) (Config, error) {
 	result := Default()
+	mcpDefaults := DefaultMCP()
+	result.MCP = &mcpDefaults
 	metadata, err := toml.Decode(string(data), &result)
 	if err != nil {
 		return Config{}, fmt.Errorf("decode TOML: %w", err)
 	}
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return Config{}, fmt.Errorf("unknown TOML field %q", undecoded[0].String())
+	}
+	if !metadata.IsDefined("mcp") {
+		result.MCP = nil
 	}
 	if err := result.Validate(); err != nil {
 		return Config{}, err
@@ -85,6 +91,9 @@ func Decode(data []byte) (Config, error) {
 }
 
 func (c *Config) Validate() error {
+	if err := c.MCPSettings().Validate(); err != nil {
+		return err
+	}
 	if c.Version != CurrentVersion {
 		return fmt.Errorf("unsupported config version %d", c.Version)
 	}

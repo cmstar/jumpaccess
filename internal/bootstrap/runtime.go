@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	resourcesapp "github.com/cmstar/jumpaccess/internal/application/resources"
@@ -37,6 +38,7 @@ type Runtime struct {
 	Connect       connectapp.Service
 	Resources     resourcesapp.Service
 	Settings      settingsapp.Service
+	MCPSettings   agentmcp.Settings
 }
 
 func New(options Options) (Runtime, error) {
@@ -113,5 +115,6 @@ func New(options Options) (Runtime, error) {
 		Connect:       connectService,
 		Resources:     resourceService,
 		Settings:      settingsapp.Service{Store: store, Credentials: tokens, Locker: manager.Locker},
+		MCPSettings:   agentmcp.Settings{Store: store, Credentials: tokens.Backend, Locker: filelock.Locker{Dir: filepath.Join(options.RootDir, "locks")}},
 	}, nil
 }
