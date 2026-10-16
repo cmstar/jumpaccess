@@ -39,6 +39,7 @@ type requests struct {
 	current                           uint64
 	historyLimit, activeLimit, active int
 	records                           map[string]*requestRecord
+	resources                         map[string]int
 	fifo                              list.List
 }
 
@@ -46,7 +47,7 @@ func newRequests(instance string, historyLimit, activeLimit int) *requests {
 	if historyLimit < 1 || activeLimit < 1 {
 		panic("request limits must be positive")
 	}
-	return &requests{instance: instance, current: 1, historyLimit: historyLimit, activeLimit: activeLimit, records: make(map[string]*requestRecord)}
+	return &requests{instance: instance, current: 1, historyLimit: historyLimit, activeLimit: activeLimit, records: make(map[string]*requestRecord), resources: make(map[string]int)}
 }
 
 func (r *requests) epoch() uint64 { r.mu.Lock(); defer r.mu.Unlock(); return r.current }
@@ -95,6 +96,7 @@ func (r *requests) begin(tool, key string, params any, admit func() (string, err
 	}
 	record := &requestRecord{ResourceID: id, key: index, epoch: epoch, digest: digest, done: make(chan struct{})}
 	r.records[index] = record
+	r.resources[id]++
 	r.active++
 	return record, true, nil
 }
@@ -118,8 +120,18 @@ func (r *requests) finish(record *requestRecord, failure *Fault) {
 			r.current++
 		}
 		delete(r.records, old.key)
+		r.resources[old.ResourceID]--
+		if r.resources[old.ResourceID] == 0 {
+			delete(r.resources, old.ResourceID)
+		}
 		r.fifo.Remove(first)
 	}
 	r.fifo.PushBack(record)
 	close(record.done)
+}
+
+func (r *requests) knows(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.resources[id] > 0
 }
