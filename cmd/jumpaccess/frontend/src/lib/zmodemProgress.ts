@@ -10,12 +10,22 @@ function bytes(value: number): string {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GiB`
 }
 
+function duration(milliseconds: number): string {
+  if (milliseconds < 10) return '<0.01 s'
+  // 先按显示精度取整，避免分钟或小时边界出现 60.00 s。
+  const seconds = Math.round(milliseconds / 10) / 100
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor(seconds % 3600 / 60)
+  return `${hours ? `${hours} h ` : ''}${hours || minutes ? `${minutes} m ` : ''}${(seconds % 60).toFixed(2)} s`
+}
+
 // 本地进度只进入终端显示和历史，不发送到 SSH，也不进入 ZMODEM 解析器。
 export class ZmodemProgress {
   private active = false
   private size = 0
   private transferred = 0
   private direction: 'upload' | 'download' = 'download'
+  private startedAt = 0
   private lastAt = 0
   private pending = ''
 
@@ -27,7 +37,9 @@ export class ZmodemProgress {
     this.direction = direction
     this.size = size
     this.transferred = 0
-    this.lastAt = Date.now()
+    // 每个文件单独使用单调时钟，排除选择文件和文件间等待的时间。
+    this.startedAt = performance.now()
+    this.lastAt = this.startedAt
     // 本机完整路径单独一行，避免长路径导致进度反复折行。
     this.output(`\r\n${direction === 'upload' ? 'Upload' : 'Download to'} ${safeText(path)}\r\n`)
     this.render('')
@@ -37,7 +49,7 @@ export class ZmodemProgress {
     if (!this.active) return
     const reachedEnd = transferred >= this.size && this.transferred < this.size
     this.transferred = transferred
-    const now = Date.now()
+    const now = performance.now()
     if (reachedEnd || now - this.lastAt >= 100) {
       this.lastAt = now
       this.render(transferred >= this.size ? (this.direction === 'download' ? 'Saving' : 'Waiting for confirmation') : '')
@@ -51,7 +63,15 @@ export class ZmodemProgress {
 
   end(status: string, complete = false) {
     if (!this.active) return
-    this.render(status, complete, `\r\n${this.pending}`)
+    let statistics = ''
+    if (complete) {
+      // 由控制器在保存或远端确认后结束，耗时包含最后的确认阶段。
+      const elapsed = Math.max(0, performance.now() - this.startedAt)
+      const speed = this.transferred === 0 ? '0 B/s'
+        : elapsed > 0 ? `${bytes(Math.round(this.transferred * 1000 / elapsed))}/s` : '—'
+      statistics = ` · Elapsed ${duration(elapsed)} · Avg ${speed}`
+    }
+    this.render(status, complete, `${statistics}\r\n${this.pending}`)
     this.active = false
     this.pending = ''
   }

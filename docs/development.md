@@ -11,11 +11,43 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 - 工程采用单个 Go module，支持多个入口适配器共享核心逻辑。
 - 可执行入口包括 `jumpctl` 与 `jumpaccess`；GUI 不得迫使 OAuth、配置、JumpServer API、目标解析或 SSH 逻辑复制一份。
 - GUI 使用 Wails 2.14，前端使用 React、TypeScript 和 Vite。Wails 项目根位于 `cmd/jumpaccess`，与根 Go module 共用依赖。
+- 前端开发和 CI 使用 Node.js 24；前端依赖和脚本以 `cmd/jumpaccess/frontend/package.json` 与 `package-lock.json` 为准。
 - 桌面应用图标的唯一设计源为 `cmd/jumpaccess/build/appicon.svg`；`appicon.png` 是由该 SVG 渲染的 1024×1024 构建输入，Windows 多尺寸图标为 `cmd/jumpaccess/build/windows/icon.ico`。三者使用同一“终端 chevron 穿过跳板网关”标记，不以生成式栅格图作为发布源。
 - Windows 和 macOS 都是目标平台。
 - JumpServer Client `v4.1.6` 是首个协议行为参考，不应成为运行时依赖。
 
-## 目标目录边界
+## CLI 与 GUI 共同行为变更
+
+以产品能力判断修改范围。CLI 和 GUI 都支持的功能，其业务规则、结果和通用终端输出属于共同契约；代码是否物理共享、用户示例来自哪一端、先定位到哪个文件，都不能据此缩小为单端修改。用户未明确限定入口时，默认要求两端同时生效。
+
+修改这类功能时必须完成以下步骤：
+
+1. 实施前同时定位 CLI、GUI 的调用路径、输出位置和相关测试，确认哪些逻辑已经共享，哪些仍分别实现。
+2. 在同一变更中同步实现两端的共同要求，优先复用已有共享核心；分别实现的适配器和输出层也必须同步检查。某一端已满足要求或已通过共享核心获得变更时，可以不改该端源码，但必须用该入口的验证结果说明，不为凑齐文件改动制造空修改。
+3. 按同一组行为和边界条件验证两个入口。生产行为变更遵守 RED–GREEN–REFACTOR；新增输出字段、状态条件或统计规则，须在 CLI 和 GUI 各自的相关测试中覆盖。共享核心测试、协议两端互通测试不能替代 CLI／GUI 各自的用户可见行为验证。
+4. 交付前分别核对 CLI 实现与验证、GUI 实现与验证，以及共同规则和入口差异的文档。交付说明明确两端覆盖情况；只完成一端或另一端检查未通过时，不得宣称共同能力已完成。
+
+### ZMODEM 修改对应表
+
+`jumpctl ssh` 与桌面 SSH 终端中的 `sz` / `rz` 是同一项产品能力。修改下列任一共同契约时，都要检查对应的两端实现：
+
+| 修改内容 | CLI 入口 | GUI 入口 | 必须同步核对的内容 |
+| --- | --- | --- | --- |
+| 协议适配、上传和下载生命周期 | `internal/zmodem/`、`internal/clitransfer/controller.go` | `cmd/jumpaccess/frontend/src/lib/zmodem.ts` | 开始与完成条件、逐文件处理、跳过、失败、取消、断连和清理 |
+| 终端进度与结果输出 | `internal/clitransfer/controller.go` 中的 `progress` | `cmd/jumpaccess/frontend/src/lib/zmodemProgress.ts` | 信息项、状态含义、文案、数值单位和精度、统计起止点、平均速度口径、Shell 输出恢复 |
+| 本地文件保存和同名保护 | `internal/clitransfer/controller.go` 调用 `internal/application/zmodemfiles/` | `cmd/jumpaccess/zmodem.go` 及前端控制器调用同一文件存储 | 保存成功后才完成、同名另存、空文件、失败或取消后的清理 |
+
+通用终端输出采用同一信息契约。例如新增耗时和平均速度时，两端都必须显示，并使用相同的计时边界、单位和精度，覆盖上传、下载、空文件、多文件和未成功完成的情况；续传等仅某端已支持的协议能力，还要验证该端的统计边界。终端结果文案沿用英文约定。现有 CLI 的 ` - ` 与 GUI 的 ` · ` 等排版差异不要求逐字符相同，但不能用排版或实现语言差异作为遗漏信息项的理由。现有实现差异以代码和架构文档为准，不能把同步修改要求描述成所有历史输出已完全一致。
+
+涉及共同传输行为或输出时，至少运行 `go test -race ./internal/zmodem ./internal/clitransfer ./internal/sshclient` 和 `npm --prefix cmd/jumpaccess/frontend test -- src/lib/zmodem.test.ts src/lib/zmodemProgress.test.ts`。修改共享文件存储、SSH 事件桥或顶部传输组件时，再运行下文对应的相关检查。两套测试应针对本次修改使用一致的输入条件和预期语义；只验证一种上传或下载方向不足以覆盖适用于双向的要求。
+
+### 入口专属交互与范围例外
+
+GUI 的原生文件选择器、工具栏、Tab 和顶部通知，以及 CLI 的本地路径输入提示，可以保留各自的交互方式；这些载体展示的共同传输结果仍受上述约束。`jumpctl proxy` 和非交互 I/O 维持字节透传，不插入本地传输进度或统计。SFTP 当前是 GUI 的独立能力，不因 ZMODEM 同步规则新增 CLI SFTP 功能。
+
+用户明确要求只修改某一入口时，按其范围执行，并在交付说明中标明另一入口是否受影响。新增或调整入口差异时，在对应架构／领域文档中记录原因和适用边界；不能仅以“CLI 和 GUI 是两份实现”为由形成差异。
+
+## 目录边界
 
 当前目录边界：
 
@@ -56,6 +88,38 @@ docs/               # 长期项目知识
 
 桌面入口继续使用根目录的同一个 `go.mod`。`cmd/jumpaccess/frontend` 保存 React 前端，`cmd/jumpaccess/build` 保存 Windows 与 macOS 构建资源；入口层只处理表现与进程交互，核心用例不依赖 CLI 框架或 Wails。
 
+## 文档维护
+
+按职责维护现有文档，完整规则保留一个主要归属，其他入口使用摘要或链接。本项目当前的开发约束以本文和 [AGENTS.md](../AGENTS.md) 为入口；出现需要长期单独维护的专项规范时，再通过 [standards/README.md](standards/README.md) 登记。
+
+| 文档入口 | 内容归属与更新时机 |
+| --- | --- |
+| [README.md](../README.md) | 面向使用者的简介、环境、安装、运行和发布入口；这些入口变化时同步更新 |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | 面向贡献者和维护者的 Issue、PR、审查与合并流程；协作约定变化时更新，技术细节链接到本文 |
+| [Issue 表单](../.github/ISSUE_TEMPLATE/) / [PR 模板](../.github/pull_request_template.md) | 收集复现、需求、改动范围和验证信息；协作约定或必填信息变化时与贡献指南同步维护 |
+| [AGENTS.md](../AGENTS.md) / [CLAUDE.md](../CLAUDE.md) | Agent 按需阅读和工作规则；约束变化时更新 AGENTS，CLAUDE 保持引用同一入口 |
+| [architecture.md](architecture.md) | 当前系统组成、模块职责、依赖、数据流和技术选择；架构边界变化时更新，未实施设计明确标注 |
+| [domain.md](domain.md) | 业务对象、关系、流程、规则和术语；需求或业务边界变化时更新 |
+| [development.md](development.md) | 工程布局、配置、安全、测试、构建和发布约束；工具链、命令或开发流程变化时更新 |
+| [cli.md](cli.md) | 当前 CLI 对外契约；命令、参数、输出或兼容性变化时同步更新，继续保留现有路径 |
+| [standards/README.md](standards/README.md) | 专项规范用途、维护约定及规范索引；新增或修改专项约束时维护 |
+| [decisions/README.md](decisions/README.md) | 决策的历史依据与当前、历史两类索引；重要取舍或有效范围变化时维护状态与后续说明 |
+| [specs/README.md](specs/README.md) | 当前需求与设计、历史版本两类索引；具体方案确定、实施或替代时更新状态和引用 |
+| [runbooks/README.md](runbooks/README.md) | 操作手册与验证状态索引；流程需要独立交接，或命令、环境、权限变化时维护 |
+
+四个目录 README 使用固定格式的六张索引表，无专题文档时保留空表；新增、移动、替代或废弃文档时，同步维护索引和相对链接。既有基础文档和 CLI 参考不为填充目录而拆分或复制。已确定决策的原始正文保留历史原意，具体维护边界见[决策记录](decisions/README.md)。
+
+贡献指南当前仅维护中文版。Issue 的问题反馈与功能建议分别提供 `zh`、`en` 两份表单；成对表单同步维护字段 ID、类型、必填要求和选项含义，只翻译面向填写者的文案。PR 使用一份中英文双语 Markdown 模板，填写者任选一种语言。修改模板时检查 YAML 语法、GitHub Issue Forms 字段结构、中英文表单一致性和文档链接；模板需进入远端默认分支后才会作为 GitHub 的默认入口使用。
+
+本项目的文档结构省略 `.agents/skills/`，不要求为保留空目录创建 `.agents/`。通用脚手架校验涉及该目录时，按本项目明确例外报告，其余结构与内容仍需检查。
+
+## 生成物与构建资源
+
+- `cmd/jumpaccess/frontend/wailsjs/` 由 Wails 生成绑定，接口变更从 Go 适配器和前端调用处修改，再由 Wails 生成，不手工修补绑定产物。
+- `cmd/jumpaccess/frontend/dist/` 保存前端构建产物，`cmd/jumpaccess/build/bin/` 保存桌面构建输出；通过对应构建命令更新，不把产物作为源码修改。`frontend/dist/gitkeep` 是受版本控制的 embed 占位文件，应保留；前端构建脚本会重新创建它。
+- 图标以 `cmd/jumpaccess/build/appicon.svg` 为设计源，PNG 与 Windows ICO 按[桌面构建资源说明](../cmd/jumpaccess/build/README.md)生成。平台 manifest、plist 等构建资源按实际需求维护。
+- `docs/screenshots/` 只在用户明确要求时通过截图脚本更新；界面修改、测试、构建和发布均不自动触发。
+
 ## 配置与凭据
 
 - 非敏感配置使用 TOML。
@@ -64,12 +128,13 @@ docs/               # 长期项目知识
 - OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
 - Profile 名不按文件名规则清洗或规范化；配置拒绝空名称、首尾空白、控制字符以及 `.`、`..`，凭据后端使用 `SHA-256("oauth/" + profile)` 生成固定长度文件名。这样允许 Unicode 和文件系统保留字符，并避免字符替换规则造成确定性碰撞。
 - Windows Credential Manager 与 macOS Keychain 只用于 ProxyCommand host key，不参与 OAuth Token 读写。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
+- macOS 使用 `SecItemCopyMatching`、`SecItemAdd`、`SecItemUpdate`、`SecItemDelete`，保持文件型 Keychain、`JumpAccess:` service 前缀和空 account，兼容旧版本条目，不切换到 Data Protection Keychain。原生回归在 macOS 上运行 `JUMPACCESS_TEST_KEYCHAIN=1 CGO_ENABLED=1 CGO_CFLAGS='-Werror=deprecated-declarations' go test ./internal/credential -run TestNativeKeychainLegacyCompatibility -count=1`；该测试会在默认 Keychain 创建并清理唯一命名的合成条目，可能触发系统授权提示，默认不运行。它覆盖传统条目读取、更新、二进制与空值、新增、删除和未找到语义。
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 - Wails 生成 bindings 时会编译并执行带 `bindings` build tag 的临时程序；该模式只构造用于类型反射的桌面适配器，不得解析应用目录、读取用户配置或凭据、创建外部客户端。严格配置校验只属于真实应用启动流程，构建结果不能依赖构建机上的 JumpAccess 用户数据。
 - 桌面程序在 Wails 窗口初始化前发生启动错误时，必须同时写入 `stderr` 并通过 Windows/macOS 原生错误对话框告知用户；bindings 临时程序不得显示该业务对话框。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `13`：`[appearance]` 只保存应用主题，`[terminal]` 保存终端配色 ID（`color_scheme`，默认 `nord`）、字体、字号、行高（`line_height`）、光标样式（`cursor_style`）、闪烁（`cursor_blink`）、滚动条显示方式（`scrollbar_visibility`，默认 `active`）、SSH 状态栏可见性（`show_status_bar`，默认 `true`）、右键行为、多行粘贴警告和回车复制选区（`copy_on_enter`，默认 `true`），`[downloads]` 保存桌面 SSH 下载行为（`mode`：`ask` / `automatic` / `remember` / `custom`，默认 `ask`）、指定目录（`directory`）及后端维护的上次选择目录（`last_directory`）；旧配置缺少该分组时采用默认值。`[tabs]` 保存新 Tab 打开位置（`new_tab_position`，仅接受 `end` / `after_current`，默认 `end`）、Tab 关闭按钮显示和关闭活动会话确认，此外还包含窗口最大化/普通边界、Tab 顺序、活动项和 SSH/SFTP 重连描述符；CLI 不读取该文件。读取 schema v1/v2 时保留原有主题、终端字体、字号、Tab 偏好、工作区和窗口位置，读取 schema v3–v12 时保留原有分组偏好，均在内存中补全为 v13；缺少配色时使用 Nord，缺少行高、光标样式和闪烁时分别使用 1.0、`block` 和 `true`。行高必须是 1.0–2.0 之间的有限数值，光标样式只接受 `block`、`bar`、`underline`、`quarter_block`；显式 `cursor_blink = false` 必须保留。v1–v3 缺少多行粘贴警告时默认开启，v4 及以后已有的关闭值必须保留。读取本身不重写文件；下次保存采用 v13。v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标，读取时仍保留原值，由窗口恢复逻辑按平台解释。终端输出、SFTP 当前目录、传输队列、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。 “终端样式”中的“显示滚动条”下拉框依次提供“始终显示”（`always`）、“仅活跃时显示”（`active`，默认）和“隐藏”（`hidden`）。废弃未发布的布尔字段 `show_scrollbar`，不保留兼容解码；出现该旧字段时由本机手工替换，`true` 对应 `active`，`false` 对应 `hidden`。新字段只接受这三种值，选择即时作用于预览和已有 SSH 终端，隐藏自绘滚动条的完整槽位（遗留原生滚动条始终移除），保留历史缓冲区、滚轮操作与会话，不增加事件监听。`TerminalFitAddon` 按样式中的实际滚动条宽度计算列数，隐藏时回收全部预留宽度；模式变化会重新计算会话和两个设置预览的尺寸，不重建终端。 “显示 SSH 状态栏”开关位于“终端样式”中“显示滚动条”之后，关闭时立即隐藏所有 SSH Tab 的底部状态栏并回收 25px 空间，复用现有 ResizeObserver 调整终端网格；不重建终端、不影响顶部传输区域或 SFTP 状态栏。缺少该字段的旧配置默认开启，显式 false 必须在保存和重启后保留；保存失败沿用偏好队列恢复最近成功值。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `14`：`[appearance]` 只保存应用主题，`[terminal]` 保存终端配色 ID（`color_scheme`，默认 `nord`）、字体、字号、行高（`line_height`）、光标样式（`cursor_style`）、闪烁（`cursor_blink`）、滚动条显示方式（`scrollbar_visibility`，默认 `active`）、SSH 状态栏可见性（`show_status_bar`，默认 `true`）、全屏工具栏隐藏（`fullscreen_hide_toolbar`，默认 `true`）、右键行为、多行粘贴警告和回车复制选区（`copy_on_enter`，默认 `true`），`[downloads]` 保存桌面 SSH 下载行为（`mode`：`ask` / `automatic` / `remember` / `custom`，默认 `ask`）、指定目录（`directory`）及后端维护的上次选择目录（`last_directory`）；旧配置缺少该分组时采用默认值。`[tabs]` 保存新 Tab 打开位置（`new_tab_position`，仅接受 `end` / `after_current`，默认 `end`）、Tab 关闭按钮显示和关闭活动会话确认，此外还包含窗口最大化/普通边界、Tab 顺序、活动项和 SSH/SFTP 重连描述符；CLI 不读取该文件。读取 schema v1/v2 时保留原有主题、终端字体、字号、Tab 偏好、工作区和窗口位置，读取 schema v3–v13 时保留原有分组偏好，均在内存中补全为 v14；缺少配色时使用 Nord，缺少行高、光标样式和闪烁时分别使用 1.0、`block` 和 `true`。行高必须是 1.0–2.0 之间的有限数值，光标样式只接受 `block`、`bar`、`underline`、`quarter_block`；显式 `cursor_blink = false` 必须保留。v1–v3 缺少多行粘贴警告时默认开启，v4 及以后已有的关闭值必须保留。读取本身不重写文件；下次保存采用 v14。v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标，读取时仍保留原值，由窗口恢复逻辑按平台解释。终端输出、SFTP 当前目录、传输队列、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。 “终端样式”中的“显示滚动条”下拉框依次提供“始终显示”（`always`）、“仅活跃时显示”（`active`，默认）和“隐藏”（`hidden`）。废弃未发布的布尔字段 `show_scrollbar`，不保留兼容解码；出现该旧字段时由本机手工替换，`true` 对应 `active`，`false` 对应 `hidden`。新字段只接受这三种值，选择即时作用于预览和已有 SSH 终端，隐藏自绘滚动条的完整槽位（遗留原生滚动条始终移除），保留历史缓冲区、滚轮操作与会话，不增加事件监听。`TerminalFitAddon` 按样式中的实际滚动条宽度计算列数，隐藏时回收全部预留宽度；模式变化会重新计算会话和两个设置预览的尺寸，不重建终端。 “显示 SSH 状态栏”开关位于“终端样式”中“显示滚动条”之后，关闭时立即隐藏所有 SSH Tab 的底部状态栏并回收 25px 空间，复用现有 ResizeObserver 调整终端网格；不重建终端、不影响顶部传输区域或 SFTP 状态栏。缺少该字段的旧配置默认开启，显式 false 必须在保存和重启后保留；保存失败沿用偏好队列恢复最近成功值。
 
 终端滚动条统一使用 xterm 自绘控件，移除遗留原生滚动条的槽位和上下箭头。宽度由宿主的 `--terminal-scrollbar-width` 定义为 7px（原自绘控件宽度的一半），槽底使用当前方案的不透明背景色，滑块在普通、悬停和拖拽状态下均使用普通文字色与约 50% 透明度。背景图不改变槽底和滑块的配色；会话、终端样式预览和背景图预览共用这些规则，不增加事件监听或修改历史缓冲区。 两个设置预览保留最多 100 行历史，并重复三组配色示例形成可滚动范围；预览禁用输入且不抢焦点。`always` 模式固定显示滚动条，`active` 模式沿用 xterm 的交互显示、闲置隐藏行为，`hidden` 模式隐藏整个槽位；所有模式均可使用滚轮，不重建终端。
 
@@ -83,6 +148,7 @@ docs/               # 长期项目知识
 
 - CLI 使用 Cobra 的唯一前缀匹配，进程级开关只初始化一次。`internal/cli/prefix.go` 为命令组统一校验未匹配的子命令，并校验 `help` 的目标路径；内置 `help`、`completion` 在构建命令树时初始化。新增命令需考虑同层级名称和别名的前缀冲突，测试完整名称优先、唯一缩写、歧义不执行及位置参数和选项值保持原样。
 - 普通交互命令可以使用 stdout/stderr 与用户沟通。
+- CLI 直接 SSH 会话在建连后立即复查本地 PTY 尺寸，并每 200ms 检查窗口、分屏或字号变化；只在有效尺寸变化时发送 SSH `window-change`，会话退出后停止。macOS 回归测试使用本地真实 PTY 和模拟 SSH 服务端覆盖放大、缩小和正常退出，不连接真实服务器。
 - `jumpctl proxy` 的 stdout 专用于 SSH 协议数据；日志、诊断和可操作错误只写 stderr。
 - Proxy 模式不得启动浏览器或请求交互选择。认证或目标解析失败时返回明确的非零退出码。
 - Windows 的 `proxy` 在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，只有 stdin、stdout 均不是 Console 句柄且当前控制台仅附着 `jumpctl` 一个进程，才以 best-effort 调用 `FreeConsole`。共享终端、交互句柄或任何检查失败时保持附着；非 Windows 平台不执行该优化。
@@ -141,6 +207,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 - macOS 使用 `TitleBarHiddenInset` 并保留左侧原生 traffic lights，前端不渲染右侧窗口控制按钮。
 - Windows 通过 `EnumDisplayMonitors` 与显示器工作区恢复窗口；macOS 通过 AppKit `NSScreen` 恢复窗口。不得把 Wails 在不同平台返回的窗口坐标直接当作统一的虚拟桌面绝对坐标持久化。
 - 终端字体候选在 Windows 通过 GDI 枚举并按 fixed-pitch 指标筛选，在 macOS 通过 CoreText family 与 monospace trait 筛选；其他目标或原生接口失败时返回空候选，由前端保留 `monospace` 和手工输入能力。
+- xterm 6.0.0 优先使用 OffscreenCanvas 测量字符尺寸，但 macOS WKWebView 的本机字体匹配可能与 DOM 显示不同。`TerminalFitAddon` 在 macOS WebKit 首次 fit 时安装 `terminalCharMeasurement.ts` 的 DOM 测量策略，每次计算行列数前重新测量；采用相同字体、字号和普通字重的隐藏 DOM 元素，重复 32 个字符降低取整误差，并通过 offset 尺寸避开祖先 transform。隐藏时保留最后有效 DOM 尺寸，首次隐藏时不沿用 Canvas 尺寸；释放适配器时还原策略并移除测量元素，不修改全局 Canvas API。由于 xterm 没有公开测量扩展点，此处依赖 `_core._charSizeService._measureStrategy`，升级时必须核对这些字段并运行 `TerminalFitAddon.fontMeasurement.test.ts`，该测试使用真实 xterm，模拟 Canvas 16.99px / DOM 11.16px 的差异，覆盖网格、resize 事件、字号、行高、隐藏恢复与销毁。原生验收仍需在 macOS WKWebView 使用实际安装的字体检查，Windows 模拟测试不代表完成原生验证。相关上游报告见 [WebKit #316777](https://bugs.webkit.org/show_bug.cgi?id=316777)，尚不能据此认定所有字体异常都由同一内部原因引起。
 
 ## 许可证与发布物
 
@@ -150,11 +217,34 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 - 正式 ZIP、tar 或安装包仍应把两份文本作为独立文件一并分发，方便不执行程序的接收者阅读。嵌入是单文件分发的保障，不替代正式归档中的显式材料。
 - 新增或升级生产依赖时，必须重新检查目标平台的实际 package graph，更新第三方声明，并验证 `jumpctl licenses`。只用于测试、文档生成且不进入发布二进制的模块不需要混入发布声明。
 
+## 跨平台持续检查与警告策略
+
+GUI 构建脚本保持兼容 macOS 系统 Bash：启用 `set -u` 时，参数数组需包含基础构建参数，避免展开空数组。`node --test scripts/*.test.mjs` 会用 Wails 替身验证三个目标平台的实参；Windows 默认查找 Git 安装目录中的 Bash，也可通过 `JUMPACCESS_TEST_BASH` 指定路径。
+
+`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
+
+Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。
+
+本机 Windows PowerShell 验证前可在当前会话设置以下参数，再运行下文测试与构建入口；它们不会更改用户级 `go env -w` 配置。macOS 本地验证使用相同的 CGO 开关和编译参数，但把链接参数换成 `-Wl,-fatal_warnings`。
+
+```powershell
+$env:CGO_ENABLED = '1'
+$env:CGO_CFLAGS = '-O2 -g -Werror'
+$env:CGO_CXXFLAGS = '-O2 -g -Werror'
+$env:CGO_LDFLAGS = '-O2 -g -Wl,--fatal-warnings'
+```
+
+默认没有警告豁免。确实无法立即修复的诊断必须在改动中写明具体文件或依赖版本、诊断名称、保留理由和移除条件；自有 C/Objective-C 代码仅在最小调用范围内用 diagnostic push/pop 将指定诊断降为 warning，保留日志。禁止全局 `-w`、`-Wno-error`、`continue-on-error` 或忽略构建退出码；第三方依赖警告优先升级或修复依赖，不预设整类豁免。
+
+失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64 和 macOS arm64 三项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
+
+macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scripts/darwin-link.sh` 调用 clang。Go 1.25 会为本项目和 Wails 2.14.0 中各个含 Objective-C 的 CGO 包追加 `-lobjc`，触发 [Go #67799](https://github.com/golang/go/issues/67799) 所述的重复库警告。脚本只保留首个 `-lobjc`，其他参数、严格警告与链接失败退出码均保持原样；不关闭重复库警告。上游修复后可移除脚本与两处 GUI 构建的 `-extld` 参数。本机 macOS 严格构建也应向 Wails 的 `-ldflags` 传入该脚本的绝对路径。
+
 ## 自动发布
 
 `.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步拒绝不符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的标签。标签指向的提交必须已经包含该工作流。发布顺序为：
 
-1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试。
+1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64 和 macOS arm64 的原生测试和严格构建。
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
@@ -168,17 +258,21 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 ## 当前验证入口
 
+以下命令从仓库根目录开始执行；前端 npm 脚本通过 `--prefix` 定位到前端目录，Wails 命令在桌面入口目录执行：
+
 ```powershell
 go test ./...
 go vet ./...
 go build -trimpath ./cmd/jumpctl
+npm --prefix cmd/jumpaccess/frontend ci
+npm --prefix cmd/jumpaccess/frontend test
+npm --prefix cmd/jumpaccess/frontend run build
+node --test scripts/*.test.mjs
 cd cmd/jumpaccess
-npm ci
-npm test
-npm run build
 wails build
-node --test ../../scripts/*.test.mjs
 ```
+
+仅修改文档时，核对新增文件、内容归属、六张索引表、相对链接与 `git diff --check`；文档中的命令需与实际脚本入口核对。未运行的构建、平台检查或真实环境流程不得标记为已验证。
 
 Windows 发布或人工验收构建不得使用 `wails build -nopackage`：Wails 2.14 会因此跳过平台资源生成，裸 EXE 不包含应用图标和版本资源。更新 `appicon.svg` 后应重新渲染 `appicon.png`，移除旧的 `build/windows/icon.ico` 并执行一次 `wails build`，由 Wails 重新生成 256、128、64、48、32 和 16 像素的 Windows 图标。
 

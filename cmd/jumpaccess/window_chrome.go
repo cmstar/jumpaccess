@@ -12,6 +12,7 @@ func configureWindowChrome(value *options.App, goos string) {
 		DisableFramelessWindowDecorations: false,
 	}
 	value.Mac = &macoptions.Options{
-		TitleBar: macoptions.TitleBarHiddenInset(),
+		TitleBar:                     macoptions.TitleBarHiddenInset(),
+		DisableEscapeExitsFullscreen: true,
 	}
 }

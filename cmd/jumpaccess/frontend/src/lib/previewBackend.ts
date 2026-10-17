@@ -54,7 +54,7 @@ export function createPreviewBackend(options: { scenario?: DemoScenario } = {}):
       { name: 'office', url: 'https://jump.example.com', organization: 'org-dev', aliasCount: 6, auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: new Date(Date.now() + 56 * 60_000).toISOString() } },
       { name: 'staging', url: 'https://staging-jump.example.com', organization: 'org-platform', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } },
     ],
-    preferences: { terminalBackground: { ...defaultTerminalBackground }, version: 13, theme: 'light', terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true, terminalScrollbarVisibility: 'active', terminalShowStatusBar: true, terminalColorScheme: 'nord', terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end' },
+    preferences: { terminalBackground: { ...defaultTerminalBackground }, version: 14, theme: 'light', terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true, terminalScrollbarVisibility: 'active', terminalShowStatusBar: true, terminalFullscreenHideToolbar: true, terminalColorScheme: 'nord', terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end' },
     workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
   }
 
@@ -299,6 +299,7 @@ export function createPreviewBackend(options: { scenario?: DemoScenario } = {}):
     },
     async minimizeWindow() {},
     async ensureWindowVisible() {},
+    async setWindowFullscreen() { throw new Error("浏览器演示不支持原生窗口全屏，请在桌面应用中使用。") },
     async savePreferences(preferences: Preferences) { state = { ...state, preferences: clone(preferences) } },
     async saveWorkspace(workspace) { state = { ...state, workspace: clone(workspace) } },
     async getAuthStatus(profile) { return clone(state.profiles.find((item) => item.name === profile)!.auth) },

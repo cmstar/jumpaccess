@@ -54,7 +54,12 @@ jumpctl version
 
 ## 本地开发、测试与构建
 
+### 开发环境
+
+CLI 与 GUI 共用 Go 1.25 或更高版本，具体依赖以 `go.mod` 为准。
+
 GUI 额外需要：
+
 - Node.js 24
 - [Wails 2](https://wails.io/)
 
@@ -67,7 +72,7 @@ wails doctor
 
 如果仅做一次性构建，也可以不安装 Wails CLI，直接使用 `go run "github.com/wailsapp/wails/v2/cmd/wails"` 代替 `wails` 命令。
 
-### 构建 CLI
+### 本地运行与测试 CLI
 
 本地测试和运行：
 
@@ -77,13 +82,13 @@ go vet ./...
 go run ./cmd/jumpctl
 ```
 
-构建 CLI：
+### 构建 CLI
 
 ```powershell
 go build -trimpath ./cmd/jumpctl
 ```
 
-### 构建 GUI
+### 本地运行、测试与构建 GUI
 
 安装前端依赖：
 
@@ -105,7 +110,7 @@ wails dev
 wails build
 ```
 
-构建结果默认输出在 `cmd/jumpaccess/build/bin` 目录，单一可执行文件。
+构建结果默认输出在 `cmd/jumpaccess/build/bin` 目录：Windows 为 `jumpaccess.exe`，macOS 为 `JumpAccess.app` 应用包。平台检查和发布约定见[开发说明](docs/development.md)。
 
 ## 使用 jumpctl
 
@@ -130,6 +135,12 @@ Host production-web
 
 `proxy` 模式不打开浏览器，也不提示选择 Account。缺少登录、Refresh Token 失效、目标或 Account 不唯一、上游主机尚未信任时，进程会在 SSH banner 之前失败，只向 stderr 写入可操作错误并返回非零状态。先运行 `jumpctl auth login` 完成授权；未知上游 gateway 需要先用 `jumpctl ssh` 进行一次人工指纹确认。
 
+## SSH 终端全屏
+
+在 SSH Tab 按 F11 切换全屏，Windows 也支持 Alt+Enter；再按一次恢复原窗口位置、大小或最大化状态。全屏隐藏 Tab 栏和底部状态栏，鼠标移到顶部中央可显示会话名称和退出按钮。Esc 仍用于终端操作。
+
+“设置 → 终端行为 → 全屏时隐藏工具栏”默认开启；关闭后，全屏保留 SSH 工具栏、传输进度和取消按钮。全屏切换不重建终端或中断传输，断连后仍可按 Enter 重连。关闭程序后，下次以全屏前的窗口状态启动。
+
 ## SSH 终端内上传和下载（ZMODEM）
 
 桌面客户端支持在 SSH 会话中使用 `rz` / `sz`，远端需安装 `lrzsz`，本机不需要额外安装这两个命令。
@@ -140,11 +151,14 @@ Host production-web
 - 下载：点击下载按钮输入单个远程文件路径，或直接运行 `sz file1 file2`。在“设置 → 终端行为 → 下载保存位置”选择保存行为：每次询问并从系统下载目录开始（默认）、自动保存到系统下载目录、每次询问并记住上次选择的目录、自动保存到指定目录。指定目录支持手工填写或点击“选择文件夹”。记住的目录跨重启保留，首次使用或目录不可用时回退到系统下载目录；自动模式下对应目录未设置或不可用时改为弹窗选择。同一批次多文件共用保存目录，同名文件自动另存为带数字后缀的文件。
 - 点击按钮前，请确保终端处于命令提示符；目录应先打包再传输。下载路径按字面量处理，不展开 `~`、通配符或 Shell 表达式。
 - 传输期间在终端内显示本机完整文件路径、已传输大小和百分比：上传显示 `Upload <本地源文件完整路径>`，下载显示 `Download to <实际保存文件完整路径>`，包括同名另存后的数字后缀，进度原地刷新；顶部工具栏下方显示当前文件的传输进度和取消按钮。SSH 上传或下载整批完成后，复用顶部中央的通用提示组件显示来源名称、完成状态和文件名，如 `alias1 上传完成：xxx.txt`；多文件以顿号连接文件名，不包含路径；名称优先使用传输所属 SSH Tab 的别名，没有别名时使用资产名称，切换 Tab 也能辨认来源；下载等待实际保存成功。同一批次只提示一次，取消、失败、断连、空批次或上传全部被远端跳过时不弹成功提示。本地生成的终端提示统一使用英文，如 `Upload`、`Download to`、`Saving` 和 `Complete`；本机路径过滤终端控制字符后显示，服务器原始输出按原样显示。下载收到全部数据后显示 `Saving`，保存成功才显示 100% 和 `Complete`；普通终端输入暂时停用，切换 Tab 不影响传输。取消、错误或断连会清理未完成的本地下载。
+- 每个文件成功完成后，终端完成行追加耗时和平均速度，例如 `Complete · Elapsed 2.00 s · Avg 512.00 KiB/s`。耗时从该文件开始传输计到保存成功或远端确认完成，包含本地读写及确认时间，不包含选择文件／目录或文件间等待的时间；平均速度为该文件传输字节数除以耗时，多文件分别统计。取消、失败和远端跳过不显示成功统计。
 - 下载在 Go 端使用最多 50 MiB（50 × 1024 × 1024 字节）的共享内存缓冲。额度充足时，50 MiB 内的文件收齐后一次保存，大文件分批写入；多个会话共享额度，额度不足时缩小缓冲或直接写文件，不无限增加内存。选择目录后会先创建空文件以保留文件名；完成时刷新缓冲并同步文件。该额度只限制下载内容缓冲，不是整个程序的内存上限。
 
 能力检测使用独立 SSH `exec` channel。部分 JumpServer 网关会拒绝它，此时显示“无法检测”，不会向当前 Shell 插入探测命令。仍可手工运行 `rz` / `sz`，识别到握手后会弹出文件选择器并启用对应方向的按钮。命令存在不代表堡垒机允许传输；被策略阻止或超时会显示错误。
 
 ZMODEM 使用当前 SSH 会话，不依赖 SFTP 权限。
+
+执行 `sz` 后可能先显示单独的 `rz`：这是远端 `lrzsz` 在 ZMODEM 启动时默认输出的接收启动文本（`rz\r`），JumpAccess 保留显示。它不表示失败，也不需要再次手工执行 `rz`。
 
 ### CLI 上传和下载
 
@@ -158,19 +172,31 @@ jumpctl ssh my-server --download-dir "D:\Downloads"
 - 下载默认保存到系统“下载”目录。Windows 读取 Known Folder 配置，支持目录重定向；macOS 正式构建读取系统 Downloads 目录。`--download-dir` 可覆盖本次连接的保存位置；目录不存在或不可写时，在终端提示输入其他本地目录。
 - 远端运行 `rz` 后，本机显示 `Local file to upload`，输入单个本地普通文件路径并回车即可；路径可以带引号，支持 `~`。输入内容不会发到远端 Shell。空路径或 Ctrl+C 取消选择。
 - 远端运行 `sz file1 file2` 可连续下载多个文件，同名文件自动另存。下载复用 50 MiB 缓冲和取消清理；终端进度及结果提示全部使用英文。
+- 与 GUI 一样，上传和下载每个文件成功完成后显示耗时和平均速度，例如 `Complete - Elapsed 2.00 s - Avg 512.00 KiB/s`。耗时包含传输、保存及远端确认，不包含本地选择或文件间等待；上传续传的平均速度只计算本次新增传输的文件内容。取消、失败或远端跳过不显示该文件的成功统计。
 - 传输期间 Ctrl+C 取消；取消或失败后按 Enter 刷新远端提示符。若远端写入已被流控卡住，取消或超时会关闭该 SSH 会话，避免进程持续阻塞。
 - CLI 使用标准 32 位 ZMODEM 文件偏移，单文件必须小于 4 GiB；不提供目录传输。标准输入或输出被重定向时保持字节透传，不启动本地交互式文件传输。
 
 `jumpctl proxy` 保持透传，由外部终端或 SSH 客户端处理 ZMODEM，不使用 CLI 本地文件选择和下载目录逻辑。
 
+## 参与贡献
+
+欢迎反馈问题、提出功能建议和提交 PR。开始前请阅读[贡献指南](CONTRIBUTING.md)；[新建 Issue](https://github.com/cmstar/jumpaccess/issues/new/choose) 时可选择中文或英文表单，PR 模板任选一种语言填写即可。
+
 ## 文档索引
 
 - [用户手册](docs/manual/README.md)
+- [贡献指南与协作流程](CONTRIBUTING.md)
 - [Agent 工作入口](AGENTS.md)
 - [架构说明](docs/architecture.md)
 - [业务说明](docs/domain.md)
 - [开发说明](docs/development.md)
 - [CLI 命令参考](docs/cli.md)
+- [项目规范与索引](docs/standards/README.md)
+- [当前与历史决策索引](docs/decisions/README.md)
+- [需求、设计与历史版本索引](docs/specs/README.md)
+- [操作手册与索引](docs/runbooks/README.md)
+
+安装、开发环境、运行命令或发布方式变化时更新本页；各文档的内容归属和维护时机见[文档维护](docs/development.md#文档维护)。
 
 ## 自动 Release
 

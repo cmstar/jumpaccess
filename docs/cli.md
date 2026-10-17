@@ -195,6 +195,8 @@ jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <accou
 
 当前不采集 `@INPUT` 或 `@USER` 所需的密码，遇到这类 Account 会要求改用 JumpServer 托管 Account。`@ANON` 可以无秘密使用。
 
+交互终端中的 `rz` / `sz` 上传或下载成功后，每个文件的完成行追加 `Elapsed` 耗时和 `Avg` 平均速度，例如 `Complete - Elapsed 2.00 s - Avg 512.00 KiB/s`。与 GUI 采用相同口径：从该文件开始传输计到本地保存或远端确认完成，不包含选择本地文件／目录和文件间等待；平均速度按本次新增传输的文件字节数除以耗时计算，上传续传排除远端已有内容。多文件分别统计，取消、失败或被远端跳过的文件不显示成功统计。非交互 I/O 和 `jumpctl proxy` 保持字节透传，不插入本地统计。
+
 ## 通用 ProxyCommand
 
 ```text

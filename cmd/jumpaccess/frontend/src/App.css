@@ -1678,7 +1678,22 @@ details > summary::-webkit-details-marker {
 }
 
 .settings-page .page-heading {
+  display: grid;
   flex: 0 0 auto;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 22px;
+}
+
+.settings-heading-actions {
+  padding-right: 8px;
+  overflow: hidden;
+  /* 与下方滚动区域预留相同的滚动条空间，保持内容右边缘对齐。 */
+  scrollbar-gutter: stable;
+}
+
+.settings-heading-actions .settings-content {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .settings-layout {
@@ -1759,6 +1774,13 @@ details > summary::-webkit-details-marker {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scroll-behavior: smooth;
+}
+
+.settings-content {
+  --settings-content-max-width: 1260px;
+  max-width: var(--settings-content-max-width);
+  /* 内容达到宽度上限后分配两侧留白，左侧最多额外留出 240px。 */
+  margin-left: clamp(0px, calc((100% - var(--settings-content-max-width)) / 2), 240px);
 }
 
 .settings-stack {
@@ -2569,6 +2591,45 @@ details > summary::-webkit-details-marker {
 }
 
 .terminal-header { min-width: 0; }
+.app-shell.terminal-fullscreen,
+.terminal-panel.terminal-toolbar-hidden {
+  grid-template-rows: minmax(0, 1fr);
+}
+.titlebar[hidden], .terminal-header[hidden] { display: none; }
+.fullscreen-exit-area {
+  position: fixed;
+  z-index: 110;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  height: 8px;
+}
+.fullscreen-exit-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  color: var(--text);
+  background: var(--surface);
+  transform: translateY(-100%);
+  transition: transform 120ms ease;
+}
+.fullscreen-exit-controls span {
+  max-width: min(50vw, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fullscreen-exit-controls button { flex-shrink: 0; }
+.fullscreen-exit-area:hover, .fullscreen-exit-area:focus-within { height: auto; }
+.fullscreen-exit-area:hover .fullscreen-exit-controls,
+.fullscreen-exit-area:focus-within .fullscreen-exit-controls { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .fullscreen-exit-controls { transition: none; }
+}
 .ssh-transfer-progress {
   display: flex;
   align-items: center;
@@ -3382,6 +3443,7 @@ details > summary::-webkit-details-marker {
   .asset-pane,
   .full-pane { padding-inline: 16px; }
   .page-heading { align-items: flex-start; flex-direction: column; }
+  .settings-page .page-heading { grid-template-columns: minmax(0, 1fr); }
   .profile-card { width: 100%; flex-basis: 100%; }
   .profile-card-actions { flex-wrap: wrap; }
   .settings-layout {
@@ -3406,6 +3468,7 @@ details > summary::-webkit-details-marker {
     width: auto;
     height: 2px;
   }
+  .settings-heading-actions,
   .settings-scroll { padding-right: 0; }
   .asset-table-card th:nth-child(2),
   .asset-table-card td:nth-child(2) { display: none; }

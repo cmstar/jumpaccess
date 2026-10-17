@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 13
+const CurrentVersion = 14
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -67,18 +67,19 @@ type Downloads struct {
 }
 
 type Terminal struct {
-	Background           Background `toml:"background"`
-	ColorScheme          string     `toml:"color_scheme"`
-	FontFamily           string     `toml:"font_family"`
-	FontSize             int        `toml:"font_size"`
-	LineHeight           float64    `toml:"line_height"`
-	CursorStyle          string     `toml:"cursor_style"`
-	CursorBlink          bool       `toml:"cursor_blink"`
-	ScrollbarVisibility  string     `toml:"scrollbar_visibility"`
-	ShowStatusBar        bool       `toml:"show_status_bar"`
-	RightClickAction     string     `toml:"right_click_action"`
-	WarnOnMultiLinePaste bool       `toml:"warn_on_multi_line_paste"`
-	CopyOnEnter          bool       `toml:"copy_on_enter"`
+	Background            Background `toml:"background"`
+	ColorScheme           string     `toml:"color_scheme"`
+	FontFamily            string     `toml:"font_family"`
+	FontSize              int        `toml:"font_size"`
+	LineHeight            float64    `toml:"line_height"`
+	CursorStyle           string     `toml:"cursor_style"`
+	CursorBlink           bool       `toml:"cursor_blink"`
+	ScrollbarVisibility   string     `toml:"scrollbar_visibility"`
+	ShowStatusBar         bool       `toml:"show_status_bar"`
+	FullscreenHideToolbar bool       `toml:"fullscreen_hide_toolbar"`
+	RightClickAction      string     `toml:"right_click_action"`
+	WarnOnMultiLinePaste  bool       `toml:"warn_on_multi_line_paste"`
+	CopyOnEnter           bool       `toml:"copy_on_enter"`
 }
 
 // Background 只作用于 GUI SSH 终端内容区域。
@@ -175,18 +176,19 @@ func Default() Config {
 			Theme: "system",
 		},
 		Terminal: Terminal{
-			Background:           Background{TransparencyPercent: 70, FitMode: "cover", PositionXPercent: 50, PositionYPercent: 50},
-			ColorScheme:          "nord",
-			FontFamily:           "monospace",
-			FontSize:             12,
-			LineHeight:           1,
-			CursorStyle:          "block",
-			CursorBlink:          true,
-			ScrollbarVisibility:  "active",
-			ShowStatusBar:        true,
-			RightClickAction:     TerminalRightClickPaste,
-			WarnOnMultiLinePaste: true,
-			CopyOnEnter:          true,
+			Background:            Background{TransparencyPercent: 70, FitMode: "cover", PositionXPercent: 50, PositionYPercent: 50},
+			ColorScheme:           "nord",
+			FontFamily:            "monospace",
+			FontSize:              12,
+			LineHeight:            1,
+			CursorStyle:           "block",
+			CursorBlink:           true,
+			ScrollbarVisibility:   "active",
+			ShowStatusBar:         true,
+			FullscreenHideToolbar: true,
+			RightClickAction:      TerminalRightClickPaste,
+			WarnOnMultiLinePaste:  true,
+			CopyOnEnter:           true,
 		},
 		Tabs: Tabs{
 			NewTabPosition:            "end",

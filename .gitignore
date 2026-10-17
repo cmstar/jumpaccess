@@ -13,7 +13,10 @@ coverage.out
 /cmd/jumpaccess/frontend/wailsjs/
 /cmd/jumpaccess/frontend/package.json.md5
 
-# 发布工作流必须进入仓库。
+# GitHub 工作流与协作模板必须进入仓库。
 !/.github/
 !/.github/workflows/
 !/.github/workflows/*.yml
+!/.github/ISSUE_TEMPLATE/
+!/.github/ISSUE_TEMPLATE/*.yml
+!/.github/pull_request_template.md

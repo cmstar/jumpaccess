@@ -235,6 +235,7 @@ test.each([false, true])('真实 ZMODEM 双端协议上传并恢复终端，远�
   if (skipRemote) {
     expect(completed).not.toHaveBeenCalled()
     expect(received).toHaveLength(0)
+    expect(output.join('')).not.toContain('Elapsed')
     controller.dispose()
     return
   }
@@ -244,7 +245,7 @@ test.each([false, true])('真实 ZMODEM 双端协议上传并恢复终端，远�
   expect(offeredNames).toEqual(['binary.dat'])
   expect(completed).toHaveBeenCalledExactlyOnceWith('上传完成：binary.dat')
   expect(output.join('')).toContain('100%')
-  expect(output.join('')).toMatch(/Complete\r\nshell\$ $/)
+  expect(output.join('')).toMatch(/Complete · Elapsed .* · Avg .*\r\nshell\$ $/)
   controller.dispose()
 })
 
@@ -301,6 +302,7 @@ test('真实 ZMODEM 双端协议逐块下载并等待落盘', async () => {
   expect(output.join('')).toContain(String.raw`Download to G:\下载目录\binary (1).dat`)
   expect(output.join('')).toContain('Saving')
   expect(output.join('')).not.toContain('100%')
+  expect(output.join('')).not.toContain('Elapsed')
   expect(completed).not.toHaveBeenCalled()
   await controller.consume(new TextEncoder().encode('shell$ '))
   expect(output.join('')).not.toContain('shell$ ')
@@ -309,7 +311,7 @@ test('真实 ZMODEM 双端协议逐块下载并等待落盘', async () => {
   expect(controller.state.phase).toBe('completed')
   expect(controller.state.finishedAt).toEqual(expect.any(Number))
   expect(completed).toHaveBeenCalledExactlyOnceWith('下载完成：binary (1).dat')
-  expect(output.join('')).toMatch(/Complete\r\nshell\$ $/)
+  expect(output.join('')).toMatch(/Complete · Elapsed .* · Avg .*\r\nshell\$ $/)
   expect(Uint8Array.from(received)).toEqual(data)
   expect(api.closeZmodemFile).toHaveBeenCalledWith('file', true)
   controller.dispose()
@@ -350,7 +352,7 @@ test.each(['complete', 'cancel', 'dispose', 'failure'] as const)('连续下载�
   await remote!.close()
   await incoming
   await vi.waitFor(() => expect(api.closeZmodemFile).toHaveBeenCalledWith('second', true))
-  expect(output.join('')).toMatch(/100%.*Complete\r\n\r\nDownload to \/downloads\/second/)
+  expect(output.join('')).toMatch(/100%.*Complete · Elapsed .* · Avg .*\r\n\r\nDownload to \/downloads\/second/)
   expect(completed).not.toHaveBeenCalled()
   if (outcome === 'cancel') controller.cancel()
   if (outcome === 'dispose') controller.dispose()
@@ -362,6 +364,7 @@ test.each(['complete', 'cancel', 'dispose', 'failure'] as const)('连续下载�
   else {
     expect(completed).not.toHaveBeenCalled()
     expect(output.join('').split('Download to /downloads/second')[1]).not.toContain('100%')
+    expect(output.join('').split('Download to /downloads/second')[1]).not.toContain('Elapsed')
   }
   controller.dispose()
 })

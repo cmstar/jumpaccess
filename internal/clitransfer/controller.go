@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,7 @@ func (c *controller) transfer(upload bool, windowSize int) {
 					err = errors.New("upload requires a regular file")
 				} else {
 					var skipped bool
+					progress.start(info.Name())
 					skipped, err = zmodem.Send(c.stream, contextWriter{ctx, c.remote}, zmodem.Upload{Name: info.Name(), Size: info.Size(), Reader: file}, zmodem.SendOptions{Progress: progress.update, WindowSize: windowSize})
 					if skipped {
 						_, _ = fmt.Fprint(c.display, "\r\nSkipped by remote.\r\n")
@@ -385,22 +387,36 @@ func (w contextWriter) Write(p []byte) (int, error) {
 }
 
 type progress struct {
-	out    io.Writer
-	upload bool
-	name   string
-	last   time.Time
+	out         io.Writer
+	upload      bool
+	name        string
+	last        time.Time
+	started     time.Time
+	startOffset int64
 }
 
 func newProgress(out io.Writer, upload bool) *progress { return &progress{out: out, upload: upload} }
+
+func (p *progress) start(name string) {
+	p.name = name
+	p.last = time.Time{}
+	// time.Now 保留单调时钟；上传从本地选择结束后、发送文件元数据前计时。
+	p.started = time.Now()
+	p.startOffset = -1
+	direction := "Download"
+	if p.upload {
+		direction = "Upload"
+	}
+	_, _ = fmt.Fprintf(p.out, "\r\n%s %s\r\n", direction, safeText(name))
+}
+
 func (p *progress) update(name string, size, offset int64, complete bool) {
 	if p.name != name {
-		p.name = name
-		p.last = time.Time{}
-		direction := "Download"
-		if p.upload {
-			direction = "Upload"
-		}
-		_, _ = fmt.Fprintf(p.out, "\r\n%s %s\r\n", direction, safeText(name))
+		p.start(name)
+	}
+	if p.startOffset < 0 {
+		// 协议首先报告接收起点；续传时排除远端已有的文件内容。
+		p.startOffset = offset
 	}
 	if !complete && offset < size && time.Since(p.last) < 100*time.Millisecond {
 		return
@@ -420,11 +436,48 @@ func (p *progress) update(name string, size, offset int64, complete bool) {
 	ending := ""
 	if complete {
 		percent = 100
-		status = " - Complete"
+		elapsed := max(0, p.last.Sub(p.started))
+		status = fmt.Sprintf(" - Complete - Elapsed %s - Avg %s", transferDuration(elapsed), transferSpeed(max(0, offset-p.startOffset), elapsed))
 		ending = "\r\n"
 	}
 	_, _ = fmt.Fprintf(p.out, "\r\x1b[2K%d%% - %.2f / %.2f MiB%s%s", percent, float64(offset)/(1024*1024), float64(size)/(1024*1024), status, ending)
 	if complete {
 		p.name = ""
 	}
+}
+
+func transferDuration(elapsed time.Duration) string {
+	if elapsed < 10*time.Millisecond {
+		return "<0.01 s"
+	}
+	// 与 GUI 相同，先按百分之一秒取整，避免边界显示 60.00 s。
+	rounded := elapsed.Round(10 * time.Millisecond)
+	text := fmt.Sprintf("%.2f s", (rounded % time.Minute).Seconds())
+	if rounded >= time.Minute {
+		text = fmt.Sprintf("%d m %s", rounded/time.Minute%60, text)
+	}
+	if rounded >= time.Hour {
+		text = fmt.Sprintf("%d h %s", rounded/time.Hour, text)
+	}
+	return text
+}
+
+func transferSpeed(transferred int64, elapsed time.Duration) string {
+	if transferred == 0 {
+		return "0 B/s"
+	}
+	if elapsed <= 0 {
+		return "—"
+	}
+	amount := math.Round(float64(transferred) / elapsed.Seconds())
+	units := [...]string{"B", "KiB", "MiB", "GiB"}
+	unit := 0
+	for amount >= 1024 && unit < len(units)-1 {
+		amount /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%.0f B/s", amount)
+	}
+	return fmt.Sprintf("%.2f %s/s", amount, units[unit])
 }

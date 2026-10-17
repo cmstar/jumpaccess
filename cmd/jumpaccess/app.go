@@ -46,6 +46,8 @@ type desktopApp struct {
 	windowPlacementMu    sync.Mutex
 	lastNormalWindow     guiconfig.WindowPlacement
 	restoreAfterMinimize *guiconfig.WindowPlacement
+	fullscreenMu         sync.Mutex
+	beforeFullscreen     *guiconfig.WindowPlacement
 }
 
 type desktopWindow interface {
@@ -53,6 +55,11 @@ type desktopWindow interface {
 	GetSize(context.Context) (int, int)
 	IsMaximized(context.Context) bool
 	IsNormal(context.Context) bool
+	IsFullscreen(context.Context) bool
+	Fullscreen(context.Context)
+	Unfullscreen(context.Context)
+	Maximize(context.Context)
+	Unmaximize(context.Context)
 	SetPosition(context.Context, int, int)
 	SetSize(context.Context, int, int)
 	Center(context.Context)
@@ -258,6 +265,14 @@ func (a *desktopApp) beforeClose(ctx context.Context) bool {
 }
 
 func (a *desktopApp) saveWindowPlacement(ctx context.Context) error {
+	a.fullscreenMu.Lock()
+	defer a.fullscreenMu.Unlock()
+	if saved := a.beforeFullscreen; saved != nil {
+		return a.preferences.Update(ctx, func(preferences *guiconfig.Config) error {
+			preferences.Window = *saved
+			return nil
+		})
+	}
 	maximized := a.window.IsMaximized(ctx)
 	var normalPlacement *guiconfig.WindowPlacement
 	if !maximized && a.window.IsNormal(ctx) {
@@ -304,6 +319,15 @@ func (a *desktopApp) MinimizeWindow() {
 }
 
 func (a *desktopApp) EnsureWindowVisible() {
+	a.fullscreenMu.Lock()
+	defer a.fullscreenMu.Unlock()
+	if a.beforeFullscreen != nil {
+		return
+	}
+	a.ensureWindowVisible()
+}
+
+func (a *desktopApp) ensureWindowVisible() {
 	ctx := a.context()
 	if !a.window.IsNormal(ctx) {
 		return

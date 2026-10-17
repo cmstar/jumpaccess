@@ -1,6 +1,30 @@
 import { expect, test } from 'vitest'
 import { ansiColorKeys, terminalDisplayOptions, terminalScheme, terminalSchemes } from './terminalTheme'
 
+test.each([
+  ['0xProto Nerd Font Mono', '"0xProto Nerd Font Mono"'],
+  ['"0xProto Nerd Font Mono"', '"0xProto Nerd Font Mono"'],
+  ["'0xProto Nerd Font Mono'", "'0xProto Nerd Font Mono'"],
+  ['monospace', 'monospace'],
+  ['ui-monospace', 'ui-monospace'],
+  ['Consolas', 'Consolas'],
+  ['JetBrains Mono', 'JetBrains Mono'],
+  ['JetBrains Mono, monospace', 'JetBrains Mono, monospace'],
+  ['"0xProto Nerd Font Mono", Consolas, monospace', '"0xProto Nerd Font Mono", Consolas, monospace'],
+  ['"Example, Mono", monospace', '"Example, Mono", monospace'],
+  ["O'Brien Mono", '"O\'Brien Mono"'],
+  ['Example "Mono"', '"Example \\"Mono\\""'],
+  ['0xProto\\Mono', '"0xProto\\\\Mono"'],
+])('字体 %s 转成有效 CSS 并兼容已有引号与回退列表', (terminalFontFamily, expected) => {
+  const preferences = { terminalColorScheme: 'nord', terminalFontFamily, terminalFontSize: 18, terminalLineHeight: 1, terminalCursorStyle: 'block' as const, terminalCursorBlink: true }
+  const { fontFamily } = terminalDisplayOptions(preferences)
+  expect(fontFamily).toBe(expected)
+  const style = document.createElement('span').style
+  style.fontFamily = fontFamily
+  expect(style.fontFamily).not.toBe('')
+  expect(preferences.terminalFontFamily).toBe(terminalFontFamily)
+})
+
 test('内置方案均包含完整 ANSI 色表、基础颜色和固定版本的开源来源', () => {
   expect(terminalSchemes.length).toBe(28)
   expect(new Set(terminalSchemes.map((scheme) => scheme.id)).size).toBe(terminalSchemes.length)

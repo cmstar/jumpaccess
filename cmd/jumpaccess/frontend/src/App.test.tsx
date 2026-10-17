@@ -119,8 +119,9 @@ test('SSH 传输按钮在断开按钮之前，切换 Tab 不重复处理传输�
   await waitFor(() => expect(screen.getByLabelText('上传文件（ZMODEM）')).toBeEnabled())
 })
 
-const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
+const { terminalKeyHandlers, terminalOptions, terminalOscHandlers, terminalState, terminalWrites } = vi.hoisted(() => ({
   terminalKeyHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
+  terminalOptions: [] as Array<Record<string, unknown>>,
   terminalOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   terminalState: {
     inputs: [] as string[],
@@ -133,7 +134,7 @@ const { terminalKeyHandlers, terminalOscHandlers, terminalState, terminalWrites 
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
-    constructor(public options: Record<string, unknown>) {}
+    constructor(public options: Record<string, unknown>) { terminalOptions.push(options) }
     cols = 120
     rows = 34
     parser = {
@@ -187,6 +188,7 @@ const bootstrapState: BootstrapState = {
     terminalCursorBlink: true,
     terminalScrollbarVisibility: 'active',
     terminalShowStatusBar: true,
+    terminalFullscreenHideToolbar: true,
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
@@ -247,6 +249,7 @@ function makeBackend(overrides: Partial<Backend> = {}): Backend {
     setAliasAccount: vi.fn().mockResolvedValue(undefined),
     minimizeWindow: vi.fn().mockResolvedValue(undefined),
     ensureWindowVisible: vi.fn().mockResolvedValue(undefined),
+    setWindowFullscreen: vi.fn().mockResolvedValue(undefined),
     savePreferences: vi.fn().mockResolvedValue(undefined),
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
     getAuthStatus: vi.fn().mockResolvedValue(bootstrapState.profiles[0].auth),
@@ -836,6 +839,34 @@ test('加载分页资产，搜索 Alias，并支持立即同步', async () => {
   expect(await screen.findByText('production 资产同步成功')).toBeInTheDocument()
 })
 
+test.each([
+  { name: '当天', synced: [2026, 9, 8], today: [2026, 9, 8], expected: '11:19:28' },
+  { name: '跨日', synced: [2026, 9, 7], today: [2026, 9, 8], expected: '2026/10/07 11:19:28' },
+  { name: '跨月同日', synced: [2026, 8, 8], today: [2026, 9, 8], expected: '2026/09/08 11:19:28' },
+  { name: '跨年同月同日', synced: [2025, 9, 8], today: [2026, 9, 8], expected: '2025/10/08 11:19:28' },
+])('最近同步按本地日期显示时间：$name', async ({ synced, today, expected }) => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(new Date(synced[0], synced[1], synced[2], 11, 19, 28))
+    const backend = makeBackend()
+    const { rerender } = render(<App backend={backend} />)
+    expect(await screen.findByText('最近同步 11:19:28')).toBeInTheDocument()
+
+    vi.setSystemTime(new Date(today[0], today[1], today[2], 12))
+    rerender(<App backend={backend} />)
+    expect(screen.getByText(`最近同步 ${expected}`)).toBeInTheDocument()
+    expect(backend.listAssets).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('首次资产加载完成前显示尚未同步', async () => {
+  const backend = makeBackend({ listAssets: vi.fn().mockReturnValue(new Promise<AssetPage>(() => {})) })
+  render(<App backend={backend} />)
+  expect(await screen.findByText('最近同步 尚未同步')).toBeInTheDocument()
+})
+
 test('资产列表每页 100 条，前后翻页使用对应偏移量', async () => {
   const results = Array.from({ length: 101 }, (_, index) => ({
     ...assetPage.results[0], id: `asset-${index + 1}`, name: `分页资产-${index + 1}`, aliases: [],
@@ -1130,6 +1161,33 @@ test('删除 Alias 使用应用内确认对话框', async () => {
   } finally {
     systemConfirm.mockRestore()
   }
+})
+
+test.each(['资产搜索', '创建 Alias', '编辑 Alias', '快速连接'])('%s 禁用自动文本更正并保留手动大小写输入', async (target) => {
+  const user = userEvent.setup()
+  render(<App backend={makeBackend()} />)
+  const row = await screen.findByTestId('asset-row-asset-1')
+  let input: HTMLElement
+  if (target === '资产搜索') {
+    input = screen.getByRole('searchbox', { name: '搜索资产或 Alias' })
+  } else if (target === '快速连接') {
+    await user.keyboard('{Control>}k{/Control}')
+    input = await screen.findByRole('combobox', { name: '搜索资产或别名' })
+  } else {
+    if (target === '创建 Alias') {
+      await user.click(within(screen.getByRole('complementary', { name: '资产详情' })).getByRole('button', { name: '添加 Alias' }))
+    } else {
+      await user.click(within(row).getByRole('button', { name: '编辑 production-web' }))
+    }
+    input = within(await screen.findByRole('dialog', { name: target })).getByLabelText('Alias 名称')
+  }
+  // DOM 测试验证字段约定；macOS 原生更正是否被抑制仍需实机验证。
+  expect(input).toHaveAttribute('autocorrect', 'off')
+  expect(input).toHaveAttribute('autocapitalize', 'none')
+  expect(input).toHaveAttribute('spellcheck', 'false')
+  await user.clear(input)
+  await user.type(input, 'a Mixed-ID ')
+  expect(input).toHaveValue('a Mixed-ID ')
 })
 
 test('编辑 Alias 名称时保留资产和默认账号', async () => {
@@ -1508,6 +1566,82 @@ test('配色保存失败时恢复已保存方案与预览', async () => {
   expect(screen.getByRole('region', { name: '终端预览' })).toHaveTextContent('Nord')
 })
 
+test('SSH 全屏快捷键隔离输入、忽略长按并复用终端，Esc 不退出', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  fireEvent.keyDown(window, { key: 'F11' })
+  expect(backend.setWindowFullscreen).not.toHaveBeenCalled()
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  const host = await screen.findByLabelText('production-web SSH 终端')
+  const remote = vi.fn()
+  host.addEventListener('keydown', remote)
+  fireEvent.keyDown(host, { key: 'F11' })
+  await waitFor(() => expect(document.querySelector('.app-shell')).toHaveClass('terminal-fullscreen'))
+  expect(remote).not.toHaveBeenCalled()
+  expect(document.querySelector('.titlebar')).toHaveAttribute('hidden')
+  expect(document.querySelector('.terminal-header')).toHaveAttribute('hidden')
+  expect(document.querySelector('.terminal-statusbar')).not.toBeInTheDocument()
+  fireEvent.keyDown(host, { key: 'F11', repeat: true })
+  fireEvent.keyDown(host, { key: 'Escape' })
+  expect(backend.setWindowFullscreen).toHaveBeenCalledTimes(1)
+  fireEvent.keyDown(host, { key: 'Enter', altKey: true })
+  await waitFor(() => expect(document.querySelector('.app-shell')).not.toHaveClass('terminal-fullscreen'))
+  expect(backend.setWindowFullscreen).toHaveBeenLastCalledWith(false)
+  expect(screen.getByLabelText('production-web SSH 终端')).toBe(host)
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+  expect(backend.writeSSHSession).not.toHaveBeenCalled()
+})
+
+test('全屏工具栏开关位于终端行为并保存，关闭后全屏保留工具栏', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  const panel = screen.getByRole('heading', { name: '终端行为' }).closest('section')!
+  const toggle = within(panel).getByRole('switch', { name: '全屏时隐藏工具栏' })
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await user.click(toggle)
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ terminalFullscreenHideToolbar: false })))
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  fireEvent.keyDown(window, { key: 'F11' })
+  await waitFor(() => expect(document.querySelector('.app-shell')).toHaveClass('terminal-fullscreen'))
+  expect(document.querySelector('.terminal-header')).not.toHaveAttribute('hidden')
+  await user.click(screen.getByRole('button', { name: '退出全屏' }))
+  await waitFor(() => expect(document.querySelector('.app-shell')).not.toHaveClass('terminal-fullscreen'))
+})
+
+test('全屏中快速连接先恢复窗口，切换失败时不打开弹窗', async () => {
+  const backend = makeBackend()
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  fireEvent.keyDown(window, { key: 'F11' })
+  await waitFor(() => expect(document.querySelector('.app-shell')).toHaveClass('terminal-fullscreen'))
+  vi.mocked(backend.setWindowFullscreen).mockRejectedValueOnce(new Error('退出全屏失败'))
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+  await screen.findByText('退出全屏失败')
+  expect(screen.queryByRole('dialog', { name: '快速连接' })).not.toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+  await screen.findByRole('dialog', { name: '快速连接' })
+  expect(document.querySelector('.app-shell')).not.toHaveClass('terminal-fullscreen')
+})
+
+test('全屏工具栏偏好保存失败后恢复最近成功值', async () => {
+  const backend = makeBackend({ savePreferences: vi.fn().mockRejectedValue(new Error('fullscreen preference failed')) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByRole('heading', { name: '资产' })
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await user.click(screen.getByRole('switch', { name: '全屏时隐藏工具栏' }))
+  await screen.findByText('fullscreen preference failed')
+  expect(screen.getByRole('switch', { name: '全屏时隐藏工具栏' })).toHaveAttribute('aria-checked', 'true')
+})
+
 test('SSH 状态栏开关位于终端样式，默认开启，保存后已有会话隐藏且可恢复', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
@@ -1700,6 +1834,26 @@ test('鼠标右键与字号使用一致的横向布局并可切换为上下文�
   expect(copySwitch).toHaveAttribute('aria-checked', 'false')
   await user.click(copySwitch)
   await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalCopyOnEnter: true })))
+})
+
+test('下拉选择数字开头的系统字体后，保存原名并向 SSH 和预览传入有效字体设置', async () => {
+  terminalOptions.length = 0
+  const backend = makeBackend({ listMonospaceFonts: vi.fn().mockResolvedValue(['0xProto Nerd Font Mono']) })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(terminalOptions).toHaveLength(1))
+  await user.click(screen.getByRole('button', { name: '打开设置' }))
+  await screen.findByRole('region', { name: '终端预览' })
+  await user.click(screen.getByRole('button', { name: '展开字体列表' }))
+  await user.click(await screen.findByRole('option', { name: '0xProto Nerd Font Mono' }))
+  await waitFor(() => expect(backend.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalFontFamily: '0xProto Nerd Font Mono' })))
+  expect(screen.getByLabelText('字体')).toHaveValue('0xProto Nerd Font Mono')
+  expect(terminalOptions).toHaveLength(3)
+  for (const options of terminalOptions.slice(1)) expect(options.fontFamily).toBe('"0xProto Nerd Font Mono"')
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(terminalOptions.at(-1)?.fontFamily).toBe('"0xProto Nerd Font Mono"')
+  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
 })
 
 test('设置页列出系统等宽字体并允许输入过滤后保存', async () => {

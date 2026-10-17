@@ -1,16 +1,18 @@
 # 架构说明
 
+本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
+
 ## 当前状态
 
 JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
 ## 系统范围与整体架构
 
-JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享能力，并允许多个可执行入口复用这些能力：
+JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能力，由多个可执行入口复用：
 
 - `jumpctl` 既可以作为独立 SSH 客户端运行，也可以作为通用 SSH `ProxyCommand` 被外部客户端调用。
 - `jumpaccess` 是基于 Wails 2 的桌面入口，负责认证、资源管理、直接 SSH 和 SFTP 文件传输，不提供 ProxyCommand 或其他代理能力。
-- OAuth、配置、JumpServer API、目标解析、Token 管理和 SSH 能力应位于可复用核心中，不能依赖具体 CLI 或未来 GUI 的表现层。
+- OAuth、配置、JumpServer API、目标解析、Token 管理和 SSH 能力位于可复用核心中，不能依赖具体 CLI 或 GUI 的表现层。
 
 本项目不安装 Windows Service，也不依赖 JumpServer 桌面 Client 才能完成认证或连接。JumpServer Client `v4.1.6` 仅作为首个协议与行为分析基线。
 
@@ -20,13 +22,13 @@ JumpAccess 计划以单个 Go module `github.com/cmstar/jumpaccess` 承载共享
 - 桌面入口采用 Wails 2.14，前端采用 React、TypeScript 和 Vite；Wails 仅位于表现层，不进入共享核心。
 - Wails 的 `bindings` build tag 入口只提供可反射的桌面适配器与默认窗口参数，不装配运行时服务或读取用户数据；真实桌面入口才解析应用目录并校验配置。
 - OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；Windows Credential Manager 与 macOS Keychain 只承载 ProxyCommand host key。
-- SSH、OAuth 和 JumpServer API 的具体 Go 依赖将在实现和测试时选定，本文不提前指定。
+- SSH 使用 `golang.org/x/crypto/ssh`，SFTP 使用 `github.com/pkg/sftp`；OAuth 与 JumpServer API 通过 Go 标准库 `net/http` 实现。CLI 使用 Cobra，TOML 读写使用 `github.com/BurntSushi/toml`；具体版本以根目录 `go.mod` 为准。
 
-## 目标系统组成与模块职责
+## 系统组成与模块职责
 
-以下表格同时记录已建立的边界和后续目标；未实现项会明确标注：
+以下表格记录当前模块职责；同一模块中的未实施能力会明确标注：
 
-| 逻辑部分 | 目标职责 |
+| 逻辑部分 | 当前职责与边界 |
 | --- | --- |
 | 入口适配器 | `cmd/jumpctl` 和 `internal/cli` 已建立；负责参数与进程 I/O，不承载 JumpServer 协议细节 |
 | 应用层 | `internal/application/settings` 承载 Profile、Organization 与 Alias 修改，`internal/application/auth` 承载登录状态与 Token 生命周期，`internal/application/resources` 和 `internal/application/connect` 分别负责资源查询与连接编排 |
@@ -107,6 +109,12 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 
 直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
+### 桌面 SSH 全屏
+
+全屏由应用层 `useTerminalFullscreen` 拦截捕获阶段的键盘事件，通过桌面适配器 `SetWindowFullscreen` 串行调用 Wails 原生窗口接口。桌面适配器保留进入前的普通边界与最大化标记，全屏期间退出程序使用该快照保存配置；退出后复用显示器恢复逻辑。macOS 禁用 Esc 自动退出全屏，并等待动画边界稳定。前端在原生状态确认后隐藏框体，复用现有 xterm 与 ResizeObserver；系统退出全屏时同步恢复界面，最小化不视为退出。
+
+`terminal.fullscreen_hide_toolbar` 默认 true，控制全屏时 SSH 工具栏（含传输区域）是否隐藏，独立于普通窗口的状态栏设置。设置、演示数据与 Wails 偏好映射保持一致；浏览器演示报告不支持原生全屏，不使用网页全屏模拟桌面窗口状态。
+
 ### 桌面 ZMODEM
 
 取消传输先使旧异步回调失效，再经发送队列发送 8 个 CAN 和 10 个退格组成的取消序列；发送队列的先前失败不得阻止取消信号。协议库 `abort()` 后会把剩余数据当作普通终端输出，因此控制器在解析入口隔离取消后的在途数据，立即丢弃并完成输出确认，不继续写入下载文件。取消信号发送成功后等待 500 ms 无数据的静默窗口，每个迟到数据块重新计时；本地文件清理与静默窗口都结束后才恢复输入和显示取消结果。静默窗口是流恢复策略，不代表远端明确确认；期间的 Shell 提示符可能被一并丢弃。终端保留原有传输进度行中的 `Transfer cancelled`，不额外打印要求按 Enter 刷新的提示，也不主动向远端发送回车。10 秒仍未停止或取消信号发送失败时提示重新连接 SSH，并继续隔离数据，不误报取消完成。销毁会话清除计时器和等待任务。
@@ -119,6 +127,8 @@ SSH ZMODEM 协议由前端 `lib/zmodem.ts` 的会话级控制器和 `zmodem.js` 
 
 桌面 SSH 下载目录策略位于 `cmd/jumpaccess/download_directory.go`，复用 `internal/downloads` 的系统目录解析。GUI 偏好使用 `[downloads]` 配置分组，界面将“下载保存位置”放在“终端行为”面板内；支持固定从系统下载目录询问、自动下载到系统目录、记住上次目录询问、自动下载到指定目录。目录历史仅由 Go 端在选择并授权成功后以锁保护的 read-modify-write 更新，不发送到前端。`SavePreferences` 仅更新模式与指定目录，保留目录历史，避免与并发的会话选择或工作区保存互相覆盖。
 `lib/zmodemProgress.ts` 将字节计数格式化为终端中的本地进度行，约每 100 ms 使用 CR 和清行刷新，本机完整文件路径单独一行并过滤控制字符。上传显示 `Upload <path>`，下载显示 `Download to <path>`；Go 文件元数据返回绝对 `path`，下载采用排他创建后实际文件名，包含同名另存后缀。协议上传仍仅发送 `name`，本机路径不进入 SSH 输入或 ZMODEM 文件元数据。应用生成的 SSH 终端文案统一使用英文，文件名和服务器原始输出不翻译；可能为中文的后端错误详情留在顶部传输区域，终端显示英文失败提示。进度只进入显示和历史，不进入 SSH 输入或协议解析。会话控制器在整批传输结束、有成功文件且后端清理完成后发出一次完成回调，App 按完成回调所属的 live session ID 查找 SSH Tab，复用 Tab 标题规则优先取别名、无别名时取资产名称，将其加在消息前（如 `alias1 下载完成：xxx.txt`），通过通用 `showInfo` 显示顶部中央提示，不依赖当前活动 Tab，也不通过匹配状态文案推断成功。完成消息附带本批次成功文件的文件名，多文件以顿号连接；只使用 Go 返回的 `name`，不包含本机路径，下载同名另存时显示实际文件名。文件名列表按批次重置，上传被跳过的文件不计入。取消、失败、断连、空批次和上传全部跳过不发完成回调。收齐后仍显示 99% 及 `Saving` 或 `Waiting for confirmation`，完成保存或远端确认后才显示 100% 和 `Complete`；零字节文件同样等待完成。下一下载文件等待上一文件保存结束。为防止本地保存期间到达的 Shell 提示符被进度覆盖，普通输出暂存最多 64 Ki 字符，进度结束换行后恢复；超限时停止该文件的终端进度重画并立即恢复输出，顶部传输区域继续计数。
+
+终端完成行通过 `ZmodemProgress` 追加 `Elapsed` 耗时和 `Avg` 平均速度。每次 `start` 记录 `performance.now()` 单调时间，仅在保存成功或远端确认后的 `end(..., true)` 计算并输出，避免系统时钟校正影响结果；计时包含该文件的本地读写及最终确认，不包含原生选择器和文件间等待。平均速度按该文件已传输字节数除以未取整的耗时计算，沿用 B、KiB、MiB、GiB 单位；耗时显示到百分之一秒，长传输显示小时／分钟。不足 0.01 秒显示 `<0.01 s`，空文件速度为 `0 B/s`；非空文件在计时器尚未产生时间差时显示 `—`，避免除零。下一文件重置计时，取消、失败、跳过和中断不输出成功统计。GUI 统计在终端本地显示层实现，CLI 按下文采用相同口径。
 
 能力探测在同一 SSH transport 上请求独立 `exec` channel，分别检查 PATH 中的 `rz` 和 `sz`，超时为 5 秒。响应不匹配或网关拒绝时为未知，不能当作未安装，也不向交互 PTY 自动写探测命令。手工命令握手能证实对应方向的能力。工具栏向当前 PTY 写入 `rz` 或引用后的单文件 `sz -- <path>`，用户需要处于 Shell 提示符。普通终端输入在传输期间由后端暂停，二进制协议输入单独放行。
 
@@ -141,6 +151,8 @@ SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校�
 `sshclient.Runner` 在 stdin/stdout 均为终端时，把输出交给 `internal/clitransfer`，默认识别 CRC 有效的起始帧。普通 SSH 字节不变；文件选择期间键盘仅进入本地路径提示，传输期间只处理本地 Ctrl+C，完成后恢复远端输入。用户选择期间若远端输出普通文本，则请求失效，不再向 Shell 发送协议应答。起始帧前缀等待上限为 1 秒，本地选择为 5 分钟，协议读写空闲为 60 秒；取消残留数据只在有限窗口内丢弃，并提示 Enter 刷新 Shell。写入串行且可取消，阻塞的远端写入通过关闭会话解除，输出解析提前退出时先关闭管道再等待 SSH 结束。
 
 `internal/zmodem` 是独立 Go 协议层：接收 CRC16/CRC32，发送 CRC16，子包最多 8 KiB，发送确认窗口最多 1 MiB 并遵循远端缓冲声明；校验 CRC 和 32 位文件偏移，支持多文件下载、上传恢复偏移、有限重传及远端跳过。普通终端数据和远端协议在 Go 层分流，不运行 JavaScript，不依赖本机 `rz` / `sz`。下载复用 `zmodemfiles.Store` 的名称校验、排他创建、50 MiB 缓冲和清理规则；上传由本地明确选择的普通文件句柄提供可定位读取。文件小于 4 GiB，协议不提供目录传输。
+
+`internal/clitransfer` 的进度显示在每个文件成功完成后追加 `Elapsed` 和 `Avg`，沿用 CLI 的 ` - ` 分隔符，统计口径、时间精度及速度单位与 GUI 一致。上传在本地文件选择结束、调用 `zmodem.Send` 前记录带单调时钟的 `time.Now()`，下载在创建文件后的首个进度回调记录；直到协议报告保存成功或远端确认完成才输出统计。首个进度回调的偏移作为本次传输起点，平均速度按最终偏移减去起点后的有效字节数计算，排除上传续传时远端已有内容，也不重复累计重传字节。下一文件（即使同名）重置计时；取消、失败、断连和远端跳过不显示该文件的成功统计。
 
 `internal/downloads` 提供系统目录解析：Windows Known Folder 遵循用户重定向，macOS CGO 构建通过 Foundation 读取 Downloads；非原生构建回退到用户 `Downloads`，路径不可用时由 CLI 请求另选目录。`jumpctl ssh --download-dir` 只覆盖本次连接，不修改持久配置。非终端 I/O 和 `jumpctl proxy` 保持透传。
 
