@@ -20,6 +20,41 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 首个兼容性参考基线是 JumpServer Client `v4.1.6` 所使用的协议和接口。它是分析参考，不表示本项目依赖该桌面 Client 才能运行。
 
+## 界面预览
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/assets-light.png" width="420" alt="JumpAccess 资产列表与别名管理"><br>
+      <sub><b>资产与别名</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/quick-connect.png" width="420" alt="JumpAccess 快速连接"><br>
+      <sub><b>快速连接</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/profiles.png" width="420" alt="JumpAccess 多 Profile 管理"><br>
+      <sub><b>多 Profile 管理</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/ssh-terminal.png" width="420" alt="JumpAccess SSH 终端"><br>
+      <sub><b>SSH 终端</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/sftp-files.png" width="420" alt="JumpAccess SFTP 文件管理与传输进度"><br>
+      <sub><b>SFTP 文件管理</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/terminal-settings.png" width="420" alt="JumpAccess 终端样式设置与预览"><br>
+      <sub><b>终端样式</b></sub>
+    </td>
+  </tr>
+</table>
+
 ## 安装
 
 ## 安装 CLI jumpctl
