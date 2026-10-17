@@ -109,6 +109,8 @@ wails build
 
 ## 使用 jumpctl
 
+首次使用请跟随 [CLI 入门手册](docs/manual/cli-quick-start.md)，从安装和浏览器认证开始，逐步完成资源查询、别名绑定和 OpenSSH 连接。
+
 完整命令和参数见 [CLI 命令参考](docs/cli.md)，也可以运行 `jumpctl --help` 或 `jumpctl <command> --help` 查看。
 
 通用 OpenSSH 配置示例（`web` 可以是已绑定唯一 Asset 和 Account 的 Alias）：
@@ -163,6 +165,7 @@ jumpctl ssh my-server --download-dir "D:\Downloads"
 
 ## 文档索引
 
+- [用户手册](docs/manual/README.md)
 - [Agent 工作入口](AGENTS.md)
 - [架构说明](docs/architecture.md)
 - [业务说明](docs/domain.md)
