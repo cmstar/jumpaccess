@@ -78,9 +78,11 @@ jumpctl profile list
 示例输出：
 
 ```text
-CURRENT  PROFILE  URL
-*        work     https://jump.example.com
+CURRENT  PROFILE  URL                       ORGANIZATION
+*        work     https://jump.example.com  未设置
 ```
+
+`ORGANIZATION` 显示该 Profile 配置的组织名称，未配置时显示“未设置”。GUI 资产页切换组织后，会保存到对应 Profile，并反映在此列。未登录或组织名称暂时无法查询时，显示组织 ID 和“（名称暂不可用）”。
 
 `*` 表示当前启用的 Profile。添加的第一个 Profile 会自动启用。如果需要切换到指定的 Profile ，执行：
 

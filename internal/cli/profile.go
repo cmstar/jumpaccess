@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -106,13 +107,20 @@ func newProfileCommand(deps Dependencies) *cobra.Command {
 			sort.Strings(names)
 			rows := make([][]string, 0, len(names))
 			for _, name := range names {
+				if err := cmd.Context().Err(); err != nil {
+					return err
+				}
 				marker := ""
 				if name == value.CurrentProfile {
 					marker = "*"
 				}
-				rows = append(rows, []string{marker, name, value.Profiles[name].URL})
+				organization, err := profileOrganizationName(cmd.Context(), deps, name, value.Profiles[name].Organization)
+				if err != nil {
+					return err
+				}
+				rows = append(rows, []string{marker, name, value.Profiles[name].URL, organization})
 			}
-			return writeTable(cmd.OutOrStdout(), []string{"CURRENT", "PROFILE", "URL"}, rows)
+			return writeTable(cmd.OutOrStdout(), []string{"CURRENT", "PROFILE", "URL", "ORGANIZATION"}, rows)
 		},
 	})
 	command.AddCommand(&cobra.Command{
@@ -124,4 +132,34 @@ func newProfileCommand(deps Dependencies) *cobra.Command {
 		},
 	})
 	return command
+}
+
+func profileOrganizationName(ctx context.Context, deps Dependencies, profile, organization string) (string, error) {
+	if organization == "" {
+		return "未设置", nil
+	}
+	fallback := unavailableName(organization)
+	if deps.Resources == nil {
+		return fallback, nil
+	}
+	// 与 Alias 列表一致：未登录时仍显示本地配置，不发起资源请求或交互登录。
+	if deps.Auth != nil {
+		status, err := deps.Auth.Status(profile)
+		if err != nil || !status.LoggedIn {
+			return fallback, nil
+		}
+	}
+	items, err := deps.Resources.ListOrganizations(ctx, profile)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if err != nil {
+		return fallback, nil
+	}
+	for _, item := range items {
+		if item.ID == organization {
+			return displayName(item.Name), nil
+		}
+	}
+	return fallback, nil
 }
