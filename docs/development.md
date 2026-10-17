@@ -95,6 +95,7 @@ docs/               # 长期项目知识
 | 文档入口 | 内容归属与更新时机 |
 | --- | --- |
 | [README.md](../README.md) | 面向使用者的简介、环境、安装、运行和发布入口；这些入口变化时同步更新 |
+| [manual/README.md](manual/README.md) | 面向使用者的入门步骤与功能用法；详细操作、用法示例和使用中的常见问题集中在用户指南，README 和 CLI 参考通过链接引用详细用法；步骤或功能变化时同步更新 |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | 面向贡献者和维护者的 Issue、PR、审查与合并流程；协作约定变化时更新，技术细节链接到本文 |
 | [Issue 表单](../.github/ISSUE_TEMPLATE/) / [PR 模板](../.github/pull_request_template.md) | 收集复现、需求、改动范围和验证信息；协作约定或必填信息变化时与贡献指南同步维护 |
 | [AGENTS.md](../AGENTS.md) / [CLAUDE.md](../CLAUDE.md) | Agent 按需阅读和工作规则；约束变化时更新 AGENTS，CLAUDE 保持引用同一入口 |
@@ -107,7 +108,7 @@ docs/               # 长期项目知识
 | [specs/README.md](specs/README.md) | 当前需求与设计、历史版本两类索引；具体方案确定、实施或替代时更新状态和引用 |
 | [runbooks/README.md](runbooks/README.md) | 操作手册与验证状态索引；流程需要独立交接，或命令、环境、权限变化时维护 |
 
-四个目录 README 使用固定格式的六张索引表，无专题文档时保留空表；新增、移动、替代或废弃文档时，同步维护索引和相对链接。既有基础文档和 CLI 参考不为填充目录而拆分或复制。已确定决策的原始正文保留历史原意，具体维护边界见[决策记录](decisions/README.md)。
+`standards/`、`decisions/`、`specs/`、`runbooks/` 四个目录的 README 使用固定格式的六张索引表，无专题文档时保留空表；新增、移动、替代或废弃文档时，同步维护索引和相对链接。`manual/README.md` 按使用场景维护用户指南链接。既有基础文档和 CLI 参考不为填充目录而拆分或复制。已确定决策的原始正文保留历史原意，具体维护边界见[决策记录](decisions/README.md)。
 
 贡献指南当前仅维护中文版。Issue 的问题反馈与功能建议分别提供 `zh`、`en` 两份表单；成对表单同步维护字段 ID、类型、必填要求和选项含义，只翻译面向填写者的文案。PR 使用一份中英文双语 Markdown 模板，填写者任选一种语言。修改模板时检查 YAML 语法、GitHub Issue Forms 字段结构、中英文表单一致性和文档链接；模板需进入远端默认分支后才会作为 GitHub 的默认入口使用。
 

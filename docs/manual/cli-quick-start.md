@@ -381,4 +381,6 @@ jumpctl ssh --help
 jumpctl proxy --help
 ```
 
-[返回用户手册](README.md) · [CLI 命令参考](../cli.md)
+连接后需要传输文件时，继续阅读[SSH 终端内上传和下载文件](file-transfer.md)，了解 `rz` / `sz` 和 CLI 下载目录设置。
+
+[返回用户指南](README.md) · [CLI 命令参考](../cli.md)
