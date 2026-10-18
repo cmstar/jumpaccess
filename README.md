@@ -22,7 +22,7 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 ## Agent 接入（开发中）
 
-当前源码中的 GUI 通过顶部“MCP”快捷入口打开独立 Agent MCP Tab，依次提供日志、连接和配置三个页面，以及 Streamable HTTP 服务的手动启动、停止和重启。关闭 Tab 不停止服务。Token 与监听设置统一保存至 `config.toml`，配置修改保存后在下次启动或重启时生效。多个 Agent 可以共用同一服务查询 Profile、组织、资产、授权账号和 Alias；需要先完成相应 Profile 的 JumpServer 登录。操作步骤见 [GUI Agent MCP](docs/manual/agent-mcp.md)。
+当前源码中的 GUI 通过顶部“MCP”快捷入口打开独立 Agent MCP Tab，页头显示 MCP Server，依次提供日志、连接和配置三个页面，以及 Streamable HTTP 服务的手动启动、停止和重启。关闭 Tab 不停止服务。Token 与监听设置统一保存至 `config.toml`，配置修改保存后在下次启动或重启时生效。多个 Agent 可以共用同一服务查询 Profile、组织、资产、授权账号和 Alias；需要先完成相应 Profile 的 JumpServer 登录。操作步骤见 [GUI MCP Server 指南](docs/manual/agent-mcp.md)。
 
 当前开发版同时提供 SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。CLI MCP 命令尚未实现。
 
@@ -264,7 +264,7 @@ npm run screenshots -- --only=mcp
 npm run screenshots -- --only=mcp --check
 ```
 
-MCP 截图涵盖首次配置、详细日志和连接管理，并嵌入 [GUI Agent MCP 指南](docs/manual/agent-mcp.md)。截图通过真实界面生成 Token、保存配置、切换详细级别后启动服务；日志使用终端样式中的系统等宽字体、14px 字号和 1.4 倍行高。MCP 截图中的 Token 显式标为 `DEMO_ONLY`。
+MCP 截图涵盖配置与自动启动、详细日志和连接管理，并嵌入 [GUI MCP Server 指南](docs/manual/agent-mcp.md)。脚本从首次配置场景出发，通过真实界面生成 Token、保存配置并开启“随应用启动 MCP”；第一张图完整展示页头及两张限宽卡片，服务仍处于停止状态。随后切换详细级别并手动启动服务，展示同排的级别提示、样例日志和连接。日志使用终端样式中的系统等宽字体、14px 字号和 1.4 倍行高。MCP 截图中的 Token 显式标为 `DEMO_ONLY`。
 
 截图包含[快速连接搜索结果](docs/screenshots/quick-connect.png)：打开快速连接，输入 `prod`，展示匹配的多个别名和资产、登录账号及 SSH/SFTP 入口。
 
