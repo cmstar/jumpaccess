@@ -27,7 +27,7 @@ function validate(draft: Draft): MCPConfig {
   return { ...draft, listenHost: host, port: Number(draft.port), tlsCert, tlsKey }
 }
 
-export function MCPSettings({ backend, active, configurationVisible = true, children, onStatusChange, confirmServiceActions = false }: { backend?: MCPBackend; active: boolean; configurationVisible?: boolean; children?: ReactNode; onStatusChange?: (status: MCPStatus) => void; confirmServiceActions?: boolean }) {
+export function MCPSettings({ backend, active, configurationVisible = true, children, onStatusChange, confirmServiceActions = false, autoStart = false, onAutoStartChange }: { backend?: MCPBackend; active: boolean; configurationVisible?: boolean; children?: ReactNode; onStatusChange?: (status: MCPStatus) => void; confirmServiceActions?: boolean; autoStart?: boolean; onAutoStartChange?: (enabled: boolean) => void }) {
   const [status, setStatus] = useState<MCPStatus | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
@@ -122,7 +122,7 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
   const controlsLocked = busy || !status || external
 
   return <section className="settings-card mcp-settings" id="settings-mcp">
-    <PageHeading eyebrow="Agent 接入" title="Agent MCP" icon={Plug} description="向 Agent 提供资源查询和 SSH 命令执行能力，并通过 Streamable HTTP 协议通信。"><span className="mcp-provider">{providerDescription}</span></PageHeading>
+    <PageHeading eyebrow="Agent 接入" title="MCP Server" icon={Plug} description="向 Agent 提供资源查询和 SSH 命令执行能力，并通过 Streamable HTTP 协议通信。"><span className="mcp-provider">{providerDescription}</span></PageHeading>
     {!backend ? <p className="setting-help">当前预览不提供 MCP 服务。</p> : <>
       <div className="mcp-service-controls">
         <div className="mcp-service-summary"><strong className={`mcp-state ${running || external ? 'running' : ''}`}><span />{stateLabel}{running && <small>{elapsed ? `已运行 ${elapsed} 分钟` : '刚刚启动'}</small>}</strong>
@@ -144,7 +144,16 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
       {(statusError || error || status?.error) && <p role="alert" className="mcp-error">{error || statusError || status?.error}</p>}
       {statusError && <button type="button" className="button secondary small" disabled={busy} onClick={() => void run(() => backend.status(), acceptStatus)}>刷新状态</button>}
       {children}
-      {draft && <form id="mcp-panel-config" hidden={!configurationVisible} className="mcp-config-box" aria-label="MCP 配置" autoComplete="off" noValidate onSubmit={event => { event.preventDefault(); save() }}>
+      <div id="mcp-panel-config" hidden={!configurationVisible}>
+        <section className="mcp-startup-box" aria-labelledby="mcp-startup-title">
+          <h3 id="mcp-startup-title">启动行为</h3>
+          <div className="mcp-startup-row">
+            <div><label htmlFor="mcp-auto-start">随应用启动 MCP</label><p id="mcp-auto-start-help" className="setting-help">开启后，桌面应用启动时会在后台启动 MCP 服务。更改后自动保存，下次启动应用时生效。</p></div>
+            <button id="mcp-auto-start" type="button" role="switch" aria-label="随应用启动 MCP" aria-describedby="mcp-auto-start-help" aria-checked={autoStart} className={autoStart ? 'switch on' : 'switch'} disabled={!autoStart && (!status?.tokenConfigured || Boolean(statusError))} onClick={() => onAutoStartChange?.(!autoStart)}><span /></button>
+          </div>
+          {status && !status.tokenConfigured && <p className="setting-help">请先完成并保存下方的连接与访问配置，再开启自动启动。</p>}
+        </section>
+      {draft && <form className="mcp-config-box" aria-label="MCP 配置" autoComplete="off" noValidate onSubmit={event => { event.preventDefault(); save() }}>
         <div className="mcp-config-heading"><h3>连接与访问配置</h3>{configError && <p role="alert" className="mcp-error">{configError}</p>}<div className="mcp-config-actions">{dirty && <span className="mcp-save-badge" role="status">未保存</span>}<button type="button" className="button secondary small" disabled={busy || !dirty} onClick={reset}>重置</button><button type="submit" className="button primary small" disabled={busy || !dirty}>保存</button></div></div>
         <fieldset disabled={busy} className="mcp-fields">
           <div className="mcp-field"><label htmlFor="mcp-host">监听地址</label><input id="mcp-host" aria-label="MCP 监听地址" autoComplete="off" spellCheck={false} value={draft.listenHost} onChange={event => edit({ listenHost: event.target.value })} /></div>
@@ -158,6 +167,7 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
           <div className="mcp-field"><label htmlFor="mcp-token">Bearer Token</label><div className="mcp-token-control"><div className="settings-input-action"><input id="mcp-token" aria-label="MCP Bearer Token" type="text" autoComplete="off" spellCheck={false} value={draft.token} onChange={event => edit({ token: event.target.value })} /><button type="button" className="icon-button" disabled={!draft.token} aria-label="复制输入框中的 Token" title="复制输入框中的 Token" onClick={() => void copyText(draft.token || '')}><Copy /></button></div><button type="button" className="button secondary small" onClick={() => void run(() => backend.generateToken(), value => edit({ token: value }), 'config')}><RefreshCw />生成</button></div></div>
         </fieldset>
       </form>}
+      </div>
       {confirmation && <MCPConfirm title={confirmation === 'stop' ? '停止 MCP 服务？' : '重启 MCP 服务？'} description={`当前有 ${status?.counts?.executions || 0} 个任务正在执行。将请求停止任务并关闭连接；无法确认远端结束时保留结果未知警告。`} action={confirmation === 'stop' ? '停止服务' : '重启服务'} onCancel={() => setConfirmation(null)} onConfirm={() => { const action = confirmation; setConfirmation(null); stopOrRestart(action, true) }} />}
     </>}
   </section>

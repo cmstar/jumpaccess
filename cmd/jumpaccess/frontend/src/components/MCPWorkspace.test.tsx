@@ -29,6 +29,7 @@ test('首次缺少配置时进入配置页，轮询不抢回页面，生成后�
   expect(screen.getByRole('form', { name: 'MCP 配置' })).toBeVisible()
   expect(screen.getByRole('status')).toHaveTextContent('尚未完成 MCP 配置')
   expect(screen.getByRole('button', { name: '启动' })).toBeDisabled()
+  expect(screen.getByRole('switch', { name: '随应用启动 MCP' })).toBeDisabled()
   fireEvent.click(screen.getByRole('tab', { name: '日志' }))
   await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
   expect(screen.getByRole('tab', { name: '日志' })).toHaveAttribute('aria-selected', 'true')
@@ -40,7 +41,20 @@ test('首次缺少配置时进入配置页，轮询不抢回页面，生成后�
   await act(async () => {})
   expect(screen.queryByText(/尚未完成 MCP 配置/)).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '启动' })).toBeEnabled()
+  expect(screen.getByRole('switch', { name: '随应用启动 MCP' })).toBeEnabled()
   expect(backend.start).not.toHaveBeenCalled()
+})
+
+test('配置丢失后仍可关闭已启用的自动启动', async () => {
+  const { preferences } = await createPreviewBackend().bootstrap()
+  const backend = api([]), save = vi.fn()
+  backend.status = vi.fn().mockResolvedValue({ ...status, state: 'stopped', instance: null, tokenConfigured: false, config: { ...config, token: '' } })
+  render(<NotificationProvider><MCPWorkspace backend={backend} hidden={false} preferences={{ ...preferences, mcpAutoStart: true }} onSavePreferences={save} onTerminalStyle={() => {}} /></NotificationProvider>)
+  const toggle = await screen.findByRole('switch', { name: '随应用启动 MCP' })
+  expect(toggle).toBeEnabled()
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  fireEvent.click(toggle)
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ mcpAutoStart: false }))
 })
 
 test('日志级别只影响新增行，暂停继续采集，清空不触及业务记录，复用终端配色', async () => {

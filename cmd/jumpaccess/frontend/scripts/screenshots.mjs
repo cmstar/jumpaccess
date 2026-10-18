@@ -42,7 +42,7 @@ try {
     await page.getByRole('complementary', { name: '演示控制' }).waitFor()
     await page.locator('.app-shell').waitFor()
     await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }' })
-    if (scenario === 'mcp-setup') await page.getByRole('heading', { name: 'Agent MCP', exact: true }).waitFor()
+    if (scenario === 'mcp-setup') await page.getByRole('heading', { name: 'MCP Server', exact: true }).waitFor()
     else if (scenario !== 'empty') await page.getByRole('button', { name: '使用 web 连接', exact: true }).waitFor()
   }
 

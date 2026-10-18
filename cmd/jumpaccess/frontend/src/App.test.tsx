@@ -11,6 +11,57 @@ import { createPreviewBackend } from './lib/previewBackend'
 import { Sentry, type Session } from 'zmodem.js'
 import { decodeBytes, encodeBytes } from './lib/zmodem'
 
+test('MCP 自动启动在配置页顶部独立保存，不保存表单草稿或改变运行状态', async () => {
+  const backend = createPreviewBackend()
+  const save = vi.spyOn(backend, 'savePreferences')
+  const saveConfig = vi.spyOn(backend.mcp!, 'saveConfig')
+  const start = vi.spyOn(backend.mcp!, 'start')
+  const stop = vi.spyOn(backend.mcp!, 'stop')
+  render(<App backend={backend} />)
+  fireEvent.click(await screen.findByRole('button', { name: '打开 MCP 模块' }))
+  fireEvent.click(screen.getByRole('tab', { name: '配置' }))
+  const toggle = await screen.findByRole('switch', { name: '随应用启动 MCP' })
+  await waitFor(() => expect(toggle).toBeEnabled())
+  expect(toggle).toHaveAttribute('aria-checked', 'false')
+  const form = screen.getByRole('form', { name: 'MCP 配置' })
+  expect(form.contains(toggle)).toBe(false)
+  expect(toggle.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('MCP 端口'), { target: { value: '39288' } })
+  fireEvent.click(toggle)
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ mcpAutoStart: true })))
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByText('未保存')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: '重置' }))
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  expect(screen.queryByText('未保存')).not.toBeInTheDocument()
+  fireEvent.click(toggle)
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ mcpAutoStart: false })))
+  expect(saveConfig).not.toHaveBeenCalled()
+  expect(start).not.toHaveBeenCalled()
+  expect(stop).not.toHaveBeenCalled()
+})
+
+test('MCP 自动启动偏好保存失败会还原开关', async () => {
+  const backend = createPreviewBackend()
+  vi.spyOn(backend, 'savePreferences').mockRejectedValue(new Error('无法保存启动偏好'))
+  render(<App backend={backend} />)
+  fireEvent.click(await screen.findByRole('button', { name: '打开 MCP 模块' }))
+  fireEvent.click(screen.getByRole('tab', { name: '配置' }))
+  const toggle = await screen.findByRole('switch', { name: '随应用启动 MCP' })
+  await waitFor(() => expect(toggle).toBeEnabled())
+  fireEvent.click(toggle)
+  await screen.findByText('无法保存启动偏好')
+  expect(toggle).toHaveAttribute('aria-checked', 'false')
+})
+
+test('未打开 MCP 模块时也提示自动启动失败', async () => {
+  const backend = createPreviewBackend()
+  vi.spyOn(backend.mcp!, 'logs').mockImplementation(async cursor => ({ lines: cursor ? [] : [{ sequence: 1, time: '2026-10-18T00:00:00Z', event: 'auto_start_failed', instance: '', severity: 'ERROR', detail: 1, text: 'MCP 自动启动失败，请检查配置后手动启动。' }], nextCursor: 1, hasMore: false, gap: false }))
+  render(<App backend={backend} />)
+  expect(await screen.findByRole('status')).toHaveTextContent('MCP 自动启动失败')
+  expect(screen.queryByRole('tab', { name: 'Agent MCP' })).not.toBeInTheDocument()
+})
+
 test('MCP 从独立快捷入口打开单例 Tab，关闭 Tab 不停止服务', async () => {
   const backend = createPreviewBackend()
   const stop = vi.spyOn(backend.mcp!, 'stop')
@@ -31,7 +82,7 @@ test('MCP 从独立快捷入口打开单例 Tab，关闭 Tab 不停止服务', a
   fireEvent.click(screen.getByRole('button', { name: '停止' }))
   const confirmation = await screen.findByRole('dialog', { name: '停止 MCP 服务？' })
   expect(stop).not.toHaveBeenCalled()
-  fireEvent.click(within(confirmation).getByRole('button', { name: '停止服务', exact: true }))
+  fireEvent.click(within(confirmation).getByRole('button', { name: '停止服务' }))
   await waitFor(() => expect(open.querySelector('.status-indicator')).toHaveClass('offline'))
   expect(stop).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
@@ -224,6 +275,7 @@ const bootstrapState: BootstrapState = {
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
     newTabPosition: 'end',
+    mcpAutoStart: false,
   },
   workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
 }

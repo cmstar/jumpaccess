@@ -2,7 +2,7 @@
 
 本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
 
-开发中的 [Agent MCP 接入](specs/agent-mcp.md)由 GUI 启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例；CLI 宿主入口仍待实现。共享核心负责单 Token 鉴权、资源查询、请求去重、固定身份的 SSH 连接池、命令任务、输出、超时、取消和有界回收。逻辑连接与任务由服务实例持有，独立于 Agent 的 HTTP 会话和人类终端；自动重连保持同一实例内的逻辑 ID，已可能发送的命令不重放。GUI 通过独立 MCP Tab 提供配置、启停、连接管理与文本日志，关闭或切换 Tab 不停止服务，退出宿主使用有限时间清理；无法确认的远端结果仍按未知处理。
+开发中的 [Agent MCP 接入](specs/agent-mcp.md)由 GUI 启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例；CLI 宿主入口仍待实现。共享核心负责单 Token 鉴权、资源查询、请求去重、固定身份的 SSH 连接池、命令任务、输出、超时、取消和有界回收。逻辑连接与任务由服务实例持有，独立于 Agent 的 HTTP 会话和人类终端；自动重连保持同一实例内的逻辑 ID，已可能发送的命令不重放。GUI 通过独立 MCP Tab 提供配置、启停、连接管理与文本日志，关闭或切换 Tab 不停止服务，GUI 独有的自动启动偏好保存于 `gui.toml`，默认关闭；开启后在桌面启动回调中异步尝试一次，不依赖前端页面，失败保留到共享日志供前端提示。手动管理或退出取消未完成的自动启动，退出宿主使用有限时间清理；无法确认的远端结果仍按未知处理。
 
 `agentmcp.History` 是宿主内共享的 3000 条操作仓库，各 Engine 使用同一把锁保护记录、输入和输出引用；按 ID 的 Map 负责业务索引，FIFO 只负责回收。2500 条去重索引不复制命令输入或结果。原始输入限额 16 MiB，输出仍按单任务 8 MiB、宿主 64 MiB 和最多 32 KiB 的共享字节块回收。GUI 通过 Wails 调用 `Runtime.Connections`、`CloseConnection` 和 `History.Read`，不拥有独立业务状态；后者提供有序游标、缺口和分页，`FormatLogLine` 提供纯文本／ANSI 格式，供后续 CLI 复用。服务重启保留日志游标与有界历史，同时解除旧 Engine 引用；旧实例 ID 不恢复。完整规则见 [MCP 方案](specs/agent-mcp.md#重试与自动清理)。
 
@@ -44,7 +44,7 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
 | 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias、行为配置以及 MCP 网络设置与访问 Token；OAuth 凭据独立保存 |
-| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
+| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端、Tab 和 MCP 启动行为分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责资产首个匹配解析、账号选择与连接准备 |
@@ -187,7 +187,7 @@ ProxyCommand 有两层独立主机信任：
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
 
-共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH/SFTP Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
+共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、MCP 自动启动偏好、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH/SFTP Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
 
 `credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 

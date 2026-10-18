@@ -30,6 +30,9 @@ type desktopApp struct {
 	ctx                  context.Context
 	core                 bootstrap.Runtime
 	mcp                  *agentmcp.Runtime
+	mcpStartupMu         sync.Mutex
+	mcpStartupHandled    bool
+	stopMCPStartup       context.CancelFunc
 	preferences          guiconfig.Store
 	initialPreferences   guiconfig.Config
 	window               desktopWindow
@@ -227,6 +230,7 @@ func (a *desktopApp) startup(ctx context.Context) {
 		supervisionContext, a.stopAuthSupervision = context.WithCancel(ctx)
 		go a.superviseAuth(supervisionContext)
 	}
+	a.startMCPOnLaunch(ctx)
 }
 
 func (a *desktopApp) domReady(ctx context.Context) {

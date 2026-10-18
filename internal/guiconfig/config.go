@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 14
+const CurrentVersion = 15
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -51,12 +51,18 @@ type Config struct {
 	Terminal   Terminal        `toml:"terminal"`
 	Downloads  Downloads       `toml:"downloads"`
 	Tabs       Tabs            `toml:"tabs"`
+	MCP        MCP             `toml:"mcp"`
 	Workspace  Workspace       `toml:"workspace" json:"-"`
 	Window     WindowPlacement `toml:"window" json:"-"`
 }
 
 type Appearance struct {
 	Theme string `toml:"theme"`
+}
+
+// MCP 只保存桌面宿主行为；监听和访问配置仍由共享 config.toml 管理。
+type MCP struct {
+	AutoStart bool `toml:"auto_start"`
 }
 
 // Downloads 只控制桌面 SSH ZMODEM 下载；目录历史由后端更新。

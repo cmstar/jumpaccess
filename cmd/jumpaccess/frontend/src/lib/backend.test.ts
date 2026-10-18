@@ -34,6 +34,7 @@ test.each(['block', 'bar', 'underline', 'quarter_block'])('Wails 偏好映射双
     Downloads: { Mode: 'remember', Directory: 'D:/下载' }, Version: 12, Appearance: { Theme: 'light' },
     Terminal: { Background: { ...defaultTerminalBackground, enabled: true, filePath: 'D:/图片/a.png', transparencyPercent: 0, positionXPercent: 0, positionYPercent: 100, fitMode: 'tile', tileFitLongEdge: true, tileOnlyWholeTiles: true }, FontFamily: 'monospace', FontSize: 12, ColorScheme: 'nord', LineHeight: 1.25, CursorStyle: style, CursorBlink: false, RightClickAction: 'paste', WarnOnMultiLinePaste: true },
     Tabs: { ConfirmCloseActiveSession: true, ShowCloseButtons: true, NewTabPosition: 'after_current' },
+    MCP: { AutoStart: true },
   }
   const save = vi.fn().mockResolvedValue(undefined)
   Object.assign(preferences.Terminal, { ScrollbarVisibility: 'hidden' })
@@ -43,6 +44,7 @@ test.each(['block', 'bar', 'underline', 'quarter_block'])('Wails 偏好映射双
   const state = await wailsBackend.bootstrap()
   expect(state.preferences).toMatchObject({ terminalScrollbarVisibility: 'hidden' })
   expect(state.preferences.newTabPosition).toBe('after_current')
+  expect(state.preferences.mcpAutoStart).toBe(true)
   expect(state.preferences.terminalCopyOnEnter).toBe(false)
   expect(state.preferences.terminalShowStatusBar).toBe(false)
   expect(state.preferences.terminalFullscreenHideToolbar).toBe(false)

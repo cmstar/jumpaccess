@@ -15,6 +15,12 @@
 .mcp-settings .mcp-notice { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; color: var(--accent-strong); background: var(--accent-soft); }
 .mcp-settings .mcp-notice svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
 .mcp-settings .mcp-config-box { margin-top: 20px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.mcp-settings .mcp-startup-box { margin-top: 20px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 10px; }
+.mcp-settings .mcp-startup-box h3 { margin: 0 0 14px; font-size: 15px; }
+.mcp-settings .mcp-startup-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.mcp-settings .mcp-startup-row label { font-size: 13px; }
+.mcp-settings .mcp-startup-row .setting-help { margin: 6px 0 0; }
+.mcp-settings .mcp-startup-row .switch { flex-shrink: 0; }
 .mcp-settings .mcp-config-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 18px 20px 0; }
 .mcp-settings .mcp-config-heading h3 { margin: 0; font-size: 15px; white-space: nowrap; }
 .mcp-settings .mcp-config-heading .mcp-error { margin: 0; }

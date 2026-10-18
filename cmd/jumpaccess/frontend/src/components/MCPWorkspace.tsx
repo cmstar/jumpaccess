@@ -5,6 +5,7 @@ import type { MCPBackend, MCPConnection, MCPLogLine, MCPStatus } from '../lib/mc
 import { terminalDisplayOptions, terminalScheme } from '../model/terminalTheme'
 import { MCPSettings } from './MCPSettings'
 import { MCPConfirm } from './MCPConfirm'
+import { useNotifications } from './Notifications'
 import './MCPWorkspace.css'
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
@@ -16,7 +17,9 @@ function bounded(lines: MCPLogLine[]) {
   return lines.slice(start)
 }
 
-export function MCPWorkspace({ backend, hidden, preferences, onTerminalStyle, onStatusChange }: { backend?: MCPBackend; hidden: boolean; preferences: Preferences; onTerminalStyle: () => void; onStatusChange?: (status: MCPStatus) => void }) {
+export function MCPWorkspace({ backend, hidden, preferences, onSavePreferences, onTerminalStyle, onStatusChange }: { backend?: MCPBackend; hidden: boolean; preferences: Preferences; onSavePreferences?: (preferences: Preferences) => void; onTerminalStyle: () => void; onStatusChange?: (status: MCPStatus) => void }) {
+  const { showWarning } = useNotifications()
+  const autoStartNotified = useRef(false)
   const [view, setView] = useState<'connections' | 'logs' | 'config'>('logs')
   const initializedBackend = useRef<MCPBackend | null>(null)
   const [status, setStatus] = useState<MCPStatus | null>(null)
@@ -49,6 +52,11 @@ export function MCPWorkspace({ backend, hidden, preferences, onTerminalStyle, on
         const page = await backend!.logs(cursor.current, 200)
         if (disposed || generation.current !== version) return
         cursor.current = page.nextCursor; more = page.hasMore; setLogError('')
+        const autoStartFailure = page.lines.find(line => line.event === 'auto_start_failed')
+        if (autoStartFailure && !autoStartNotified.current) {
+          autoStartNotified.current = true
+          showWarning(autoStartFailure.text)
+        }
         if (cleared === clearGeneration.current) {
           if (page.gap) setGap(true)
           const added = page.lines.filter(line => line.detail <= levelRef.current)
@@ -60,7 +68,7 @@ export function MCPWorkspace({ backend, hidden, preferences, onTerminalStyle, on
     }
     void poll()
     return () => { disposed = true; generation.current++; window.clearTimeout(timer) }
-  }, [backend])
+  }, [backend, showWarning])
 
   useEffect(() => {
     if (!backend || hidden) return
@@ -112,7 +120,7 @@ export function MCPWorkspace({ backend, hidden, preferences, onTerminalStyle, on
   const display = terminalDisplayOptions(preferences), palette = terminalScheme(preferences.terminalColorScheme)
   const terminalStyle = { '--mcp-terminal-bg': display.theme.background, '--mcp-terminal-fg': display.theme.foreground, '--mcp-terminal-red': display.theme.red, '--mcp-terminal-green': display.theme.green, '--mcp-terminal-yellow': display.theme.yellow, '--mcp-terminal-cyan': display.theme.cyan, '--mcp-terminal-blue': display.theme.blue, '--mcp-terminal-selection': display.theme.selectionBackground, fontFamily: display.fontFamily, fontSize: display.fontSize, lineHeight: display.lineHeight } as CSSProperties
   return <section className="full-pane mcp-workspace" hidden={hidden} aria-label="Agent MCP 工作区">
-    <MCPSettings backend={backend} active={true} configurationVisible={view === 'config'} onStatusChange={acceptStatus} confirmServiceActions>
+    <MCPSettings backend={backend} active={true} configurationVisible={view === 'config'} onStatusChange={acceptStatus} confirmServiceActions autoStart={preferences.mcpAutoStart} onAutoStartChange={value => onSavePreferences?.({ ...preferences, mcpAutoStart: value })}>
       <div className="mcp-tabs" role="tablist" aria-label="MCP 模块">
         {([['logs', '日志', ScrollText], ['connections', '连接', Link], ['config', '配置', SlidersHorizontal]] as const).map(([id, label, Icon]) => <button key={id} type="button" role="tab" id={`mcp-tab-${id}`} aria-selected={view === id} aria-controls={`mcp-panel-${id}`} onClick={() => setView(id)}><Icon />{label}{id === 'connections' && <small>{connections.length}</small>}</button>)}
       </div>

@@ -8,7 +8,7 @@
 .mcp-workspace .mcp-address { margin: 6px 0 0; }
 .mcp-provider { color: var(--muted); font-size: 12px; flex-shrink: 0; }
 .mcp-workspace .mcp-service-controls { background: var(--surface); border: 1px solid var(--border); padding: 18px; border-radius: 10px; }
-.mcp-workspace .mcp-config-box { background: var(--surface); }
+.mcp-workspace .mcp-config-box, .mcp-workspace .mcp-startup-box { background: var(--surface); }
 .mcp-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin: 22px 0 20px; }
 .mcp-tabs > button { display: flex; align-items: center; gap: 7px; padding: 12px 2px; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; font-size: 13px; }
 .mcp-tabs > button[aria-selected=true] { color: var(--accent-strong); border-bottom-color: var(--accent); }

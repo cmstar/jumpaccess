@@ -330,6 +330,7 @@ func (s Service) SavePreferences(value guiconfig.Config) error {
 		stored.Downloads.Mode = value.Downloads.Mode
 		stored.Downloads.Directory = value.Downloads.Directory
 		stored.Tabs = value.Tabs
+		stored.MCP = value.MCP
 		return nil
 	})
 }

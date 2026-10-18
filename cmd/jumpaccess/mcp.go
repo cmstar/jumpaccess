@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,42 @@ import (
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// 自动启动只使用进程启动时读取的 GUI 偏好，不依赖前端 Tab 或后续偏好保存。
+func (a *desktopApp) startMCPOnLaunch(ctx context.Context) {
+	a.mcpStartupMu.Lock()
+	defer a.mcpStartupMu.Unlock()
+	if a.mcpStartupHandled {
+		return
+	}
+	a.mcpStartupHandled = true
+	if !a.initialPreferences.MCP.AutoStart || a.mcp == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	a.stopMCPStartup = cancel
+	go func() {
+		defer cancel()
+		if _, err := a.mcp.Start(ctx); err != nil && ctx.Err() == nil {
+			message := "MCP 自动启动失败，请在 MCP 模块检查配置和监听端口后手动启动。"
+			if errors.Is(err, agentmcp.ErrRunning) {
+				message = "MCP 自动启动失败：其他进程正在提供服务或执行管理操作，请在 MCP 模块查看状态。"
+			}
+			// 保留到共享日志中；前端即使稍后就绪也能读取并提示，不记录凭据或原始错误内容。
+			a.mcp.History().Record("", "auto_start_failed", "ERROR", 1, message)
+		}
+	}()
+}
+
+func (a *desktopApp) cancelMCPAutoStart() {
+	a.mcpStartupMu.Lock()
+	defer a.mcpStartupMu.Unlock()
+	// 停止先于启动回调时，也不能再安排后台启动。
+	a.mcpStartupHandled = true
+	if a.stopMCPStartup != nil {
+		a.stopMCPStartup()
+	}
+}
 
 func (a *desktopApp) requireMCP() error {
 	if a.mcp == nil {
@@ -60,6 +97,7 @@ func (a *desktopApp) SaveMCPConfig(value config.MCP) (agentmcp.Status, error) {
 }
 
 func (a *desktopApp) StartMCP() (agentmcp.Status, error) {
+	a.cancelMCPAutoStart()
 	if err := a.requireMCP(); err != nil {
 		return agentmcp.Status{}, err
 	}
@@ -84,6 +122,7 @@ func (a *desktopApp) GenerateMCPToken() (string, error) {
 }
 
 func (a *desktopApp) RestartMCP() (agentmcp.Status, error) {
+	a.cancelMCPAutoStart()
 	if err := a.requireMCP(); err != nil {
 		return agentmcp.Status{}, err
 	}
@@ -120,6 +159,7 @@ func mcpTLSFileOptions(kind, currentPath string) (runtime.OpenDialogOptions, err
 }
 
 func (a *desktopApp) stopMCP() error {
+	a.cancelMCPAutoStart()
 	if a.mcp == nil {
 		return nil
 	}

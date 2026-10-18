@@ -8,6 +8,7 @@ export type TerminalCursorStyle = 'block' | 'bar' | 'underline' | 'quarter_block
 export type TerminalScrollbarVisibility = 'always' | 'active' | 'hidden'
 
 export interface Preferences {
+  mcpAutoStart: boolean
   downloadMode: 'ask' | 'automatic' | 'remember' | 'custom'
   downloadDirectory: string
   terminalBackground: TerminalBackground
@@ -283,6 +284,7 @@ export interface Backend {
 }
 
 type GoPreferences = {
+  MCP: { AutoStart: boolean }
   Downloads: { Mode: Preferences['downloadMode']; Directory: string }
   Version: number
   Appearance: { Theme: ThemeMode }
@@ -400,6 +402,7 @@ function subscribe<T>(eventName: string, handler: (event: T) => void): () => voi
 
 function toPreferences(value: GoPreferences): Preferences {
   return {
+    mcpAutoStart: value.MCP?.AutoStart ?? false,
     downloadMode: value.Downloads.Mode,
     downloadDirectory: value.Downloads.Directory,
     version: value.Version,
@@ -425,6 +428,7 @@ function toPreferences(value: GoPreferences): Preferences {
 
 function fromPreferences(value: Preferences): GoPreferences {
   return {
+    MCP: { AutoStart: value.mcpAutoStart },
     Downloads: { Mode: value.downloadMode, Directory: value.downloadDirectory },
     Version: value.version,
     Appearance: {
