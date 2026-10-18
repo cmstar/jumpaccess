@@ -257,7 +257,7 @@ macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scrip
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
-5. 汇总五个归档、生成 `checksums.txt`，根据上一个版本标签到当前标签之间的 Conventional Commits 生成分类 Release Notes，最后创建 GitHub Release。任一前置 Job 失败都不会发布 Release。
+5. 汇总五个归档、生成 `checksums.txt`，根据上一个版本标签到当前标签之间的 Conventional Commits 生成分类 Release Notes，最后创建 GitHub Release。Release 标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和预发布后缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
 
 源码中的 CLI/GUI `version` 保持为 `dev`，`wails.json` 的 `info.productVersion` 只作为开发占位值。发布工作流从标签移除前导 `v`，通过 `-ldflags "-X main.version=<version>"` 注入程序版本，并调用 `scripts/set-wails-version.mjs` 在 runner 临时工作副本中写入仅含 `X.Y.Z` 的平台元数据版本。该临时改动不会提交或推回仓库。
 
