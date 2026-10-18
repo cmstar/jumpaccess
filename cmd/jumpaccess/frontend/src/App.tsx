@@ -1,6 +1,5 @@
 import { lazy, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity,
   Boxes,
   Bug,
   ChevronDown,
@@ -22,6 +21,7 @@ import {
   PanelTopClose,
   Pencil,
   Plus,
+  Plug,
   RefreshCcw,
   RotateCcw,
   Search,
@@ -42,7 +42,8 @@ import './App.css'
 import { AssetIcon } from './components/AssetIcon'
 import { NotificationProvider, useNotifications } from './components/Notifications'
 import { useCopyText } from './components/useCopyText'
-import { MCPSettings } from './components/MCPSettings'
+import { MCPWorkspace } from './components/MCPWorkspace'
+import { PageHeading } from './components/PageHeading'
 import { useTerminalFullscreen } from './model/useTerminalFullscreen'
 import { DeveloperSettings } from './components/DeveloperSettings'
 import appIconURL from '../../build/appicon.svg'
@@ -174,7 +175,7 @@ function newSSHTabID(): string {
 
 function tabTitle(tab: AppTab): string {
   if (isConnectionTab(tab)) return tab.descriptor.alias || tab.descriptor.assetName || tab.descriptor.target
-  return { assets: '资产', profiles: 'Profile', settings: '设置' }[tab.kind]
+  return { assets: '资产', profiles: 'Profile', settings: '设置', mcp: 'Agent MCP' }[tab.kind]
 }
 
 function tabTooltip(tab: SSHTab | SFTPTab, names: TabDisplayNames): string {
@@ -281,7 +282,7 @@ function ContextSelect({ ariaLabel, icon, label, onChange, options, value }: {
 function AliasFilterMenu({ onChange, value }: { onChange: (value: AliasFilter) => void; value: AliasFilter }) {
   const [open, setOpen] = useState(false)
   const root = useDismissiblePopover(open, () => setOpen(false))
-  return <div className="filter-menu" ref={root}><button aria-expanded={open} aria-haspopup="true" aria-label="筛选" className="button secondary" onClick={() => setOpen((current) => !current)} type="button"><SlidersHorizontal />筛选{value !== 'all' ? <em>1</em> : null}<ChevronDown /></button>{open ? <div className="popover filter-popover" role="group" aria-label="当前页 Alias 筛选"><strong>当前页 Alias 状态</strong>{([['all', '全部'], ['with-alias', '已有 Alias'], ['without-alias', '未创建 Alias']] as const).map(([filter, label]) => <label key={filter}><input type="radio" name="alias-filter" checked={value === filter} onChange={() => { onChange(filter); setOpen(false) }} />{label}</label>)}</div> : null}</div>
+  return <div className="filter-menu" ref={root}><button aria-expanded={open} aria-haspopup="true" aria-label="筛选" className="button secondary" onClick={() => setOpen((current) => !current)} type="button"><SlidersHorizontal />筛选{value !== 'all' ? <em>1</em> : null}<ChevronDown /></button>{open ? <div className="popover filter-popover" role="group" aria-label="当前页 Alias 筛选"><strong>当前页 Alias 状态</strong>{([['all', '全部'], ['with-alias', '已有 Alias'], ['without-alias', '未创建 Alias']] as const).map(([filter, label]) => <label key={filter}><input autoComplete="off" type="radio" name="alias-filter" checked={value === filter} onChange={() => { onChange(filter); setOpen(false) }} />{label}</label>)}</div> : null}</div>
 }
 
 export default function App(props: AppProps) {
@@ -306,6 +307,8 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const searchRef = useRef<HTMLInputElement>(null)
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
   const [workspace, setWorkspace] = useState<TabWorkspace>(emptyTabWorkspace)
+  const [mcpRunning, setMCPRunning] = useState(false)
+  const [terminalStyleRequest, setTerminalStyleRequest] = useState(0)
   const workspaceRef = useRef<TabWorkspace>(emptyTabWorkspace)
   const workspaceReady = useRef(false)
   const workspaceSaveQueue = useRef(Promise.resolve())
@@ -1182,6 +1185,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       <TitleBar
         fullscreen={terminalFullscreen.fullscreen}
         backend={backend}
+        mcpRunning={mcpRunning}
         activeTabID={workspace.activeTabID}
         auth={currentAuth}
         onActivate={(id) => dispatchTabs({ type: 'activate', id })}
@@ -1215,7 +1219,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
             <section className="asset-pane">
               <PageHeading eyebrow="资源发现" title="资产" description="浏览当前 Organization 中有权访问的资产，并建立已授权的 SSH 或 SFTP 连接。"><div className="refresh-controls"><span className="last-refreshed"><Clock3 />最近同步 {formatSyncTime(lastSynced)}</span><button className="button secondary" disabled={syncingResources || !profile || !currentProfileLoggedIn} onClick={syncResources} type="button"><RefreshCcw className={syncingResources ? 'spin' : ''} />{syncingResources ? '同步中…' : '立即同步'}</button></div></PageHeading>
               {!profile ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => { openSingleton('profiles'); setProfileDialog(true) }} /> : <>
-                <div className="asset-toolbar"><label className="search-box"><Search /><input autoCorrect="off" autoCapitalize="none" spellCheck={false} ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
+                <div className="asset-toolbar"><label className="search-box"><Search /><input autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} ref={searchRef} role="searchbox" aria-label="搜索资产或 Alias" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、地址、Asset ID 或 Alias" /><kbd>/</kbd></label><AliasFilterMenu onChange={setAliasFilter} value={aliasFilter} /></div>
                 <div className="asset-table-card"><table><thead><tr><th>资产 ({assets.count})</th><th>类型</th><th>Alias ({assets.aliasCount})</th><th aria-label="操作" /></tr></thead><tbody>{filteredAssets.map((asset) => <AssetRow asset={asset} detail={details[asset.id]} key={asset.id} onBind={(alias, account) => void changeAliasAccount(alias, account)} onConnect={() => void connectAsset(asset)} onConnectAlias={(alias) => void connectAlias(asset, alias)} onConnectSFTP={() => void connectAsset(asset, 'sftp')} onConnectAliasSFTP={(alias) => void connectAlias(asset, alias, 'sftp')} onCreateAlias={() => { setSelectedAssetID(asset.id); setAliasAsset(asset) }} onDeleteAlias={setPendingAliasDeletion} onEditAlias={(alias) => setAliasEditor({ asset, alias })} onEnsureDetail={() => void run(async () => { await ensureDetail(asset) })} onSelect={() => setSelectedAssetID(asset.id)} selected={asset.id === selectedAsset?.id} />)}</tbody></table>{filteredAssets.length === 0 ? <div className="table-empty"><Search /><strong>没有符合条件的资产</strong><span>请调整搜索、筛选或 Organization。</span></div> : null}{assets.count > pageSize ? <div className="table-footer"><span>{offset + 1}–{Math.min(offset + assets.results.length, assets.count)} / {assets.count}</span><div><button className="button secondary small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>上一页</button><button className="button secondary small" disabled={offset + assets.results.length >= assets.count} onClick={() => setOffset(offset + pageSize)}>下一页</button></div></div> : null}</div>
               </>}
             </section>
@@ -1228,7 +1232,8 @@ function AppContent({ backend = wailsBackend }: AppProps) {
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点和认证状态。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">使用中</span> : <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>启用</button>}</div><h2>{item.name}</h2><dl><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void copyText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.auth.loggedIn ? <><button className="button ghost small" disabled={refreshingProfiles.has(item.name)} onClick={() => void refreshProfileAuth(item.name)}><RefreshCcw className={refreshingProfiles.has(item.name) ? 'spin' : ''} />{refreshingProfiles.has(item.name) ? '刷新中…' : '刷新认证'}</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
-        {workspace.tabs.some((tab) => tab.kind === 'settings') ? <SettingsView hidden={activeTab?.kind !== 'settings'} backend={backend} fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
+        <MCPWorkspace backend={backend.mcp} hidden={activeTab?.kind !== 'mcp'} preferences={bootstrap.preferences} onStatusChange={value => setMCPRunning(value.state === 'running' || value.state === 'external')} onTerminalStyle={() => { openSingleton('settings'); setTerminalStyleRequest(n => n + 1) }} />
+        {workspace.tabs.some((tab) => tab.kind === 'settings') ? <SettingsView terminalStyleRequest={terminalStyleRequest} hidden={activeTab?.kind !== 'settings'} backend={backend} fontFamilies={terminalFontFamilies} onLicense={() => void run(async () => { setLicenseText(await backend.licenseText()); setLicenseOpen(true) })} onOpenConfig={() => void run(backend.openConfig)} onSave={(next) => void savePreferences(next)} preferences={bootstrap.preferences} version={bootstrap.version} /> : null}
       </section>
 
       {aliasAsset ? <AliasDialog asset={aliasAsset} detail={details[aliasAsset.id]} onCancel={() => setAliasAsset(null)} onEnsure={() => ensureDetail(aliasAsset)} onSave={(name, account) => void createAliasForAsset(aliasAsset, name, account)} /> : null}
@@ -1254,11 +1259,13 @@ function tabIcon(tab: AppTab) {
   if (tab.kind === 'assets') return <Boxes />
   if (tab.kind === 'profiles') return <Layers3 />
   if (tab.kind === 'settings') return <Settings />
+  if (tab.kind === 'mcp') return <Plug />
   if (tab.kind === 'sftp') return <FolderOpen />
   return <TerminalSquare />
 }
 
-function TitleBar({ backend, activeTabID, auth, fullscreen, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+function TitleBar({ backend, activeTabID, auth, fullscreen, mcpRunning, onActivate, onClose, onMinimize, onMove, onOpenQuick, onOpenSingleton, onQuit, profile, showTabCloseButtons, tabs }: {
+  mcpRunning: boolean
   fullscreen: boolean
   backend: Backend
   activeTabID: string
@@ -1402,6 +1409,7 @@ function TitleBar({ backend, activeTabID, auth, fullscreen, onActivate, onClose,
         title={`Profile · ${profile || '未选择 Profile'} · ${auth.title} · ${auth.description}`}
         type="button"
       ><span className="profile-status-icon"><Layers3 /><span aria-hidden="true" className={`auth-indicator ${auth.offline ? 'offline' : ''}`.trim()} /></span></button>
+      <button aria-label="打开 MCP 模块" className="titlebar-button" onClick={() => onOpenSingleton('mcp')} title={`Agent MCP · ${mcpRunning ? '运行中' : '已停止'}`} type="button"><span className="titlebar-status-icon"><Plug /><span aria-hidden="true" className={`status-indicator ${mcpRunning ? '' : 'offline'}`.trim()} /></span></button>
       <button aria-label="打开设置" className="titlebar-button" onClick={() => onOpenSingleton('settings')} title="设置" type="button"><Settings /></button>
     </nav>
     {!mac ? <div aria-label="窗口控制" className="window-controls">
@@ -1521,10 +1529,6 @@ function SSHView({ fullscreen, backend, transfer, onTransferCommand, onCancelTra
   </section>
 }
 
-function PageHeading({ children, description, eyebrow, title }: { children?: ReactNode; description?: string; eyebrow: string; title: string }) {
-  return <div className="page-heading"><div><div className="eyebrow"><Activity />{eyebrow}</div><h1>{title}</h1>{description ? <p>{description}</p> : null}</div>{children}</div>
-}
-
 function EmptyState({ action, onAction, title }: { action: string; onAction: () => void; title: string }) {
   return <div className="empty-state"><Server /><h2>{title}</h2><button className="button primary" onClick={onAction}>{action}</button></div>
 }
@@ -1567,7 +1571,7 @@ function AssetAliasItem({ alias, detail, labelPrefix = '', onBind, onConnectAlia
 }) {
   const knownAccounts = detail?.accounts ?? []
   const currentKnown = knownAccounts.some((account) => account.id === alias.account || account.username === alias.account)
-  return <div className="inline-alias-item"><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select aria-label={`${labelPrefix}${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select>{supportsProtocol(detail, 'ssh') ? <button className="icon-button" aria-label={`${labelPrefix}使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button> : null}{supportsProtocol(detail, 'sftp') ? <button className="icon-button" aria-label={`${labelPrefix}使用 ${alias.name} 连接 SFTP`} title="连接 SFTP" onClick={() => onConnectAliasSFTP(alias)}><FolderOpen /></button> : null}<button className="icon-button" aria-label={`${labelPrefix}编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`${labelPrefix}删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
+  return <div className="inline-alias-item"><span className="inline-alias-name"><Tags />{alias.name}</span><div className="inline-alias-actions"><select autoComplete="off" aria-label={`${labelPrefix}${alias.name} 默认账号`} onFocus={onEnsureDetail} value={alias.account} onChange={(event) => onBind(alias, event.target.value)}><option value="">连接时询问</option>{alias.account && !currentKnown ? <option value={alias.account}>已绑定账号</option> : null}{knownAccounts.map((account) => <option key={account.id || account.username} value={account.id || account.username}>{accountLabel(account)}</option>)}</select>{supportsProtocol(detail, 'ssh') ? <button className="icon-button" aria-label={`${labelPrefix}使用 ${alias.name} 连接`} title="连接 SSH" onClick={() => onConnectAlias(alias)}><TerminalSquare /></button> : null}{supportsProtocol(detail, 'sftp') ? <button className="icon-button" aria-label={`${labelPrefix}使用 ${alias.name} 连接 SFTP`} title="连接 SFTP" onClick={() => onConnectAliasSFTP(alias)}><FolderOpen /></button> : null}<button className="icon-button" aria-label={`${labelPrefix}编辑 ${alias.name}`} title="编辑 Alias" onClick={() => onEditAlias(alias)}><Pencil /></button><button className="icon-button danger" aria-label={`${labelPrefix}删除 ${alias.name}`} title="删除 Alias" onClick={() => onDeleteAlias(alias)}><Trash2 /></button></div></div>
 }
 
 function AssetRowActions({ asset, detail, onConnect, onConnectSFTP, onCreateAlias }: { asset: Asset; detail?: AssetDetail; onConnect: () => void; onConnectSFTP: () => void; onCreateAlias: () => void }) {
@@ -1808,7 +1812,7 @@ function DownloadDirectoryInput({ backend, value, onChange }: { backend: Backend
     <div><label htmlFor="download-directory">指定目录</label><small className="setting-help" id="download-directory-help">填写本机文件夹的完整路径。留空或目录不可用时，会询问本次保存位置。</small></div>
     <div>
       <div className="settings-input-action">
-        <input id="download-directory" aria-describedby="download-directory-help" title={draft} value={draft} onChange={event => setDraft(event.target.value)} onBlur={() => { if (draft !== value) onChange(draft) }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+        <input autoComplete="off" id="download-directory" aria-describedby="download-directory-help" title={draft} value={draft} onChange={event => setDraft(event.target.value)} onBlur={() => { if (draft !== value) onChange(draft) }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
         <button aria-label="选择文件夹" title="选择文件夹" className="icon-button" type="button" disabled={busy} onClick={() => void browse()}><FolderOpen /></button>
       </div>
       {error ? <small role="alert">{error}</small> : null}
@@ -1817,7 +1821,6 @@ function DownloadDirectoryInput({ backend, value, onChange }: { backend: Backend
 }
 
 const settingsNavigation = [
-  { id: 'mcp', label: 'Agent MCP', icon: Server },
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal-style', label: '终端样式', icon: TerminalSquare },
   { id: 'terminal-background', label: '终端背景图', icon: ImageIcon },
@@ -1829,13 +1832,14 @@ const settingsNavigation = [
 
 type SettingsSectionID = typeof settingsNavigation[number]['id']
 
-function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, onSave, preferences, version }: { backend: Backend; fontFamilies: string[]; hidden: boolean; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string }) {
+function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, onSave, preferences, version, terminalStyleRequest }: { backend: Backend; fontFamilies: string[]; hidden: boolean; onLicense: () => void; onOpenConfig: () => void; onSave: (value: Preferences) => void; preferences: Preferences; version: string; terminalStyleRequest: number }) {
   // 本地编译默认版本为 dev；发布流程注入 tag 版本，包括预发布版本。
   const developmentBuild = version === 'dev'
   const navigation = settingsNavigation.filter(item => item.id !== 'debug' || developmentBuild)
   const [activeSection, setActiveSection] = useState<SettingsSectionID>(settingsNavigation[0].id)
   const scrollRef = useRef<HTMLDivElement>(null)
   const update = (patch: Partial<Preferences>) => onSave({ ...preferences, ...patch })
+  useEffect(() => { if (terminalStyleRequest) scrollToSection('terminal-style') }, [terminalStyleRequest])
 
   function scrollToSection(sectionID: SettingsSectionID) {
     setActiveSection(sectionID)
@@ -1880,7 +1884,6 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
       </nav>
       <div className="settings-scroll" data-testid="settings-scroll" onScroll={syncActiveSection} ref={scrollRef}>
         <div className="settings-content settings-stack">
-          <MCPSettings backend={backend.mcp} active={!hidden} />
           <section className="settings-card" id="settings-appearance">
             <div className="settings-card-title"><Palette /><div><h2>外观</h2><p>控制窗口、菜单与设置页的主题，终端内容使用独立配色。</p></div></div>
             <div className="segmented-control" aria-label="界面主题">
@@ -1893,10 +1896,10 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             <div className="terminal-style-fields">
               <TerminalSchemeSelect value={preferences.terminalColorScheme} onChange={(terminalColorScheme) => update({ terminalColorScheme })} />
               <TerminalFontInput families={fontFamilies} onChange={(terminalFontFamily) => update({ terminalFontFamily })} value={preferences.terminalFontFamily} />
-              <div className="terminal-style-row"><label htmlFor="terminal-font-size">字号</label><select id="terminal-font-size" value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, i) => i + 9).map((size) => <option key={size} value={size}>{size} px</option>)}</select></div>
+              <div className="terminal-style-row"><label htmlFor="terminal-font-size">字号</label><select autoComplete="off" id="terminal-font-size" value={preferences.terminalFontSize} onChange={(event) => update({ terminalFontSize: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, i) => i + 9).map((size) => <option key={size} value={size}>{size} px</option>)}</select></div>
               <div className="terminal-style-row">
                 <div><label htmlFor="terminal-line-height">行高</label><small className="setting-help" id="terminal-line-height-help">相对于默认行高的倍数。</small></div>
-                <select id="terminal-line-height" aria-describedby="terminal-line-height-help" value={preferences.terminalLineHeight} onChange={(event) => update({ terminalLineHeight: Number(event.target.value) })}>
+                <select autoComplete="off" id="terminal-line-height" aria-describedby="terminal-line-height-help" value={preferences.terminalLineHeight} onChange={(event) => update({ terminalLineHeight: Number(event.target.value) })}>
                   {!terminalLineHeights.includes(preferences.terminalLineHeight) ? <option value={preferences.terminalLineHeight}>{preferences.terminalLineHeight} 倍</option> : null}
                   {terminalLineHeights.map((height) => <option key={height} value={height}>{height.toFixed(1)} 倍</option>)}
                 </select>
@@ -1904,11 +1907,11 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
               <div className="terminal-style-row">
                 <label htmlFor="terminal-cursor-style">光标样式</label>
                 <div className="terminal-cursor-controls">
-                  <select id="terminal-cursor-style" value={preferences.terminalCursorStyle} onChange={(event) => update({ terminalCursorStyle: event.target.value as TerminalCursorStyle })}><option value="block">方块</option><option value="bar">竖线</option><option value="underline">下划线</option><option value="quarter_block">底部方块（¼ 高）</option></select>
+                  <select autoComplete="off" id="terminal-cursor-style" value={preferences.terminalCursorStyle} onChange={(event) => update({ terminalCursorStyle: event.target.value as TerminalCursorStyle })}><option value="block">方块</option><option value="bar">竖线</option><option value="underline">下划线</option><option value="quarter_block">底部方块（¼ 高）</option></select>
                   <div className="terminal-cursor-blink"><label htmlFor="terminal-cursor-blink">闪烁</label><button id="terminal-cursor-blink" type="button" aria-label="光标闪烁" role="switch" aria-checked={preferences.terminalCursorBlink} className={preferences.terminalCursorBlink ? 'switch on' : 'switch'} onClick={() => update({ terminalCursorBlink: !preferences.terminalCursorBlink })}><span /></button></div>
                 </div>
               </div>
-              <div className="terminal-style-row"><label htmlFor="terminal-scrollbar-visibility">显示滚动条</label><select id="terminal-scrollbar-visibility" value={preferences.terminalScrollbarVisibility} onChange={(event) => update({ terminalScrollbarVisibility: event.target.value as TerminalScrollbarVisibility })}><option value="always">始终显示</option><option value="active">仅活跃时显示</option><option value="hidden">隐藏</option></select></div>
+              <div className="terminal-style-row"><label htmlFor="terminal-scrollbar-visibility">显示滚动条</label><select autoComplete="off" id="terminal-scrollbar-visibility" value={preferences.terminalScrollbarVisibility} onChange={(event) => update({ terminalScrollbarVisibility: event.target.value as TerminalScrollbarVisibility })}><option value="always">始终显示</option><option value="active">仅活跃时显示</option><option value="hidden">隐藏</option></select></div>
               <div className="terminal-style-row"><div><label htmlFor="terminal-show-status-bar">显示 SSH 状态栏</label><small className="setting-help" id="terminal-show-status-bar-help">显示终端底部的连接状态和传输能力信息。</small></div><button id="terminal-show-status-bar" aria-label="显示 SSH 状态栏" aria-describedby="terminal-show-status-bar-help" type="button" role="switch" aria-checked={preferences.terminalShowStatusBar} className={preferences.terminalShowStatusBar ? 'switch on' : 'switch'} onClick={() => update({ terminalShowStatusBar: !preferences.terminalShowStatusBar })}><span /></button></div>
             </div>
           </section>
@@ -1918,7 +1921,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             <div className="terminal-style-fields">
               <div className="terminal-style-row">
                 <div><label htmlFor="terminal-right-click">鼠标右键</label><small className="setting-help" id="terminal-right-click-help">打开上下文菜单后，右键提供复制和粘贴操作。</small></div>
-                <select id="terminal-right-click" aria-describedby="terminal-right-click-help" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select>
+                <select autoComplete="off" id="terminal-right-click" aria-describedby="terminal-right-click-help" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select>
               </div>
             </div>
             <div className="setting-row"><span><strong>多行粘贴警告</strong><small>检测到换行时，粘贴前显示内容预览并要求确认。</small></span><button aria-label="多行粘贴警告" role="switch" aria-checked={preferences.terminalWarnOnMultiLinePaste} className={preferences.terminalWarnOnMultiLinePaste ? 'switch on' : 'switch'} onClick={() => update({ terminalWarnOnMultiLinePaste: !preferences.terminalWarnOnMultiLinePaste })}><span /></button></div>
@@ -1927,7 +1930,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             <div className="terminal-style-fields download-settings-fields">
               <div className="terminal-style-row">
                 <div><label htmlFor="download-mode">下载保存位置</label><small className="setting-help" id="download-mode-help">用于 SSH 中的 sz 命令及下载按钮。记忆目录首次使用或失效时从系统下载目录开始，自动保存目录不可用时会询问。</small></div>
-                <select id="download-mode" aria-describedby="download-mode-help" value={preferences.downloadMode} onChange={event => update({ downloadMode: event.target.value as Preferences['downloadMode'] })}>
+                <select autoComplete="off" id="download-mode" aria-describedby="download-mode-help" value={preferences.downloadMode} onChange={event => update({ downloadMode: event.target.value as Preferences['downloadMode'] })}>
                   <optgroup label="每次询问">
                     <option value="ask">从下载目录开始</option>
                     <option value="remember">从上次目录开始</option>
@@ -1946,7 +1949,7 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
             <div className="terminal-style-fields">
               <div className="terminal-style-row">
                 <div><label htmlFor="new-tab-position">新 Tab 打开位置</label><small className="setting-help" id="new-tab-position-help">控制新 Tab 在标签栏中的插入位置。</small></div>
-                <select id="new-tab-position" aria-describedby="new-tab-position-help" value={preferences.newTabPosition} onChange={(event) => update({ newTabPosition: event.target.value as Preferences['newTabPosition'] })}><option value="end">所有 Tab 的末尾</option><option value="after_current">当前 Tab 的右侧</option></select>
+                <select autoComplete="off" id="new-tab-position" aria-describedby="new-tab-position-help" value={preferences.newTabPosition} onChange={(event) => update({ newTabPosition: event.target.value as Preferences['newTabPosition'] })}><option value="end">所有 Tab 的末尾</option><option value="after_current">当前 Tab 的右侧</option></select>
               </div>
             </div>
             <div className="setting-row"><span><strong>显示 Tab 关闭按钮</strong><small>隐藏后仍可使用鼠标中键关闭 Tab。</small></span><button aria-label="显示 Tab 关闭按钮" role="switch" aria-checked={preferences.showTabCloseButtons} className={preferences.showTabCloseButtons ? 'switch on' : 'switch'} onClick={() => update({ showTabCloseButtons: !preferences.showTabCloseButtons })}><span /></button></div>
@@ -2007,14 +2010,14 @@ function EditAliasDialog({ alias, asset, onCancel, onSave }: { alias: Alias; ass
   const [name, setName] = useState(alias.name)
   const normalizedName = name.trim()
   const changed = normalizedName !== alias.name
-  return <Modal title="编辑 Alias" description="重命名后仍会指向同一 Asset，并保留 Organization 和默认账号。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (normalizedName && changed) onSave(normalizedName) }}><div className="dialog-fields"><label>Alias 名称<input autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label><label>Asset<input disabled value={`${asset.name} · ${asset.id}`} /></label><label>默认账号<input disabled value={alias.account || '连接时询问'} /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!normalizedName || !changed} type="submit">保存 Alias</button></div></form></Modal>
+  return <Modal title="编辑 Alias" description="重命名后仍会指向同一 Asset，并保留 Organization 和默认账号。" onClose={onCancel}><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); if (normalizedName && changed) onSave(normalizedName) }}><div className="dialog-fields"><label>Alias 名称<input autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label><label>Asset<input autoComplete="off" disabled value={`${asset.name} · ${asset.id}`} /></label><label>默认账号<input autoComplete="off" disabled value={alias.account || '连接时询问'} /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!normalizedName || !changed} type="submit">保存 Alias</button></div></form></Modal>
 }
 
 function AliasDialog({ asset, detail, onCancel, onEnsure, onSave }: { asset: Asset; detail?: AssetDetail; onCancel: () => void; onEnsure: () => Promise<AssetDetail>; onSave: (name: string, account: string) => void }) {
   const [name, setName] = useState('')
   const [account, setAccount] = useState('')
   useEffect(() => { if (!detail) void onEnsure() }, [detail, onEnsure])
-  return <Modal title="创建 Alias" description="Alias 保存在当前 Profile，CLI 与 GUI 可共同使用。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSave(name.trim(), account) }}><div className="dialog-fields"><label>Alias 名称<input autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 production-web" /></label><label>Asset<input disabled value={`${asset.name} · ${asset.id}`} /></label><label>默认账号<select value={account} onChange={(event) => setAccount(event.target.value)}><option value="">连接时询问</option>{detail?.accounts.map((item) => <option key={item.id || item.username} value={item.id || item.username}>{accountLabel(item)}</option>)}</select></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim()} type="submit">保存 Alias</button></div></form></Modal>
+  return <Modal title="创建 Alias" description="Alias 保存在当前 Profile，CLI 与 GUI 可共同使用。" onClose={onCancel}><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSave(name.trim(), account) }}><div className="dialog-fields"><label>Alias 名称<input autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 production-web" /></label><label>Asset<input autoComplete="off" disabled value={`${asset.name} · ${asset.id}`} /></label><label>默认账号<select autoComplete="off" value={account} onChange={(event) => setAccount(event.target.value)}><option value="">连接时询问</option>{detail?.accounts.map((item) => <option key={item.id || item.username} value={item.id || item.username}>{accountLabel(item)}</option>)}</select></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim()} type="submit">保存 Alias</button></div></form></Modal>
 }
 
 function AccountDialog({ accounts, asset, onCancel, onChoose }: { accounts: Account[]; asset: Asset; onCancel: () => void; onChoose: (account: Account) => void }) {
@@ -2116,7 +2119,7 @@ function QuickConnectDialog({ assets, details, detailError, onRetry, onCancel, o
   })
 
   return <Modal title="快速连接" className="quick-connect-modal" onClose={onCancel} closeOnEscape>
-      <label className="quick-search"><Search /><input autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus role="combobox" aria-label="搜索资产或别名" aria-expanded="true" aria-haspopup="grid" aria-controls="quick-results" aria-activedescendant={selected ? `quick-result-${selectedIndex}` : undefined} aria-describedby="quick-keyboard-help" value={query} onChange={(event) => { setSelection({ query: event.target.value, key: '' }); setQuery(event.target.value) }} placeholder="名称、地址、Asset ID 或 Alias" /></label>
+      <label className="quick-search"><Search /><input autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus role="combobox" aria-label="搜索资产或别名" aria-expanded="true" aria-haspopup="grid" aria-controls="quick-results" aria-activedescendant={selected ? `quick-result-${selectedIndex}` : undefined} aria-describedby="quick-keyboard-help" value={query} onChange={(event) => { setSelection({ query: event.target.value, key: '' }); setQuery(event.target.value) }} placeholder="名称、地址、Asset ID 或 Alias" /></label>
       <div className="quick-results" id="quick-results" role="grid" aria-label="连接目标" aria-busy={busy}>
         {results.map((item, index) => {
           const name = item.alias?.name || item.asset.name
@@ -2175,7 +2178,7 @@ function ProfileDialog({ onCancel, onSave }: { onCancel: () => void; onSave: (na
     setSubmitError('')
   }
 
-  return <Modal title="添加 Profile" description="为一个 JumpServer 站点创建本地连接上下文。" onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (name.trim() && url.trim() && !submitting) void submit() }}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="dialog-fields"><label>名称<input autoFocus value={name} onChange={(event) => changeName(event.target.value)} placeholder="例如 office" /></label><label>JumpServer URL<input type="url" value={url} onChange={(event) => changeURL(event.target.value)} placeholder="https://jump.example.com" /></label></div><div className="dialog-actions"><button className="button secondary" disabled={submitting} type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim() || !url.trim() || submitting} type="submit">{submitting ? '添加中…' : '添加并登录'}</button></div></form></Modal>
+  return <Modal title="添加 Profile" description="为一个 JumpServer 站点创建本地连接上下文。" onClose={onCancel}><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); if (name.trim() && url.trim() && !submitting) void submit() }}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="dialog-fields"><label>名称<input autoComplete="off" autoFocus value={name} onChange={(event) => changeName(event.target.value)} placeholder="例如 office" /></label><label>JumpServer URL<input autoComplete="off" type="url" value={url} onChange={(event) => changeURL(event.target.value)} placeholder="https://jump.example.com" /></label></div><div className="dialog-actions"><button className="button secondary" disabled={submitting} type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!name.trim() || !url.trim() || submitting} type="submit">{submitting ? '添加中…' : '添加并登录'}</button></div></form></Modal>
 }
 
 function EditProfileDialog({ onCancel, onSave, profile }: { onCancel: () => void; onSave: (url: string) => Promise<void>; profile: ProfileSummary }) {
@@ -2195,12 +2198,12 @@ function EditProfileDialog({ onCancel, onSave, profile }: { onCancel: () => void
     }
   }
 
-  return <Modal title="编辑 Profile" description={`修改 ${profile.name} 的 JumpServer 地址。`} onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (url.trim() && changed && !submitting) void submit() }}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="dialog-fields"><label>名称<input disabled value={profile.name} /></label><label>JumpServer URL<input autoFocus type="url" value={url} onChange={(event) => { setURL(event.target.value); setSubmitError('') }} /></label></div><p className="edit-profile-note"><ShieldAlert />修改 URL 会保留现有 Organization 和 Alias，但会清除旧的 OAuth 凭据，之后需要重新登录。</p><div className="dialog-actions"><button className="button secondary" disabled={submitting} type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!url.trim() || !changed || submitting} type="submit">{submitting ? '保存中…' : '保存'}</button></div></form></Modal>
+  return <Modal title="编辑 Profile" description={`修改 ${profile.name} 的 JumpServer 地址。`} onClose={onCancel}><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); if (url.trim() && changed && !submitting) void submit() }}>{submitError ? <div className="dialog-error" role="alert"><ShieldAlert /><span>{submitError}</span></div> : null}<div className="dialog-fields"><label>名称<input autoComplete="off" disabled value={profile.name} /></label><label>JumpServer URL<input autoComplete="off" autoFocus type="url" value={url} onChange={(event) => { setURL(event.target.value); setSubmitError('') }} /></label></div><p className="edit-profile-note"><ShieldAlert />修改 URL 会保留现有 Organization 和 Alias，但会清除旧的 OAuth 凭据，之后需要重新登录。</p><div className="dialog-actions"><button className="button secondary" disabled={submitting} type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!url.trim() || !changed || submitting} type="submit">{submitting ? '保存中…' : '保存'}</button></div></form></Modal>
 }
 
 function LoginDialog({ attempt, onCancel, onComplete }: { attempt: LoginAttempt; onCancel: () => void; onComplete: (callback: string) => void }) {
   const [callback, setCallback] = useState('')
-  return <Modal title="完成浏览器登录" description={`浏览器已打开。完成 ${attempt.profile} 的授权后，粘贴 jms:// 回调链接，或浏览器地址栏中的完整确认页 URL（http:// 或 https://）。`} onClose={onCancel}><form onSubmit={(event) => { event.preventDefault(); if (callback.trim()) onComplete(callback.trim()) }}><div className="dialog-fields"><label>回调链接或确认页 URL<textarea autoFocus value={callback} onChange={(event) => setCallback(event.target.value)} placeholder={'jms://auth/callback?code=…&state=…\n或 https://jump.example.com/core/redirect/confirm/?next=…'} /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!callback.trim()} type="submit">完成登录</button></div></form></Modal>
+  return <Modal title="完成浏览器登录" description={`浏览器已打开。完成 ${attempt.profile} 的授权后，粘贴 jms:// 回调链接，或浏览器地址栏中的完整确认页 URL（http:// 或 https://）。`} onClose={onCancel}><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); if (callback.trim()) onComplete(callback.trim()) }}><div className="dialog-fields"><label>回调链接或确认页 URL<textarea autoComplete="off" autoFocus value={callback} onChange={(event) => setCallback(event.target.value)} placeholder={'jms://auth/callback?code=…&state=…\n或 https://jump.example.com/core/redirect/confirm/?next=…'} /></label></div><div className="dialog-actions"><button className="button secondary" type="button" onClick={onCancel}>取消</button><button className="button primary" disabled={!callback.trim()} type="submit">完成登录</button></div></form></Modal>
 }
 
 function HostKeyDialog({ onDecision, prompt }: { onDecision: (accepted: boolean) => void; prompt: HostKeyPrompt }) {

@@ -35,8 +35,11 @@ func (e *Engine) CancelExecution(ctx context.Context, in CancelInput) (Execution
 	return e.executionView(job, 0, 64<<10), nil
 }
 func (e *Engine) cancelLocked(job *execution, detach bool) {
-	if terminal(job.view.Status) || job.exitReceived {
+	if terminal(job.view.Status) || job.exitReceived || job.finishing {
 		return
+	}
+	if !job.view.CancelRequested {
+		e.jobEventLocked(job, "cancel_requested", "INFO", 2, "已请求停止命令  "+job.view.ID, false)
 	}
 	job.view.CancelRequested = true
 	if job.view.DispatchState == "not_sent" {

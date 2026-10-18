@@ -26,6 +26,29 @@ func (a *desktopApp) GetMCPStatus() (agentmcp.Status, error) {
 	return a.mcp.Status(a.context())
 }
 
+func (a *desktopApp) ReadMCPLogs(cursor uint64, limit int) (agentmcp.LogPage, error) {
+	if err := a.requireMCP(); err != nil {
+		return agentmcp.LogPage{}, err
+	}
+	return a.mcp.History().Read(cursor, limit), nil
+}
+
+func (a *desktopApp) ListMCPConnections() ([]agentmcp.ConnectionView, error) {
+	if err := a.requireMCP(); err != nil {
+		return nil, err
+	}
+	return a.mcp.Connections(a.context())
+}
+
+func (a *desktopApp) CloseMCPConnection(id, mode string) (agentmcp.ConnectionView, error) {
+	if err := a.requireMCP(); err != nil {
+		return agentmcp.ConnectionView{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.context(), 6*time.Second)
+	defer cancel()
+	return a.mcp.CloseConnection(ctx, agentmcp.CloseInput{ConnectionID: id, Mode: mode})
+}
+
 func (a *desktopApp) SaveMCPConfig(value config.MCP) (agentmcp.Status, error) {
 	if err := a.requireMCP(); err != nil {
 		return agentmcp.Status{}, err

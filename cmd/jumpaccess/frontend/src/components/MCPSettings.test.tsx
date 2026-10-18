@@ -10,7 +10,7 @@ const config = { listenHost: '127.0.0.1', port: 39287, allowLAN: false, tlsCert:
 const stopped: MCPStatus = { state: 'stopped', instance: null, config, tokenConfigured: true, restartRequired: false, error: '' }
 const running: MCPStatus = { ...stopped, state: 'running', instance: { id: 'instance', host: 'gui', url: 'http://127.0.0.1:39287/mcp', startedAt: '2026-10-16T00:00:00Z', config: { ...config, token: '' } } }
 function backend(overrides: Partial<MCPBackend> = {}): MCPBackend {
-  return { status: vi.fn().mockResolvedValue(stopped), saveConfig: vi.fn().mockResolvedValue(stopped), start: vi.fn().mockResolvedValue(running), stop: vi.fn().mockResolvedValue(stopped), restart: vi.fn().mockResolvedValue(running), generateToken: vi.fn().mockResolvedValue(nextToken), chooseTLSFile: vi.fn().mockResolvedValue(''), ...overrides }
+  return { connections: vi.fn().mockResolvedValue([]), logs: vi.fn().mockResolvedValue({ lines: [], nextCursor: 0, hasMore: false, gap: false }), closeConnection: vi.fn(), status: vi.fn().mockResolvedValue(stopped), saveConfig: vi.fn().mockResolvedValue(stopped), start: vi.fn().mockResolvedValue(running), stop: vi.fn().mockResolvedValue(stopped), restart: vi.fn().mockResolvedValue(running), generateToken: vi.fn().mockResolvedValue(nextToken), chooseTLSFile: vi.fn().mockResolvedValue(''), ...overrides }
 }
 function view(value: MCPBackend, active = true) { return <NotificationProvider><MCPSettings backend={value} active={active} /></NotificationProvider> }
 
@@ -36,13 +36,15 @@ test('初始化不自动启动；Token 明文单栏，缺少 Token 时不能启�
   expect(screen.queryByText('必填')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '启动' })).toBeDisabled()
   expect(screen.queryByRole('button', { name: '保存 Token' })).not.toBeInTheDocument()
-  expect(screen.getByText('传输协议：Streamable HTTP')).toBeInTheDocument()
+  expect(screen.getByText('向 Agent 提供资源查询和 SSH 命令执行能力，并通过 Streamable HTTP 协议通信。')).toBeInTheDocument()
   expect(api.start).not.toHaveBeenCalled()
 })
 
 test('生成仅修改草稿，统一保存包含 Token，运行中也可编辑', async () => {
   const api = backend({ status: vi.fn().mockResolvedValue(running), saveConfig: vi.fn().mockResolvedValue({ ...running, config: { ...config, token: nextToken }, restartRequired: true }) })
   render(view(api)); await screen.findByLabelText('MCP Bearer Token')
+  expect(screen.queryByText('已保存', { exact: true })).not.toBeInTheDocument()
+  expect(screen.queryByText('未保存', { exact: true })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: '生成' }))
   expect(api.generateToken).toHaveBeenCalledWith()
   expect(screen.getByLabelText('MCP Bearer Token')).toHaveValue(nextToken)
@@ -51,6 +53,8 @@ test('生成仅修改草稿，统一保存包含 Token，运行中也可编辑',
   await userEvent.click(screen.getByRole('button', { name: '保存' }))
   expect(api.saveConfig).toHaveBeenCalledWith({ ...config, token: nextToken })
   expect(await screen.findByText('配置已保存，重启服务后生效。')).toBeInTheDocument()
+  expect(screen.queryByText('未保存', { exact: true })).not.toBeInTheDocument()
+  expect(screen.queryByText('已保存', { exact: true })).not.toBeInTheDocument()
   expect(api.restart).not.toHaveBeenCalled()
 })
 
@@ -63,6 +67,7 @@ test.each([false, true])('重置恢复已保存配置，仍需重启与否取决
   expect(screen.getByText('配置有未保存的修改。保存并重启后生效。')).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: '重置' }))
   expect(port).toHaveValue(String(saved.config.port))
+  expect(screen.queryByText('未保存', { exact: true })).not.toBeInTheDocument()
   if (pending) expect(screen.getByText('配置已保存，重启服务后生效。')).toBeInTheDocument()
   else expect(screen.queryByText(/重启服务后生效/)).not.toBeInTheDocument()
   expect(api.saveConfig).not.toHaveBeenCalled()

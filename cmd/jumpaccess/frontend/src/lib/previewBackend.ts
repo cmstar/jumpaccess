@@ -1,5 +1,6 @@
 import { defaultTerminalBackground } from '../model/terminalBackground'
 import { DemoShell } from './demoShell'
+import { createMCPPreviewBackend } from './mcpPreviewBackend'
 import type {
   Alias,
   Asset,
@@ -226,6 +227,7 @@ export function createPreviewBackend(options: { scenario?: DemoScenario } = {}):
 
   return {
     bootstrap: () => delay(clone(state)),
+    mcp: createMCPPreviewBackend(),
     listOrganizations: () => delay([{ id: 'org-dev', name: '研发中心' }, { id: 'org-platform', name: '工程效能' }, { id: 'org-dr', name: '灾备中心' }]),
     async listAssets(request) {
       const query = request.search.toLowerCase()

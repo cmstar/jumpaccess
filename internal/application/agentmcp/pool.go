@@ -1,10 +1,10 @@
 package agentmcp
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -44,10 +44,10 @@ func (l Limits) defaults() Limits {
 		l.Closed = 256
 	}
 	if l.Executions <= 0 {
-		l.Executions = 256
+		l.Executions = 3000
 	}
 	if l.Requests <= 0 {
-		l.Requests = 10000
+		l.Requests = 2500
 	}
 	if l.ActiveRequests <= 0 {
 		l.ActiveRequests = 128
@@ -77,6 +77,7 @@ func (l Limits) defaults() Limits {
 }
 
 type EngineOptions struct {
+	History             *History
 	Instance            string
 	Resolve             func(context.Context, Target) (ResolvedTarget, error)
 	Validate            func(context.Context, ResolvedTarget) error
@@ -88,7 +89,8 @@ type EngineOptions struct {
 
 // Engine 归属于一次服务实例；HTTP 请求结束不取消它拥有的工作。
 type Engine struct {
-	mu               sync.Mutex
+	mu               *sync.Mutex
+	history          *History
 	opts             EngineOptions
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -101,8 +103,6 @@ type Engine struct {
 	openHistory      []*openOperation
 	executions       map[string]*execution
 	executionHistory []*execution
-	outputQueue      list.List
-	outputBytes      int
 	pages            *Queries
 }
 
@@ -178,7 +178,10 @@ func NewEngine(opts EngineOptions) *Engine {
 		opts.MaintenanceInterval = time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e := &Engine{opts: opts, ctx: ctx, cancel: cancel, requests: newRequests(opts.Instance, opts.Limits.Requests, opts.Limits.ActiveRequests), connections: make(map[string]*connection), opens: make(map[string]*openOperation), executions: make(map[string]*execution)}
+	if opts.History == nil {
+		opts.History = NewHistory(3000)
+	}
+	e := &Engine{mu: &opts.History.mu, history: opts.History, opts: opts, ctx: ctx, cancel: cancel, requests: newRequests(opts.Instance, opts.Limits.Requests, opts.Limits.ActiveRequests), connections: make(map[string]*connection), opens: make(map[string]*openOperation), executions: make(map[string]*execution)}
 	e.pages = NewQueries(opts.Instance, nil, nil, nil)
 	go func() {
 		timer := time.NewTicker(opts.MaintenanceInterval)
@@ -223,7 +226,11 @@ func (e *Engine) Open(ctx context.Context, in OpenInput) (OpenResult, error) {
 		if e.closing {
 			return "", fault("SERVICE_DRAINING", "服务正在停止")
 		}
-		return e.nextID("open"), nil
+		id := e.nextID("open")
+		if e.history.addLocked(id, true, e) == nil {
+			return "", fault("LIMIT_EXCEEDED", "操作记录全部活跃")
+		}
+		return id, nil
 	})
 	if err != nil {
 		e.mu.Unlock()
@@ -233,6 +240,8 @@ func (e *Engine) Open(ctx context.Context, in OpenInput) (OpenResult, error) {
 	if fresh {
 		op = &openOperation{id: record.ResourceID, record: record}
 		e.opens[op.id] = op
+		e.history.records[op.id].open = op
+		e.history.eventLocked(e.history.records[op.id], LogLine{Instance: e.opts.Instance, Event: "connection_open_accepted", Severity: "INFO", Detail: 2, Text: "open_connection  连接请求已受理  " + op.id}, false)
 		go e.open(op, in.Target, reuse)
 	}
 	e.mu.Unlock()
@@ -264,6 +273,17 @@ func (e *Engine) Open(ctx context.Context, in OpenInput) (OpenResult, error) {
 		result.Connection = &v
 	} else if op.connectionID != "" {
 		result.Error = fault("CONNECTION_EXPIRED", "逻辑连接历史已回收")
+	}
+	if !fresh {
+		connectionID := ""
+		if result.Connection != nil {
+			connectionID = result.Connection.ID
+		}
+		var replayErr error
+		if result.Error != nil {
+			replayErr = result.Error
+		}
+		e.recordCallLocked("open_connection", replayErr, CallDetails{Summary: "重复请求，返回原连接操作  status=" + result.Status, ConnectionID: connectionID})
 	}
 	return result, nil
 }
@@ -318,6 +338,16 @@ func (e *Engine) open(op *openOperation, input Target, reuse bool) {
 		c.refs--
 	}
 	op.ended = e.opts.Now()
+	r := e.history.records[op.id]
+	severity, message := "INFO", "连接已建立"
+	if op.reused {
+		message = "复用逻辑连接"
+	}
+	if err != nil {
+		severity, message = "ERROR", "连接建立失败  code="+asFault(err, "CONNECT_FAILED", "建连失败").Code
+	}
+	e.history.eventLocked(r, LogLine{Time: op.ended, Instance: e.opts.Instance, ConnectionID: op.connectionID, Event: "connection_open", Severity: severity, Detail: 1, Text: message}, false)
+	r.active = false
 	e.requests.finish(op.record, asFault(err, "CONNECT_FAILED", "无法建立连接，请检查身份、权限、网络和主机信任"))
 	e.openHistory = append(e.openHistory, op)
 	e.pruneLocked()
@@ -406,6 +436,7 @@ func (e *Engine) dial(ctx context.Context, c *connection, dial *dialAttempt) {
 		c.view.ExecCapability = "unknown"
 		c.view.RemoteDeadlineCapability = "unknown"
 		c.lastPing = e.opts.Now()
+		e.eventLocked("ssh_connected", "INFO", 1, c.view.ID, "SSH 连接已建立")
 		go func() {
 			_ = client.Wait()
 			e.mu.Lock()
@@ -538,6 +569,9 @@ func (e *Engine) transportCount() int {
 	return n
 }
 func (e *Engine) dropLocked(c *connection, reason string) {
+	if c.client != nil {
+		e.eventLocked("ssh_released", "INFO", 1, c.view.ID, "SSH 连接已释放  reason="+reason)
+	}
 	c.ping = false
 	c.view.LastDisconnectReason = reason
 	if c.client != nil {
@@ -563,6 +597,7 @@ func (e *Engine) closeLocked(c *connection, reason string) {
 	c.view.Status = "closed"
 	c.view.ClosedAt = &now
 	c.view.CloseReason = reason
+	e.eventLocked("connection_closed", "INFO", 1, c.view.ID, "逻辑连接已关闭  reason="+reason)
 	if c.closeDone != nil {
 		close(c.closeDone)
 	}
@@ -580,9 +615,11 @@ func (e *Engine) pruneLocked() {
 	}
 	for len(e.openHistory) > 0 && (len(e.openHistory) > e.opts.Limits.Requests || now.Sub(e.openHistory[0].ended) >= e.opts.Limits.HistoryTTL) {
 		op := e.openHistory[0]
+		if r := e.history.records[op.id]; r != nil {
+			e.history.removeLocked(r)
+		}
 		delete(e.opens, op.id)
-		e.openHistory[0] = nil
-		e.openHistory = e.openHistory[1:]
+		e.openHistory = slices.DeleteFunc(e.openHistory, func(item *openOperation) bool { return item == op })
 	}
 }
 func (e *Engine) maintain() {

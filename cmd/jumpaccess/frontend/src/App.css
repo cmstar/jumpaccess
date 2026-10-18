@@ -276,7 +276,8 @@
   flex: 0 0 auto;
 }
 
-.profile-status-icon {
+.profile-status-icon,
+.titlebar-status-icon {
   display: grid;
   position: relative;
   width: 15px;
@@ -284,7 +285,8 @@
   place-items: center;
 }
 
-.profile-status-icon .auth-indicator {
+.profile-status-icon .auth-indicator,
+.titlebar-status-icon .status-indicator {
   right: -3px;
   bottom: -3px;
 }
@@ -581,7 +583,8 @@
   height: 18px;
 }
 
-.auth-indicator {
+.auth-indicator,
+.status-indicator {
   position: absolute;
   right: 7px;
   bottom: 7px;
@@ -592,7 +595,8 @@
   box-shadow: 0 0 0 2px var(--surface);
 }
 
-.auth-indicator.offline {
+.auth-indicator.offline,
+.status-indicator.offline {
   background: #d85b64;
 }
 

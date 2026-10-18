@@ -35,7 +35,7 @@ func TestRequestsConcurrentRetryAndConflict(t *testing.T) {
 }
 
 func TestRequestsFIFOEpochAndActiveProtection(t *testing.T) {
-	r := newRequests("instance", 2, 4)
+	r := newRequests("instance", 3, 4)
 	begin := func(epoch uint64, n int) *requestRecord {
 		record, _, err := r.begin("execute", requestKey(epoch, n), n, func() (string, error) { return fmt.Sprint(n), nil })
 		if err != nil {
@@ -44,6 +44,8 @@ func TestRequestsFIFOEpochAndActiveProtection(t *testing.T) {
 		return record
 	}
 	active, a, b := begin(1, 1), begin(1, 2), begin(1, 3)
+	_, _, full := r.begin("execute", requestKey(1, 20), 20, nil)
+	assertFault(t, full, "LIMIT_EXCEEDED")
 	r.finish(b, nil)
 	r.finish(a, nil)
 	// FIFO 按终结顺序；重试不能更新队列位置。

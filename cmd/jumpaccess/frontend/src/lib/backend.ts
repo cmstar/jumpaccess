@@ -1,6 +1,6 @@
 import { defaultTerminalBackground, type TerminalBackground } from '../model/terminalBackground'
 import type { NewTabPosition } from '../model/tabs'
-import type { MCPBackend, MCPConfig, MCPStatus } from './mcpTypes'
+import type { MCPBackend, MCPConfig, MCPStatus, MCPConnection, MCPLogPage } from './mcpTypes'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type TerminalRightClickAction = 'paste' | 'context_menu'
@@ -30,7 +30,7 @@ export interface Preferences {
   newTabPosition: NewTabPosition
 }
 
-export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh' | 'sftp'
+export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'mcp' | 'ssh' | 'sftp'
 
 export interface WorkspaceTab {
   id: string
@@ -292,6 +292,9 @@ type GoPreferences = {
 
 type DesktopBinding = {
   GetMCPStatus(): Promise<MCPStatus>
+  ListMCPConnections(): Promise<MCPConnection[]>
+  ReadMCPLogs(cursor: number, limit: number): Promise<MCPLogPage>
+  CloseMCPConnection(id: string, mode: string): Promise<MCPConnection>
   SaveMCPConfig(value: MCPConfig): Promise<MCPStatus>
   StartMCP(): Promise<MCPStatus>
   StopMCP(): Promise<MCPStatus>
@@ -452,6 +455,9 @@ function fromPreferences(value: Preferences): GoPreferences {
 
 export const wailsBackend: Backend = {
   mcp: {
+    connections: () => binding().ListMCPConnections(),
+    logs: (cursor, limit) => binding().ReadMCPLogs(cursor, limit),
+    closeConnection: (id, mode) => binding().CloseMCPConnection(id, mode),
     status: () => binding().GetMCPStatus(),
     saveConfig: value => binding().SaveMCPConfig(value),
     start: () => binding().StartMCP(),

@@ -87,12 +87,15 @@ func (r *requests) begin(tool, key string, params any, admit func() (string, err
 	if epoch != r.current {
 		return nil, false, fault("INVALID_REQUEST_KEY", "请使用当前请求代号")
 	}
-	if r.active >= r.activeLimit {
+	if r.active >= r.activeLimit || (len(r.records) >= r.historyLimit && r.fifo.Len() == 0) {
 		return nil, false, fault("LIMIT_EXCEEDED", "活动请求已满")
 	}
 	id, err := admit()
 	if err != nil {
 		return nil, false, err
+	}
+	if len(r.records) >= r.historyLimit {
+		r.evictOldest()
 	}
 	record := &requestRecord{ResourceID: id, key: index, epoch: epoch, digest: digest, done: make(chan struct{})}
 	r.records[index] = record
@@ -109,25 +112,26 @@ func (r *requests) finish(record *requestRecord, failure *Fault) {
 	}
 	record.terminal, record.Failure = true, failure
 	r.active--
-	if r.fifo.Len() >= r.historyLimit {
-		first := r.fifo.Front()
-		old := first.Value.(*requestRecord)
-		if old.epoch == r.current {
-			// 实例生存期内不允许代号回绕。达到极限时禁止新登记。
-			if r.current == math.MaxUint64 {
-				panic("request epoch exhausted")
-			}
-			r.current++
-		}
-		delete(r.records, old.key)
-		r.resources[old.ResourceID]--
-		if r.resources[old.ResourceID] == 0 {
-			delete(r.resources, old.ResourceID)
-		}
-		r.fifo.Remove(first)
-	}
 	r.fifo.PushBack(record)
 	close(record.done)
+}
+
+func (r *requests) evictOldest() {
+	first := r.fifo.Front()
+	old := first.Value.(*requestRecord)
+	if old.epoch == r.current {
+		// 实例生存期内不允许代号回绕。达到极限时禁止新登记。
+		if r.current == math.MaxUint64 {
+			panic("request epoch exhausted")
+		}
+		r.current++
+	}
+	delete(r.records, old.key)
+	r.resources[old.ResourceID]--
+	if r.resources[old.ResourceID] == 0 {
+		delete(r.resources, old.ResourceID)
+	}
+	r.fifo.Remove(first)
 }
 
 func (r *requests) knows(id string) bool {

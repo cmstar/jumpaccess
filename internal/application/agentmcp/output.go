@@ -55,25 +55,28 @@ func (e *Engine) appendOutput(job *execution, stream string, p []byte) {
 	job.outputSequence++
 	b := &outputBlock{job: job, sequence: job.outputSequence, stream: stream, data: append([]byte(nil), p...)}
 	b.local = job.output.PushBack(b)
-	b.global = e.outputQueue.PushBack(b)
+	b.global = e.history.outputQueue.PushBack(b)
 	job.outputBytes += len(p)
-	e.outputBytes += len(p)
+	e.history.outputBytes += len(p)
 	for job.outputBytes > e.opts.Limits.OutputBytes {
 		e.removeOutput(job.output.Front().Value.(*outputBlock), true)
 	}
-	for e.outputBytes > e.opts.Limits.TotalOutputBytes {
-		e.removeOutput(e.outputQueue.Front().Value.(*outputBlock), true)
+	for e.history.outputBytes > e.opts.Limits.TotalOutputBytes {
+		e.removeOutput(e.history.outputQueue.Front().Value.(*outputBlock), true)
 	}
 	e.notifyExecution(job)
 }
 func (e *Engine) removeOutput(b *outputBlock, dropped bool) {
+	e.history.removeOutputLocked(b, dropped)
+}
+func (h *History) removeOutputLocked(b *outputBlock, dropped bool) {
 	if dropped {
 		b.job.droppedBytes += int64(len(b.data))
 	}
 	b.job.outputBytes -= len(b.data)
-	e.outputBytes -= len(b.data)
+	h.outputBytes -= len(b.data)
 	b.job.output.Remove(b.local)
-	e.outputQueue.Remove(b.global)
+	h.outputQueue.Remove(b.global)
 	b.data = nil
 }
 func (e *Engine) outputView(job *execution, cursor uint64, maxBytes int) OutputView {

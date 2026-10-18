@@ -187,6 +187,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     const fit = new TerminalFitAddon()
     terminal.loadAddon(fit)
     terminal.open(host)
+    terminal.textarea?.setAttribute('autocomplete', 'off')
     synchronizeTerminalViewportBackground(host, theme.background)
     terminalRef.current = terminal
     const reportActions = () => actionsChangeRef.current?.({

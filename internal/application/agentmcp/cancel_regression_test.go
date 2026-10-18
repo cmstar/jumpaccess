@@ -15,6 +15,55 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// exec 被拒绝后的 channel 清理期间，迟到的取消不能再启动停止协程。
+func TestCancelDuringFinalizationDoesNotStartStopWorker(t *testing.T) {
+	e := NewEngine(EngineOptions{Instance: "test"})
+	t.Cleanup(e.cancel)
+	ctx, cancel := context.WithCancel(e.ctx)
+	t.Cleanup(cancel)
+	c := &connection{view: ConnectionView{ActiveExecutionID: "test:x:1"}}
+	job := &execution{
+		view:       ExecutionView{ID: "test:x:1", Status: "starting", DispatchState: "possibly_sent", AcceptedAt: e.opts.Now()},
+		connection: c, ctx: ctx, cancel: cancel,
+		changed: make(chan struct{}), done: make(chan struct{}), dispatchReady: make(chan struct{}),
+		record: &requestRecord{done: make(chan struct{})},
+	}
+	close(job.dispatchReady)
+	job.channel = &finalizationTestChannel{onClose: func() error {
+		e.mu.Lock()
+		e.cancelLocked(job, false)
+		stopDone, requested := job.stopDone, job.view.CancelRequested
+		e.mu.Unlock()
+		// 旧实现会创建协程；先让它退出，避免断言失败时泄漏后台任务。
+		if stopDone != nil {
+			<-stopDone
+		}
+		if requested || stopDone != nil {
+			t.Error("终态清理期间仍接受取消并启动停止协程")
+		}
+		return nil
+	}}
+	e.mu.Lock()
+	e.requests.active = 1
+	e.executions[job.view.ID] = job
+	e.history.addLocked(job.view.ID, true, e).job = job
+	e.mu.Unlock()
+	e.finishExecution(job, "failed", "exec_rejected", fault("EXEC_REJECTED", "服务端拒绝 exec"))
+	if job.view.Status != "failed" || job.view.Reason != "exec_rejected" || c.view.ActiveExecutionID != "" {
+		t.Fatalf("收尾未保留原结果或释放执行位置: %+v", job.view)
+	}
+	if job.channel != nil || job.client != nil || job.connection != nil {
+		t.Fatal("终态历史仍持有 SSH 运行资源")
+	}
+}
+
+type finalizationTestChannel struct {
+	ssh.Channel
+	onClose func() error
+}
+
+func (c *finalizationTestChannel) Close() error { return c.onClose() }
+
 // 用真实 SSH channel 延迟 exec 应答，检查取消不会早于远端接受执行。
 func TestCancelWaitsForExecAcknowledgement(t *testing.T) {
 	for _, strategy := range []string{"local", "remote_required"} {

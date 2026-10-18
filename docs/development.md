@@ -129,6 +129,7 @@ docs/               # 长期项目知识
 - MCP 网络设置与 Token 统一保存在共享配置的可选 `[mcp]` 节，由配置锁保护并原子替换；核心装配不启动监听。旧配置读取和普通保存不新增该节；旧开发版独立 MCP Token 仅在配置中尚无 Token 时兼容读取，读取不写文件，用户显式保存后以 TOML 为准。运行中的服务继续使用启动快照，所有变更均在重启后生效；实例描述只保存去除 Token 的配置和指纹，不保存明文 Token。端口、地址、访问范围、Token 和 TLS 配对由共享核心校验，显式保存时还验证证书与私钥可加载。首次保存 MCP 设置后，旧版本严格解码会拒绝该节；回退前停止服务、备份配置并移除 `[mcp]`，保留其他配置和 OAuth 凭据。
 - MCP 使用官方 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 的无协议会话 Streamable HTTP，保留业务状态在共享 Runtime 中。协议检查覆盖 `2025-11-25` 初始化与 `2026-07-28` 发现流程；SDK HTTP 集成测试不替代真实 Agent 客户端验收。HTTP 使用必填的预共享 Bearer Token、Host／Origin 检查、可选 TLS、请求大小和并发上限，不提供 OAuth 授权服务器或跨域浏览器入口。显式允许 LAN 后可以使用 HTTP + Token；TLS 两项须同时留空或同时填写。
 - MCP 命令控制的回归须覆盖 SSH 网关不转发信号、停止控制输入丢失、取消早于执行应答、取消确认超时和旧取消不影响新任务。POSIX/Python 3 封装测试在 Windows 上通过 `JUMPACCESS_TEST_WSL` 显式选择 WSL 发行版；未启用时会跳过，不能以跳过结果代替远端控制验证。共享核心与 HTTP 集成检查使用 `go test -race ./internal/application/agentmcp ./internal/mcpserver`。
+- MCP 连接与日志的业务数据保留在 `internal/application/agentmcp`，GUI 只负责独立 Tab、过滤与文本投影；CLI MCP 入口本阶段不实现。共享操作仓库与每个 Engine 使用同一把锁，不能在锁内调用订阅者、Wails 或终端 I/O。日志不包含 stdout/stderr、环境变量、Token 或上游原始错误；命令输入仅在详细投影中显示。工具查询的标准摘要与详细条件属于同一操作，条件按类型白名单提取并限制长度，不序列化完整请求或响应；新增工具须核对正常、失败、重复请求和无状态变更路径的日志覆盖。覆盖混合日志挤出结果后不重放、活动保护、2500 条去重总容量、跨重启输出总额度与旧 Engine 释放，以及日志级别切换、暂停、清空、迟到响应和关闭 Tab 不停止服务。GUI 回归入口为 `npm --prefix cmd/jumpaccess/frontend test -- src/components/MCPWorkspace.test.tsx src/components/MCPSettings.test.tsx src/App.test.tsx`。新增 Go 绑定必须由 Wails 构建生成。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
 - OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
@@ -162,6 +163,8 @@ docs/               # 长期项目知识
 - 错误信息和日志不得包含 Token、密码、Cookie、私钥或完整敏感响应。
 
 ## GUI 公共提示
+
+GUI 表单、输入框、文本区和选择框显式设置 `autoComplete="off"`，关闭 WebView 的自动填充与输入历史建议。已有配置仍由应用自己的加载、保存和重置流程维护；字体候选、资产查询等应用内选择能力保持独立，不通过清空用户配置或 WebView 数据目录实现这一规则。
 
 开发调试分组位于 `cmd/jumpaccess/frontend/src/components/DeveloperSettings.tsx`，后续界面演示可在该组件内按功能添加 `settings-group`。`SettingsView` 仅在后端 Bootstrap 版本精确为 `dev` 时渲染该分组，并使用同一判断过滤导航和滚动定位列表。源码默认 `main.version = "dev"`，本地默认 `wails build` 保留此值；tag 发布工作流通过 `-ldflags "-X main.version=<version>"` 注入版本后隐藏入口，无需运行时访问 Git，也不根据 Vite 开发服务器状态判断。此开关只控制入口，不作为安全边界或编译期代码剔除机制。
 

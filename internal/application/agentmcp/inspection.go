@@ -40,7 +40,7 @@ func (e *Engine) Limits() map[string]int64 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	l := e.opts.Limits
-	return map[string]int64{"connections": int64(l.Connections), "ssh_connections": int64(l.Transports), "execution_records": int64(l.Executions), "request_history": int64(l.Requests), "active_requests": int64(l.ActiveRequests), "output_bytes": int64(l.OutputBytes), "total_output_bytes": int64(l.TotalOutputBytes), "ssh_idle_ms": l.IdleTimeout.Milliseconds(), "history_ttl_ms": l.HistoryTTL.Milliseconds(), "default_timeout_ms": 300000, "max_timeout_ms": 3600000, "max_wait_ms": 5000}
+	return map[string]int64{"connections": int64(l.Connections), "ssh_connections": int64(l.Transports), "operation_records": int64(e.history.limit), "execution_records": int64(l.Executions), "request_history": int64(l.Requests), "active_requests": int64(l.ActiveRequests), "input_bytes": 16 << 20, "output_bytes": int64(l.OutputBytes), "total_output_bytes": int64(l.TotalOutputBytes), "ssh_idle_ms": l.IdleTimeout.Milliseconds(), "history_ttl_ms": l.HistoryTTL.Milliseconds(), "default_timeout_ms": 300000, "max_timeout_ms": 3600000, "max_wait_ms": 5000}
 }
 func (e *Engine) ConnectionsPage(ctx context.Context, in PageInput) (Page[ConnectionView], error) {
 	offset, limit, key, err := e.pages.page(in, "connections")

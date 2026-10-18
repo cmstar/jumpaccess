@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,15 +68,36 @@ func TestGUIMCPStartsExplicitlyAndStopsWithApplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.Close()
+	logs, err := app.ReadMCPLogs(0, 100)
+	if err != nil || len(logs.Lines) == 0 || logs.Lines[0].Event != "service_started" {
+		t.Fatal("缺少共享启动日志", err)
+	}
+	connections, err := app.ListMCPConnections()
+	if err != nil || len(connections) != 0 {
+		t.Fatal("空实例连接列表错误", err)
+	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_profiles"})
 	if err != nil || result.IsError {
 		t.Fatal("GUI 宿主无法提供资源工具", err)
+	}
+	queryLogs, err := app.ReadMCPLogs(logs.NextCursor, 100)
+	if err != nil || len(queryLogs.Lines) != 2 || queryLogs.Lines[0].Detail != 2 || queryLogs.Lines[1].Detail != 3 || !strings.Contains(queryLogs.Lines[0].Text, "list_profiles") {
+		t.Fatalf("GUI 未提供标准查询摘要和详细条件: %+v %v", queryLogs, err)
 	}
 	restarted, err := app.RestartMCP()
 	if err != nil || restarted.RestartRequired || restarted.Instance.ID == started.Instance.ID {
 		t.Fatal("GUI 重启未应用已保存的配置", err)
 	}
 	app.shutdown(context.Background())
+	logs, err = app.ReadMCPLogs(logs.NextCursor, 100)
+	if err != nil || len(logs.Lines) < 3 {
+		t.Fatal("停止和重启未保留同一宿主的增量日志", err)
+	}
+	for _, line := range logs.Lines {
+		if strings.Contains(line.Text, token) || strings.Contains(line.Text, newToken) {
+			t.Fatal("日志泄漏 Token")
+		}
+	}
 	stopped, err := app.GetMCPStatus()
 	if err != nil || stopped.State != "stopped" {
 		t.Fatal("GUI 退出未停止 MCP", err)

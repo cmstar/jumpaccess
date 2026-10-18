@@ -55,7 +55,12 @@ func NewHandler(options Options) http.Handler {
 		instructions += "共享连接与任务跨 Agent 对话存续。先查询服务实例和 request_epoch，为新意图生成 UUID 请求键；重试保留原键。结果未知时先核对原任务，不能自动换键重放。"
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "jumpaccess", Version: "1"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{}, Instructions: instructions})
+	if options.Engine != nil {
+		server.AddReceivingMiddleware(logRejectedCalls(options.Engine))
+	}
 	mcp.AddTool(server, &mcp.Tool{Name: "get_server_info", Description: "查看 MCP 实例和当前可用能力，不返回访问凭据。", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Result[ServerInfo], error) {
+		markCallHandled(ctx)
+		started := time.Now()
 		data := ServerInfo{Host: options.Instance.Host, Capabilities: []string{"service_info"}, State: "running"}
 		if options.Queries != nil {
 			data.Capabilities = append(data.Capabilities, "resource_queries")
@@ -69,11 +74,12 @@ func NewHandler(options Options) http.Handler {
 			if counts.Draining {
 				data.State = "draining"
 			}
+			options.Engine.RecordCall("get_server_info", nil, callDetails(input, data, started))
 		}
 		return nil, Result[ServerInfo]{SchemaVersion: 1, ServerInstanceID: options.Instance.ID, OK: true, Data: &data}, nil
 	})
 	if options.Queries != nil {
-		registerQueries(server, options.Instance.ID, options.Queries)
+		registerQueries(server, options.Instance.ID, options.Queries, options.Engine)
 	}
 	if options.Engine != nil {
 		registerOperations(server, options.Instance.ID, options.Engine)

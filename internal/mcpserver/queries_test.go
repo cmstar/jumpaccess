@@ -88,6 +88,7 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 		name string
 		args map[string]any
 	}{
+		{"get_server_info", map[string]any{}},
 		{"list_profiles", map[string]any{}}, {"list_organizations", map[string]any{"profile": "work"}},
 		{"list_assets", map[string]any{"profile": "work", "organization": "org", "limit": 1}},
 		{"get_asset", map[string]any{"profile": "work", "organization": "org", "asset_id": assetID}},
@@ -95,6 +96,7 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 		{"list_aliases", map[string]any{"profile": "work"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			cursor := r.History().Read(0, 500).NextCursor
 			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
 			if err != nil || result.IsError || result.StructuredContent == nil {
 				t.Fatalf("工具失败: %s %v", tc.name, err)
@@ -102,6 +104,21 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 			data, _ := json.Marshal(result.StructuredContent)
 			if strings.Contains(string(data), "oauth-fixture") || strings.Contains(string(data), token) || !strings.Contains(string(data), `"ok":true`) {
 				t.Fatal("结果泄露凭据或缺少业务状态")
+			}
+			logs := r.History().Read(cursor, 100).Lines
+			if len(logs) == 0 || logs[0].Detail != 2 || logs[0].Severity != "INFO" || !strings.Contains(logs[0].Text, tc.name) || !strings.Contains(logs[0].Text, "调用完成") {
+				t.Fatalf("标准级别缺少调用摘要: %+v", logs)
+			}
+			if tc.name != "get_server_info" {
+				if len(logs) != 2 || logs[1].Detail != 3 || !strings.Contains(logs[1].Text, "查询条件") {
+					t.Fatalf("详细级别缺少查询条件: %+v", logs)
+				}
+				if profile, ok := tc.args["profile"].(string); ok && !strings.Contains(logs[1].Text, `profile="`+profile+`"`) {
+					t.Fatalf("未记录 Profile 查询条件: %+v", logs)
+				}
+			}
+			if tc.name == "list_assets" && !strings.Contains(logs[0].Text, "count=1  total=2  has_more=true") {
+				t.Fatalf("摘要未包含本页数量与分页状态: %+v", logs)
 			}
 			if tc.name == "list_assets" {
 				var page struct {
@@ -130,6 +147,17 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 	data, _ := json.Marshal(result.StructuredContent)
 	if !strings.Contains(string(data), "AUTH_REQUIRED") {
 		t.Fatal("认证错误没有结构化错误码")
+	}
+	logs := r.History().Read(0, 500).Lines
+	foundError := false
+	for _, line := range logs {
+		foundError = foundError || line.Severity == "ERROR" && line.Detail == 1 && strings.Contains(line.Text, "code=AUTH_REQUIRED")
+		if strings.Contains(line.Text, "oauth-fixture") || strings.Contains(line.Text, token) || strings.Contains(line.Text, "192.0.2.1") {
+			t.Fatal("日志包含凭据或查询结果正文")
+		}
+	}
+	if !foundError {
+		t.Fatal("查询失败日志没有保留业务错误码")
 	}
 	cfg, _ := settings.Store.Load()
 	if cfg.CurrentProfile != "human" {

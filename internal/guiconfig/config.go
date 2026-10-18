@@ -391,7 +391,7 @@ func validateWorkspace(workspace Workspace) error {
 			activeFound = true
 		}
 		switch tab.Type {
-		case "assets", "profiles", "settings":
+		case "assets", "profiles", "settings", "mcp":
 			if _, exists := singletons[tab.Type]; exists {
 				return fmt.Errorf("workspace tab type %q is duplicated", tab.Type)
 			}

@@ -51,6 +51,7 @@ type Runtime struct {
 	active      *runningServer
 	lastError   string
 	stopWarning string
+	history     *History
 }
 
 type runningServer struct {
@@ -69,7 +70,40 @@ type managedEngine interface {
 }
 
 func NewRuntime(settings Settings, host string, handler HandlerFactory) *Runtime {
-	return &Runtime{settings: settings, host: host, handler: handler}
+	return &Runtime{settings: settings, host: host, handler: handler, history: NewHistory(3000)}
+}
+
+func (r *Runtime) History() *History { return r.history }
+
+type connectionManager interface {
+	ListConnections(context.Context, struct{}) ([]ConnectionView, error)
+	CloseConnection(context.Context, CloseInput) (ConnectionView, error)
+}
+
+func (r *Runtime) Connections(ctx context.Context) ([]ConnectionView, error) {
+	r.mu.Lock()
+	var manager connectionManager
+	if r.active != nil {
+		manager, _ = r.active.engine.(connectionManager)
+	}
+	r.mu.Unlock()
+	if manager == nil {
+		return []ConnectionView{}, nil
+	}
+	return manager.ListConnections(ctx, struct{}{})
+}
+
+func (r *Runtime) CloseConnection(ctx context.Context, input CloseInput) (ConnectionView, error) {
+	r.mu.Lock()
+	var manager connectionManager
+	if r.active != nil {
+		manager, _ = r.active.engine.(connectionManager)
+	}
+	r.mu.Unlock()
+	if manager == nil {
+		return ConnectionView{}, fault("SERVICE_STOPPED", "MCP 服务未在当前宿主运行")
+	}
+	return manager.CloseConnection(ctx, input)
 }
 
 func (r *Runtime) Start(ctx context.Context) (Status, error) {
@@ -125,6 +159,7 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Address())
 	if err != nil {
 		r.lastError = "MCP 监听失败，请检查地址或端口占用"
+		r.history.Record(info.ID, "service_failed", "ERROR", 1, r.lastError)
 		return Status{}, fmt.Errorf("%s: %w", r.lastError, err)
 	}
 	handler := r.handler(info, cfg.WithoutToken(), cfg.Token)
@@ -148,6 +183,7 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 		return Status{}, err
 	}
 	r.active, r.lastError, keep = run, "", true
+	r.history.Record(info.ID, "service_started", "INFO", 1, "MCP 服务已启动  "+info.URL+"  host="+r.host)
 	go func() {
 		err := server.Serve(listener)
 		close(run.done)
@@ -208,6 +244,10 @@ func (r *Runtime) stopLocked(ctx context.Context) error {
 	}
 	<-run.done
 	r.clearLocked(run)
+	r.history.Record(run.info.ID, "service_stopped", "INFO", 1, "MCP 服务已停止")
+	if r.stopWarning != "" {
+		r.history.Record(run.info.ID, "execution_unknown", "WARN", 1, r.stopWarning)
+	}
 	return err
 }
 
@@ -215,11 +255,15 @@ func (r *Runtime) clearLocked(run *runningServer) {
 	run.cancel()
 	_ = run.server.Close()
 	if !run.stopping && run.engine != nil {
+		r.history.Record(run.info.ID, "service_failed", "ERROR", 1, "MCP HTTP 服务意外停止")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		_ = run.engine.Shutdown(ctx)
 		cancel()
 	}
 	_ = os.Remove(r.instancePath())
+	if retired, ok := run.engine.(interface{ Retire() }); ok {
+		retired.Retire()
+	}
 	_ = run.unlock()
 	r.active = nil
 }

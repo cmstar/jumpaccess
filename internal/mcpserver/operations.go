@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -16,6 +17,13 @@ type managedHandler struct {
 
 func (h *managedHandler) Shutdown(ctx context.Context) error { return h.engine.Shutdown(ctx) }
 func (h *managedHandler) Stats() agentmcp.EngineStats        { return h.engine.Stats() }
+func (h *managedHandler) Retire()                            { h.engine.Retire() }
+func (h *managedHandler) ListConnections(ctx context.Context, in struct{}) ([]agentmcp.ConnectionView, error) {
+	return h.engine.ListConnections(ctx, in)
+}
+func (h *managedHandler) CloseConnection(ctx context.Context, in agentmcp.CloseInput) (agentmcp.ConnectionView, error) {
+	return h.engine.CloseConnection(ctx, in)
+}
 
 func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine) {
 	addOperation(server, instance, "open_connection", "按明确目标打开或复用共享 SSH 连接。request_key 格式为实例:当前 request_epoch:UUID；重试须保留原键和参数。关闭的逻辑 ID 不可重新打开。", false, e.Open, e)
@@ -30,7 +38,13 @@ func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine)
 
 func addOperation[In, Out any](server *mcp.Server, instance, name, description string, readOnly bool, call func(context.Context, In) (Out, error), engine *agentmcp.Engine) {
 	mcp.AddTool(server, &mcp.Tool{Name: name, Description: description, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly}}, func(ctx context.Context, req *mcp.CallToolRequest, input In) (*mcp.CallToolResult, Result[Out], error) {
+		markCallHandled(ctx)
+		started := time.Now()
 		data, err := call(ctx, input)
+		// 执行/打开的首次受理和结果归属于各自操作记录，避免另存一份命令或输出。
+		if readOnly || err != nil || name == "close_connection" || name == "cancel_execution" {
+			engine.RecordCall(name, err, callDetails(input, data, started))
+		}
 		result := Result[Out]{SchemaVersion: 1, ServerInstanceID: instance, OK: err == nil}
 		if err == nil {
 			result.Data = &data

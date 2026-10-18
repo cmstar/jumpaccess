@@ -7,8 +7,32 @@ import App from './App'
 import appStyles from './App.css?inline'
 import type { AssetDetail, AssetPage, Backend, BootstrapState, HostKeyPrompt, SessionLatency, SessionOutput, SessionState } from './lib/backend'
 import type { ZmodemBackend } from './lib/zmodemTypes'
+import { createPreviewBackend } from './lib/previewBackend'
 import { Sentry, type Session } from 'zmodem.js'
 import { decodeBytes, encodeBytes } from './lib/zmodem'
+
+test('MCP 从独立快捷入口打开单例 Tab，关闭 Tab 不停止服务', async () => {
+  const backend = createPreviewBackend()
+  const stop = vi.spyOn(backend.mcp!, 'stop')
+  render(<App backend={backend} />)
+  const open = await screen.findByRole('button', { name: '打开 MCP 模块' })
+  expect(open.textContent).toBe('')
+  expect(open.querySelector('.status-indicator')).toHaveClass('offline')
+  fireEvent.click(open); fireEvent.click(open)
+  expect(screen.getAllByRole('tab', { name: 'Agent MCP' })).toHaveLength(1)
+  expect(screen.getByLabelText('Agent MCP 工作区')).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('button', { name: '启动' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '启动' }))
+  await waitFor(() => expect(open.querySelector('.status-indicator')).not.toHaveClass('offline'))
+  fireEvent.click(screen.getByRole('button', { name: '关闭 Agent MCP Tab' }))
+  expect(stop).not.toHaveBeenCalled()
+  fireEvent.click(open)
+  expect(screen.getAllByRole('tab', { name: 'Agent MCP' })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: '停止' }))
+  await waitFor(() => expect(open.querySelector('.status-indicator')).toHaveClass('offline'))
+  fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(within(screen.getByRole('navigation', { name: '设置导航' })).queryByRole('button', { name: 'Agent MCP' })).not.toBeInTheDocument()
+})
 
 test.each(([
   { alias: true, direction: 'upload' },
@@ -1318,12 +1342,12 @@ test('设置页使用左侧导航和右侧单列滚动面板', async () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }))
 
     const navigation = screen.getByRole('navigation', { name: '设置导航' })
-    const navigationLabels = ['Agent MCP', '外观', '终端样式', '终端背景图', '终端行为', 'Tab 行为', '关于 JumpAccess']
+    const navigationLabels = ['外观', '终端样式', '终端背景图', '终端行为', 'Tab 行为', '关于 JumpAccess']
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(navigationLabels)
-    expect(within(navigation).getByRole('button', { name: 'Agent MCP' })).toHaveAttribute('aria-current', 'location')
+    expect(within(navigation).getByRole('button', { name: '外观' })).toHaveAttribute('aria-current', 'location')
 
     const scrollContainer = screen.getByTestId('settings-scroll')
-    const sectionIDs = ['settings-mcp', 'settings-appearance', 'settings-terminal-style', 'settings-terminal-background', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
+    const sectionIDs = ['settings-appearance', 'settings-terminal-style', 'settings-terminal-background', 'settings-terminal-behavior', 'settings-tabs', 'settings-about']
     expect(Array.from(scrollContainer.querySelectorAll(':scope > .settings-stack > section')).map((section) => section.id)).toEqual(sectionIDs)
 
     await user.click(within(navigation).getByRole('button', { name: '终端行为' }))
@@ -1377,8 +1401,7 @@ test('设置页滚动时同步导航，切换 Tab 后保留视图，关闭后重
 
   const scrollContainer = screen.getByTestId('settings-scroll')
   const sectionOffsets: Record<string, number> = {
-    'settings-mcp': 0,
-    'settings-appearance': 120,
+    'settings-appearance': 0,
     'settings-terminal-style': 220,
     'settings-terminal-background': 300,
     'settings-terminal-behavior': 380,
@@ -1406,7 +1429,7 @@ test('设置页滚动时同步导航，切换 Tab 后保留视图，关闭后重
   expect(scrollContainer).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '打开设置' }))
   expect(screen.getByTestId('settings-scroll')).toHaveProperty('scrollTop', 0)
-  expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: 'Agent MCP' })).toHaveAttribute('aria-current', 'location')
+  expect(within(screen.getByRole('navigation', { name: '设置导航' })).getByRole('button', { name: '外观' })).toHaveAttribute('aria-current', 'location')
 })
 
 test('新 Tab 打开位置默认在末尾，改为当前右侧后立即应用并保存', async () => {
@@ -2293,7 +2316,7 @@ test('资产请求自动续期后同步 Profile 图标状态并仅在悬停提�
   expect(profileButton.querySelector('.profile-status-icon .auth-indicator')).toBeInTheDocument()
   expect(profileButton).toHaveAttribute('title', expect.stringMatching(/Profile · production · 已认证 · \d+ 分钟后到期/))
   expect(screen.queryByRole('button', { name: /^认证状态：/ })).not.toBeInTheDocument()
-  expect(within(screen.getByRole('navigation', { name: '顶部快捷操作' })).getAllByRole('button')).toHaveLength(3)
+  expect(within(screen.getByRole('navigation', { name: '顶部快捷操作' })).getAllByRole('button')).toHaveLength(4)
   expect(screen.queryByText(/分钟后到期/)).not.toBeInTheDocument()
 })
 

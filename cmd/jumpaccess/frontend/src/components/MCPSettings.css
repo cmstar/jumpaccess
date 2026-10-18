@@ -1,5 +1,11 @@
 .mcp-settings .mcp-service-controls, .mcp-settings .mcp-actions, .mcp-settings .mcp-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mcp-settings .mcp-service-controls { justify-content: space-between; margin-bottom: 12px; }
+.mcp-settings .mcp-actions .mcp-stop { --mcp-action-color: var(--danger); }
+.mcp-settings .mcp-actions .mcp-restart { --mcp-action-color: #975a09; }
+.dark .mcp-settings .mcp-actions .mcp-restart { --mcp-action-color: #f6c76b; }
+.mcp-settings .mcp-actions .mcp-stop, .mcp-settings .mcp-actions .mcp-restart { color: var(--mcp-action-color); border-color: color-mix(in srgb, var(--mcp-action-color) 35%, var(--border)); background: color-mix(in srgb, var(--mcp-action-color) 8%, var(--surface)); }
+.mcp-settings .mcp-actions .mcp-stop:not(:disabled):hover, .mcp-settings .mcp-actions .mcp-restart:not(:disabled):hover { border-color: var(--mcp-action-color); background: color-mix(in srgb, var(--mcp-action-color) 16%, var(--surface)); }
+.mcp-settings .mcp-actions .mcp-restart-pending:not(:disabled) { border-color: var(--mcp-action-color); background: color-mix(in srgb, var(--mcp-action-color) 18%, var(--surface)); }
 .mcp-settings .mcp-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 0; color: var(--muted); font-size: 13px; }
 .mcp-settings .mcp-state { display: flex; align-items: center; gap: 8px; }
 .mcp-settings .mcp-state > span { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
@@ -12,8 +18,9 @@
 .mcp-settings .mcp-config-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 18px 20px 0; }
 .mcp-settings .mcp-config-heading h3 { margin: 0; font-size: 15px; white-space: nowrap; }
 .mcp-settings .mcp-config-heading .mcp-error { margin: 0; }
-.mcp-settings .mcp-save-badge { grid-column: 3; white-space: nowrap; color: var(--muted); background: var(--surface-soft); border-radius: 5px; padding: 3px 7px; font-size: 12px; }
-.mcp-settings .mcp-save-badge.dirty { color: var(--accent-strong); background: var(--accent-soft); }
+.mcp-settings .mcp-config-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.mcp-settings .mcp-save-badge { color: #975a09; background: #fff3d6; border: 1px solid #efcc80; border-radius: 5px; padding: 3px 7px; font-size: 12px; font-weight: 650; }
+.dark .mcp-settings .mcp-save-badge { color: #f6c76b; background: #48371e; border-color: #85642b; }
 .mcp-settings .mcp-fields { display: block; min-width: 0; margin: 0; padding: 20px; border: 0; }
 .mcp-settings .mcp-field { display: grid; grid-template-columns: 136px minmax(0, 1fr); gap: 16px; align-items: center; margin-bottom: 14px; }
 .mcp-settings .mcp-field:last-child { margin-bottom: 0; }
@@ -27,16 +34,19 @@
 .mcp-settings .mcp-token-control input { font-family: Consolas, monospace; font-size: 13px; }
 .mcp-settings .mcp-divider { border-top: 1px solid var(--border); margin: 18px 0; }
 .mcp-settings .mcp-tls-help { padding-left: 152px; margin: -4px 0 0; }
-.mcp-settings .mcp-config-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 20px; background: var(--surface-soft); border-top: 1px solid var(--border); }
 .mcp-settings .mcp-error { color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .mcp-settings .mcp-field { grid-template-columns: 1fr; gap: 6px; }
   .mcp-settings .mcp-fields { padding: 16px 14px; }
   .mcp-settings .mcp-config-heading { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 16px 14px 0; }
-  .mcp-settings .mcp-save-badge { grid-area: 1 / 2; }
+  .mcp-settings .mcp-config-actions { grid-area: 1 / 2; }
   .mcp-settings .mcp-config-heading .mcp-error { grid-column: 1 / -1; }
   .mcp-settings .mcp-tls-help { padding-left: 0; }
   .mcp-settings .mcp-token-control { flex-wrap: wrap; }
   .mcp-settings .mcp-token-control .settings-input-action { flex-basis: 100%; }
   .mcp-settings .mcp-token-control .button { margin-left: auto; }
+}
+@media (max-width: 480px) {
+  .mcp-settings .mcp-config-heading { grid-template-columns: minmax(0, 1fr); }
+  .mcp-settings .mcp-config-actions { grid-area: auto; }
 }

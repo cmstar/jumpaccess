@@ -16,7 +16,7 @@ export function DemoApp() {
     <aside className="demo-toolbar" aria-label="演示控制">
       <strong>JumpAccess 演示</strong>
       <span>数据仅保存在内存 · 不连接真实服务器</span>
-      <label>场景 <select aria-label="演示场景" value={scenario} onChange={event => {
+      <label>场景 <select autoComplete="off" aria-label="演示场景" value={scenario} onChange={event => {
         const url = new URL(window.location.href)
         url.searchParams.set('scenario', event.target.value)
         window.location.assign(url.href)

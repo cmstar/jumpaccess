@@ -1,0 +1,62 @@
+.mcp-workspace { overflow: auto; padding-bottom: 26px; display: flex; flex-direction: column; }
+.mcp-workspace[hidden], .mcp-workspace [hidden] { display: none !important; }
+.mcp-workspace .mcp-settings { padding: 0; border: 0; background: transparent; max-width: none; display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.mcp-workspace .mcp-settings > :not(.mcp-logs) { flex-shrink: 0; }
+.mcp-workspace .mcp-state { font-size: 13px; font-weight: 500; }
+.mcp-workspace .mcp-state small { font-weight: 400; color: var(--muted); }
+.mcp-workspace .mcp-service-summary { min-width: 0; }
+.mcp-workspace .mcp-address { margin: 6px 0 0; }
+.mcp-provider { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+.mcp-workspace .mcp-service-controls { background: var(--surface); border: 1px solid var(--border); padding: 18px; border-radius: 10px; }
+.mcp-workspace .mcp-config-box { background: var(--surface); }
+.mcp-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin: 22px 0 20px; }
+.mcp-tabs > button { display: flex; align-items: center; gap: 7px; padding: 12px 2px; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; font-size: 13px; }
+.mcp-tabs > button[aria-selected=true] { color: var(--accent-strong); border-bottom-color: var(--accent); }
+.mcp-tabs svg, .mcp-workspace .mcp-text-link svg { width: 16px; height: 16px; }
+.mcp-tabs small { background: var(--surface); padding: 0 4px; border-radius: 3px; }
+.mcp-empty { display: grid; justify-items: center; padding: 70px 20px; color: var(--muted); }
+.mcp-connection-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.mcp-connection-table table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.mcp-connection-table th { text-align: left; color: var(--muted); font-weight: 400; background: var(--surface-soft); }
+.mcp-connection-table td, .mcp-connection-table th { padding: 13px 14px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.mcp-connection-table th:first-child { width: 32%; }
+.mcp-connection-table tr:last-child td { border-bottom: 0; }
+.mcp-connection-table tr.selected { background: var(--accent-soft); }
+.mcp-connection-table code { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-connection-table small { display: block; color: var(--muted); margin-top: 5px; }
+.mcp-workspace .mcp-text-link { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; padding: 0; color: var(--accent-strong); }
+.mcp-connection-detail { margin-top: 18px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 13px; }
+.mcp-connection-detail code { overflow-wrap: anywhere; }
+.mcp-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.mcp-detail-heading > span, .mcp-spacer { flex: 1; }
+.mcp-connection-detail dl { display: flex; flex-wrap: wrap; gap: 18px 48px; margin: 20px 0; }
+.mcp-connection-detail dt { color: var(--muted); margin-bottom: 5px; }
+.mcp-connection-detail dd { margin: 0; }
+.mcp-log-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.mcp-levels { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.mcp-levels button { border: 0; border-radius: 3px; background: transparent; padding: 4px 12px; color: var(--muted); }
+.mcp-levels button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent-strong); }
+.mcp-log-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-bottom: 10px; color: var(--accent-strong); }
+.mcp-log-filter code { overflow-wrap: anywhere; }
+.mcp-log-terminal { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; color: var(--mcp-terminal-fg); background: var(--mcp-terminal-bg); }
+.mcp-logs { display: flex; flex-direction: column; flex: 1; min-height: 300px; }
+.mcp-log-terminal { display: flex; flex-direction: column; flex: 1; min-height: 160px; }
+.mcp-logs > :not(.mcp-log-terminal), .mcp-console-head, .mcp-console-footer { flex-shrink: 0; }
+.mcp-console-head, .mcp-console-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 15px; font-family: var(--font-family, sans-serif); font-size: 12px; line-height: 1.5; }
+.mcp-console-head { background: color-mix(in srgb, var(--mcp-terminal-bg) 94%, var(--mcp-terminal-fg)); border-bottom: 1px solid color-mix(in srgb, var(--mcp-terminal-bg) 85%, var(--mcp-terminal-fg)); }
+.mcp-console-footer { border-top: 1px solid color-mix(in srgb, var(--mcp-terminal-bg) 85%, var(--mcp-terminal-fg)); }
+.mcp-console-head button, .mcp-console-footer button { display: inline-flex; align-items: center; gap: 6px; color: inherit; font: inherit; background: none; border: 0; padding: 0; }
+.mcp-console-head svg, .mcp-console-footer svg { width: 14px; height: 14px; }
+.mcp-console-footer button[aria-pressed=true] { color: var(--mcp-terminal-green); }
+.mcp-collect-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mcp-terminal-fg); opacity: .5; }
+.mcp-collect-dot.running { background: var(--mcp-terminal-green); opacity: 1; }
+.mcp-log-viewport { flex: 1; min-height: 140px; padding: 14px 16px 20px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--mcp-terminal-fg) 45%, transparent) var(--mcp-terminal-bg); }
+.mcp-log-line { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-variant-ligatures: none; }
+.mcp-log-line::selection, .mcp-log-line *::selection { background: var(--mcp-terminal-selection); }
+.mcp-log-time, .mcp-log-empty { color: color-mix(in srgb, var(--mcp-terminal-fg) 75%, var(--mcp-terminal-bg)); }
+.mcp-severity-info { color: var(--mcp-terminal-green); }
+.mcp-severity-debug { color: var(--mcp-terminal-cyan); }
+.mcp-severity-warn, .mcp-log-command { color: var(--mcp-terminal-yellow); }
+.mcp-severity-error { color: var(--mcp-terminal-red); }
+.mcp-log-connection { color: var(--mcp-terminal-blue); }
+@media (max-width: 700px) { .mcp-connection-table table { min-width: 600px; } .mcp-connection-detail { padding: 14px; } .mcp-log-controls .mcp-spacer { flex-basis: 100%; } .mcp-log-viewport { padding: 12px 10px; } }

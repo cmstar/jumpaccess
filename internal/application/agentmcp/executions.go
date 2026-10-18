@@ -4,8 +4,10 @@ import (
 	"container/list"
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -87,6 +89,7 @@ type execution struct {
 	stopUnconfirmed  bool
 	detached         bool
 	exitReceived     bool
+	finishing        bool
 }
 
 func terminal(status string) bool {
@@ -165,15 +168,41 @@ func (e *Engine) Execute(ctx context.Context, in ExecuteInput) (ExecutionView, e
 				return "", fault("LIMIT_EXCEEDED", "执行记录全部活跃")
 			}
 			e.evictExecution(e.executionHistory[0])
-			e.executionHistory = e.executionHistory[1:]
 		}
 		now := e.opts.Now()
 		id := e.nextID("x")
+		size := len(normalized.Command) + len(normalized.Cwd)
+		for k, v := range normalized.Env {
+			size += len(k) + len(v)
+		}
+		// 输入与输出分别按字节限额；先回收最老的已结束操作，活动输入不能丢失。
+		for e.history.inputBytes+size > 16<<20 {
+			var victim *operationRecord
+			for n := e.history.fifo.Front(); n != nil; n = n.Next() {
+				r := n.Value.(*operationRecord)
+				if !r.active && r.inputBytes > 0 {
+					victim = r
+					break
+				}
+			}
+			if victim == nil {
+				return "", fault("LIMIT_EXCEEDED", "活动命令输入已达到内存上限")
+			}
+			e.history.removeLocked(victim)
+		}
+		op := e.history.addLocked(id, true, e)
+		if op == nil {
+			return "", fault("LIMIT_EXCEEDED", "操作记录全部活跃")
+		}
 		jobCtx, cancel := context.WithCancel(e.ctx)
 		job = &execution{view: ExecutionView{ID: id, ConnectionID: c.view.ID, Target: c.view.Target, Status: "starting", DispatchState: "not_sent", RemoteState: "not_started", AcceptedAt: now, PrepareDeadlineAt: time.Now().Add(60 * time.Second), TimeoutMS: normalized.TimeoutMS, TimeoutStrategy: normalized.TimeoutStrategy}, input: normalized, connection: c, ctx: jobCtx, cancel: cancel, changed: make(chan struct{}), done: make(chan struct{}), marker: rand.Text()}
 		c.view.ActiveExecutionID = id
 		c.view.LastUsedAt = now
 		e.executions[id] = job
+		op.job, op.inputBytes = job, size
+		e.history.inputBytes += size
+		e.jobEventLocked(job, "execution_accepted", "INFO", 2, "命令已受理  "+id, false)
+		e.jobEventLocked(job, "command_input", "DEBUG", 3, "", true)
 		return id, nil
 	})
 	if err == nil {
@@ -197,7 +226,12 @@ func (e *Engine) Execute(ctx context.Context, in ExecuteInput) (ExecutionView, e
 	if e.executions[job.view.ID] != job {
 		return ExecutionView{}, fault("EXECUTION_EXPIRED", "等待期间执行详细结果已回收")
 	}
-	return e.executionView(job, 0, 64<<10), nil
+	result := e.executionView(job, 0, 64<<10)
+	if !fresh {
+		// 重试只保留有界调用摘要，不把重复输入或输出放进历史。
+		e.recordCallLocked("execute_command", nil, CallDetails{Summary: "重复请求，返回原任务  execution_id=" + job.view.ID + "  status=" + job.view.Status, ConnectionID: job.view.ConnectionID, ExecutionID: job.view.ID})
+	}
+	return result, nil
 }
 
 func (e *Engine) GetExecution(ctx context.Context, in GetExecutionInput) (ExecutionView, error) {
@@ -289,6 +323,12 @@ func (e *Engine) notifyExecution(job *execution) {
 }
 func (e *Engine) finishExecution(job *execution, status, reason string, err *Fault) {
 	e.mu.Lock()
+	if terminal(job.view.Status) || job.finishing {
+		e.mu.Unlock()
+		return
+	}
+	// 收尾开始后不再接受新取消，确保等待完已有停止协程才释放运行资源。
+	job.finishing = true
 	stopDone := job.stopDone
 	e.mu.Unlock()
 	if stopDone != nil {
@@ -299,9 +339,6 @@ func (e *Engine) finishExecution(job *execution, status, reason string, err *Fau
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if terminal(job.view.Status) {
-		return
-	}
 	if job.view.CancelRequested && job.view.DispatchState == "not_sent" {
 		status = "cancelled"
 		reason = "before_send"
@@ -334,25 +371,50 @@ func (e *Engine) finishExecution(job *execution, status, reason string, err *Fau
 		job.connection.view.ActiveExecutionID = ""
 		job.connection.view.LastUsedAt = now
 	}
-	job.input = ExecuteInput{}
+	severity := "INFO"
+	if status == "failed" {
+		severity = "ERROR"
+	} else if status == "unknown" || status == "timed_out" {
+		severity = "WARN"
+	}
+	message := "命令结束  " + job.view.ID + "  status=" + status
+	if job.view.ExitCode != nil {
+		message += fmt.Sprintf("  exit=%d", *job.view.ExitCode)
+	}
+	if err != nil {
+		message += "  code=" + err.Code
+	}
+	message += fmt.Sprintf("  duration=%dms", now.Sub(job.view.AcceptedAt).Milliseconds())
+	detail := 2
+	if severity != "INFO" {
+		detail = 1
+	}
+	e.jobEventLocked(job, "execution_finished", severity, detail, message, false)
+	if r := e.history.records[job.view.ID]; r != nil {
+		r.active = false
+	}
 	job.cancel()
 	close(job.done)
 	e.notifyExecution(job)
 	e.requests.finish(job.record, err)
+	// 历史仅保留输入、结果和输出块，不拖住 SSH channel、client 或整个连接。
+	job.channel, job.client, job.connection = nil, nil, nil
 	e.executionHistory = append(e.executionHistory, job)
 	e.pruneExecutionsLocked()
 }
 func (e *Engine) evictExecution(job *execution) {
+	if r := e.history.records[job.view.ID]; r != nil {
+		e.history.removeLocked(r)
+	}
 	for job.output.Len() > 0 {
 		e.removeOutput(job.output.Front().Value.(*outputBlock), false)
 	}
 	delete(e.executions, job.view.ID)
+	e.executionHistory = slices.DeleteFunc(e.executionHistory, func(item *execution) bool { return item == job })
 }
 func (e *Engine) pruneExecutionsLocked() {
 	for len(e.executionHistory) > 0 && (len(e.executions) > e.opts.Limits.Executions || e.opts.Now().Sub(*e.executionHistory[0].view.FinishedAt) >= e.opts.Limits.HistoryTTL) {
 		job := e.executionHistory[0]
-		e.executionHistory[0] = nil
-		e.executionHistory = e.executionHistory[1:]
 		e.evictExecution(job)
 	}
 }

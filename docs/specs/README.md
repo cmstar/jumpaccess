@@ -21,7 +21,7 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 宿主已提供资源查询、SSH 复用与命令任务；CLI MCP 待实现 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 独立工作区、连接和文本日志已接入共享操作仓库；CLI MCP 待实现 |
 
 ## 历史版本索引
 
