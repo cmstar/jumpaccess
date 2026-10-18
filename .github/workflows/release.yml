@@ -385,7 +385,7 @@ jobs:
             release create "$GITHUB_REF_NAME"
             "${assets[@]}"
             --verify-tag
-            --title "JumpAccess $GITHUB_REF_NAME"
+            --title "$GITHUB_REF_NAME"
             --notes-file release-notes.md
           )
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
