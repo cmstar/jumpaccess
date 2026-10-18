@@ -28,6 +28,41 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 GUI 不自动启动 MCP 服务，退出应用会停止服务。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
 
+## 界面预览
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/assets-light.png" width="420" alt="JumpAccess 资产列表与别名管理"><br>
+      <sub><b>资产与别名</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/quick-connect.png" width="420" alt="JumpAccess 快速连接"><br>
+      <sub><b>快速连接</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/profiles.png" width="420" alt="JumpAccess 多 Profile 管理"><br>
+      <sub><b>多 Profile 管理</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/ssh-terminal.png" width="420" alt="JumpAccess SSH 终端"><br>
+      <sub><b>SSH 终端</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/sftp-files.png" width="420" alt="JumpAccess SFTP 文件管理与传输进度"><br>
+      <sub><b>SFTP 文件管理</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/terminal-settings.png" width="420" alt="JumpAccess 终端样式设置与预览"><br>
+      <sub><b>终端样式</b></sub>
+    </td>
+  </tr>
+</table>
+
 ## 安装
 
 ## 安装 CLI jumpctl
@@ -122,6 +157,8 @@ wails build
 
 ## 使用 jumpctl
 
+首次使用请跟随 [CLI 入门指南](docs/manual/cli-quick-start.md)，从安装和浏览器认证开始，逐步完成资源查询、别名绑定和 OpenSSH 连接。
+
 完整命令和参数见 [CLI 命令参考](docs/cli.md)，也可以运行 `jumpctl --help` 或 `jumpctl <command> --help` 查看。
 
 通用 OpenSSH 配置示例（`web` 可以是已绑定唯一 Asset 和 Account 的 Alias）：
@@ -143,46 +180,9 @@ Host production-web
 
 ## SSH 终端全屏
 
-在 SSH Tab 按 F11 切换全屏，Windows 也支持 Alt+Enter；再按一次恢复原窗口位置、大小或最大化状态。全屏隐藏 Tab 栏和底部状态栏，鼠标移到顶部中央可显示会话名称和退出按钮。Esc 仍用于终端操作。
+在 SSH Tab 按 F11 切换全屏，Windows 也支持 Alt+Enter ；再按一次恢复原窗口位置、大小或最大化状态。全屏隐藏 Tab 栏和底部状态栏，鼠标移到顶部中央可显示会话名称和退出按钮。Esc 仍用于终端操作。
 
-“设置 → 终端行为 → 全屏时隐藏工具栏”默认开启；关闭后，全屏保留 SSH 工具栏、传输进度和取消按钮。全屏切换不重建终端或中断传输，断连后仍可按 Enter 重连。关闭程序后，下次以全屏前的窗口状态启动。
-
-## SSH 终端内上传和下载（ZMODEM）
-
-桌面客户端支持在 SSH 会话中使用 `rz` / `sz`，远端需安装 `lrzsz`，本机不需要额外安装这两个命令。
-
-- 连接后在同一 SSH 连接的独立命令通道执行 `command -v rz`、`command -v sz`（最多等待 5 秒）；查到哪个命令，就启用对应的上传或下载按钮。检测中、未找到或探测失败时按钮保持可见并置灰，手工命令握手仍可启用对应能力。探测只检查命令可用性，不保证传输授权。
-- SSH Tab 工具栏右侧依次为分隔线、SFTP、上传、下载、分隔线、断开连接。三个文件操作按钮始终显示，不可用时禁用，并在悬停提示中标明“当前不可用”；断开连接始终位于最右侧。
-- 上传：在远端进入目标目录，点击上传按钮，或直接运行 `rz`，然后在系统对话框中选择本地文件。
-- 下载：点击下载按钮输入单个远程文件路径，或直接运行 `sz file1 file2`。在“设置 → 终端行为 → 下载保存位置”选择保存行为：每次询问并从系统下载目录开始（默认）、自动保存到系统下载目录、每次询问并记住上次选择的目录、自动保存到指定目录。指定目录支持手工填写或点击“选择文件夹”。记住的目录跨重启保留，首次使用或目录不可用时回退到系统下载目录；自动模式下对应目录未设置或不可用时改为弹窗选择。同一批次多文件共用保存目录，同名文件自动另存为带数字后缀的文件。
-- 点击按钮前，请确保终端处于命令提示符；目录应先打包再传输。下载路径按字面量处理，不展开 `~`、通配符或 Shell 表达式。
-- 传输期间在终端内显示本机完整文件路径、已传输大小和百分比：上传显示 `Upload <本地源文件完整路径>`，下载显示 `Download to <实际保存文件完整路径>`，包括同名另存后的数字后缀，进度原地刷新；顶部工具栏下方显示当前文件的传输进度和取消按钮。SSH 上传或下载整批完成后，复用顶部中央的通用提示组件显示来源名称、完成状态和文件名，如 `alias1 上传完成：xxx.txt`；多文件以顿号连接文件名，不包含路径；名称优先使用传输所属 SSH Tab 的别名，没有别名时使用资产名称，切换 Tab 也能辨认来源；下载等待实际保存成功。同一批次只提示一次，取消、失败、断连、空批次或上传全部被远端跳过时不弹成功提示。本地生成的终端提示统一使用英文，如 `Upload`、`Download to`、`Saving` 和 `Complete`；本机路径过滤终端控制字符后显示，服务器原始输出按原样显示。下载收到全部数据后显示 `Saving`，保存成功才显示 100% 和 `Complete`；普通终端输入暂时停用，切换 Tab 不影响传输。取消、错误或断连会清理未完成的本地下载。
-- 每个文件成功完成后，终端完成行追加耗时和平均速度，例如 `Complete · Elapsed 2.00 s · Avg 512.00 KiB/s`。耗时从该文件开始传输计到保存成功或远端确认完成，包含本地读写及确认时间，不包含选择文件／目录或文件间等待的时间；平均速度为该文件传输字节数除以耗时，多文件分别统计。取消、失败和远端跳过不显示成功统计。
-- 下载在 Go 端使用最多 50 MiB（50 × 1024 × 1024 字节）的共享内存缓冲。额度充足时，50 MiB 内的文件收齐后一次保存，大文件分批写入；多个会话共享额度，额度不足时缩小缓冲或直接写文件，不无限增加内存。选择目录后会先创建空文件以保留文件名；完成时刷新缓冲并同步文件。该额度只限制下载内容缓冲，不是整个程序的内存上限。
-
-能力检测使用独立 SSH `exec` channel。部分 JumpServer 网关会拒绝它，此时显示“无法检测”，不会向当前 Shell 插入探测命令。仍可手工运行 `rz` / `sz`，识别到握手后会弹出文件选择器并启用对应方向的按钮。命令存在不代表堡垒机允许传输；被策略阻止或超时会显示错误。
-
-ZMODEM 使用当前 SSH 会话，不依赖 SFTP 权限。
-
-执行 `sz` 后可能先显示单独的 `rz`：这是远端 `lrzsz` 在 ZMODEM 启动时默认输出的接收启动文本（`rz\r`），JumpAccess 保留显示。它不表示失败，也不需要再次手工执行 `rz`。
-
-### CLI 上传和下载
-
-`jumpctl ssh` 在交互终端中默认识别 `rz` / `sz`，无需 `--zmodem` 参数，也无需本地安装 `lrzsz` 或 Node.js：
-
-```powershell
-jumpctl ssh my-server
-jumpctl ssh my-server --download-dir "D:\Downloads"
-```
-
-- 下载默认保存到系统“下载”目录。Windows 读取 Known Folder 配置，支持目录重定向；macOS 正式构建读取系统 Downloads 目录。`--download-dir` 可覆盖本次连接的保存位置；目录不存在或不可写时，在终端提示输入其他本地目录。
-- 远端运行 `rz` 后，本机显示 `Local file to upload`，输入单个本地普通文件路径并回车即可；路径可以带引号，支持 `~`。输入内容不会发到远端 Shell。空路径或 Ctrl+C 取消选择。
-- 远端运行 `sz file1 file2` 可连续下载多个文件，同名文件自动另存。下载复用 50 MiB 缓冲和取消清理；终端进度及结果提示全部使用英文。
-- 与 GUI 一样，上传和下载每个文件成功完成后显示耗时和平均速度，例如 `Complete - Elapsed 2.00 s - Avg 512.00 KiB/s`。耗时包含传输、保存及远端确认，不包含本地选择或文件间等待；上传续传的平均速度只计算本次新增传输的文件内容。取消、失败或远端跳过不显示该文件的成功统计。
-- 传输期间 Ctrl+C 取消；取消或失败后按 Enter 刷新远端提示符。若远端写入已被流控卡住，取消或超时会关闭该 SSH 会话，避免进程持续阻塞。
-- CLI 使用标准 32 位 ZMODEM 文件偏移，单文件必须小于 4 GiB；不提供目录传输。标准输入或输出被重定向时保持字节透传，不启动本地交互式文件传输。
-
-`jumpctl proxy` 保持透传，由外部终端或 SSH 客户端处理 ZMODEM，不使用 CLI 本地文件选择和下载目录逻辑。
+“设置 → 终端行为 → 全屏时隐藏工具栏”默认开启；关闭后，全屏保留 SSH 工具栏、传输进度和取消按钮。
 
 ## 参与贡献
 
@@ -190,6 +190,9 @@ jumpctl ssh my-server --download-dir "D:\Downloads"
 
 ## 文档索引
 
+- [用户指南](docs/manual/README.md)
+  - [CLI 入门指南](docs/manual/cli-quick-start.md)
+  - [在 SSH 终端内使用 sz/rz 命令上传/下载文件](docs/manual/file-transfer.md)
 - [贡献指南与协作流程](CONTRIBUTING.md)
 - [Agent 工作入口](AGENTS.md)
 - [架构说明](docs/architecture.md)
@@ -222,11 +225,11 @@ git push origin v0.1.0
 
 OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
 
-Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand façade 的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
+Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand 代理的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
 
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 
-ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地 façade 的稳定 Ed25519 host key，该私钥保存在操作系统凭据存储；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
+ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地代理的稳定 Ed25519 host key，该私钥保存在操作系统凭据存储；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
 
 ## 演示模式与截图生成工具
 

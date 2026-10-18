@@ -29,10 +29,11 @@ type fakeConnectionPreparer struct {
 }
 
 type fakeResourceService struct {
-	organizations []jumpserver.Organization
-	assets        jumpserver.AssetPage
-	asset         jumpserver.AssetDetail
-	listAssets    func(profile, organization, search string, offset, limit int)
+	organizations     []jumpserver.Organization
+	assets            jumpserver.AssetPage
+	asset             jumpserver.AssetDetail
+	listAssets        func(profile, organization, search string, offset, limit int)
+	listOrganizations func(context.Context, string) ([]jumpserver.Organization, error)
 }
 
 type recordingCredentialRemover struct {
@@ -44,7 +45,10 @@ func (r *recordingCredentialRemover) Delete(profile string) error {
 	return nil
 }
 
-func (f fakeResourceService) ListOrganizations(context.Context, string) ([]jumpserver.Organization, error) {
+func (f fakeResourceService) ListOrganizations(ctx context.Context, profile string) ([]jumpserver.Organization, error) {
+	if f.listOrganizations != nil {
+		return f.listOrganizations(ctx, profile)
+	}
 	return f.organizations, nil
 }
 
@@ -340,28 +344,39 @@ func TestProfileDeleteCancelsForAnyInputOtherThanYes(t *testing.T) {
 	}
 }
 
-func TestProfileListSortsAndMarksCurrentProfile(t *testing.T) {
+func TestProfileListSortsMarksCurrentProfileAndShowsOrganization(t *testing.T) {
 	var stdout bytes.Buffer
 	path := filepath.Join(t.TempDir(), "config.toml")
 	store := projectconfig.Store{Path: path}
 	value := projectconfig.Default()
 	value.CurrentProfile = "work"
-	value.Profiles["work"] = projectconfig.Profile{URL: "https://work.example.test"}
+	value.Profiles["work"] = projectconfig.Profile{URL: "https://work.example.test", Organization: "org-work"}
 	value.Profiles["backup"] = projectconfig.Profile{URL: "https://backup.example.test"}
 	if err := store.Save(value); err != nil {
 		t.Fatal(err)
 	}
-	root := NewRoot(Dependencies{Store: store, ConfigPath: path, Stdout: &stdout})
+	calls := 0
+	service := fakeResourceService{listOrganizations: func(_ context.Context, profile string) ([]jumpserver.Organization, error) {
+		calls++
+		if profile != "work" {
+			t.Fatalf("unexpected organization query for %q", profile)
+		}
+		return []jumpserver.Organization{{ID: "org-other", Name: "其他组织"}, {ID: "org-work", Name: "研发中心"}}, nil
+	}}
+	root := NewRoot(Dependencies{Store: store, ConfigPath: path, Resources: service, Stdout: &stdout})
 	root.SetArgs([]string{"profile", "list"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	const want = "CURRENT  PROFILE  URL\n" +
-		"         backup   https://backup.example.test\n" +
-		"*        work     https://work.example.test\n"
+	const want = "CURRENT  PROFILE  URL                          ORGANIZATION\n" +
+		"         backup   https://backup.example.test  未设置\n" +
+		"*        work     https://work.example.test    研发中心\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+	if calls != 1 {
+		t.Fatalf("organization queries = %d, want 1", calls)
 	}
 }
 

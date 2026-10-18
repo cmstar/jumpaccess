@@ -60,10 +60,12 @@ jumpctl ssh web
 | `jumpctl profile add <name> --url <site>` | 新增 JumpServer Profile；第一个 Profile 自动成为当前项 |
 | `jumpctl profile update <name> --url <site>` | 修改 Profile 的 Server URL；保留 Organization 和 Alias，URL 变化时清除旧 OAuth 凭据并要求重新登录 |
 | `jumpctl profile delete <name>` | 删除 Profile、Organization、Alias 和本地 OAuth 凭据；只有交互输入精确的 `yes` 后才执行，删除当前项后自动选择下一个 Profile |
-| `jumpctl profile list` | 列出 Profile，并用 `*` 标记当前项 |
+| `jumpctl profile list` | 列出 Profile、URL 和配置的组织名称；组织未配置时显示“未设置”，用 `*` 标记当前项 |
 | `jumpctl profile use <name>` | 切换当前 Profile |
 | `jumpctl alias set <name> --asset <asset> [--account <account>] [--organization <org>] [--profile <name>]` | 创建或替换 Profile 范围内的 Alias |
 | `jumpctl alias list [--profile <name>] [--long]` | 列出 Alias 对应的资产名称、地址、账号和组织；`--long` 逐项显示完整引用 |
+
+`profile list` 的 `ORGANIZATION` 列按各 Profile 查询组织名称；未配置组织时不发起查询。未登录、查询失败或组织不可见时，保留组织 ID 并标记“（名称暂不可用）”；服务端未提供名称时显示“名称未提供”。每个 Profile 最多查询一次组织列表，复用已有认证和按需 Token 刷新，不打开浏览器或修改 Profile 配置。单个 Profile 查询失败不影响其他项；用户取消时停止查询并返回非零状态。
 
 Alias 适合批量直接编辑。每用户应用根目录为：
 
@@ -139,7 +141,7 @@ Asset 引用可以是 ID、名称或地址。UUID 格式的 ID 直接查询详�
 
 | 命令 | 列头 |
 | --- | --- |
-| `profile list` | `CURRENT`、`PROFILE`、`URL` |
+| `profile list` | `CURRENT`、`PROFILE`、`URL`、`ORGANIZATION` |
 | `alias list` | `ALIAS`、`ASSET`、`ADDRESS`、`ACCOUNT`、`ORGANIZATION` |
 | `organization list` | `NAME`、`ID` |
 | `asset list` | `NAME`、`ADDRESS`、`TYPE`、`ID` |
@@ -193,7 +195,7 @@ jumpctl ssh <target> [--profile <name>] [--organization <org>] [--account <accou
 
 当前不采集 `@INPUT` 或 `@USER` 所需的密码，遇到这类 Account 会要求改用 JumpServer 托管 Account。`@ANON` 可以无秘密使用。
 
-交互终端中的 `rz` / `sz` 上传或下载成功后，每个文件的完成行追加 `Elapsed` 耗时和 `Avg` 平均速度，例如 `Complete - Elapsed 2.00 s - Avg 512.00 KiB/s`。与 GUI 采用相同口径：从该文件开始传输计到本地保存或远端确认完成，不包含选择本地文件／目录和文件间等待；平均速度按本次新增传输的文件字节数除以耗时计算，上传续传排除远端已有内容。多文件分别统计，取消、失败或被远端跳过的文件不显示成功统计。非交互 I/O 和 `jumpctl proxy` 保持字节透传，不插入本地统计。
+终端内 `rz` / `sz` 上传下载、`--download-dir` 参数用法、进度和取消操作见[文件传输指南](manual/file-transfer.md#cli-上传和下载)。
 
 ## 通用 ProxyCommand
 
