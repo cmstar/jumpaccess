@@ -144,7 +144,7 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
       {(statusError || error || status?.error) && <p role="alert" className="mcp-error">{error || statusError || status?.error}</p>}
       {statusError && <button type="button" className="button secondary small" disabled={busy} onClick={() => void run(() => backend.status(), acceptStatus)}>刷新状态</button>}
       {children}
-      <div id="mcp-panel-config" hidden={!configurationVisible}>
+      <div id="mcp-panel-config" className="settings-content" hidden={!configurationVisible}>
         <section className="mcp-startup-box" aria-labelledby="mcp-startup-title">
           <h3 id="mcp-startup-title">启动行为</h3>
           <div className="mcp-startup-row">

@@ -132,8 +132,7 @@ export function MCPWorkspace({ backend, hidden, preferences, onSavePreferences, 
         </>}
       </section>
       <section id="mcp-panel-logs" role="tabpanel" aria-labelledby="mcp-tab-logs" hidden={view !== 'logs'} className="mcp-logs">
-        <div className="mcp-log-controls"><span>输出级别</span><div className="mcp-levels">{['精简', '标准', '详细'].map((label, i) => <button type="button" key={label} aria-pressed={level === i + 1} onClick={() => { levelRef.current = i + 1; setLevel(i + 1) }}>{label}</button>)}</div><span className="mcp-spacer" /><button type="button" className="button secondary small" onClick={pause}>{paused ? <Play /> : <Pause />}{paused ? '恢复显示' : '暂停显示'}</button><button type="button" className="button secondary small" onClick={clear}><Trash2 />清空显示</button></div>
-        <p className="setting-help">仅影响后续日志，已显示的内容保持不变</p>
+        <div className="mcp-log-controls"><span>输出级别</span><div className="mcp-levels">{['精简', '标准', '详细'].map((label, i) => <button type="button" key={label} aria-pressed={level === i + 1} onClick={() => { levelRef.current = i + 1; setLevel(i + 1) }}>{label}</button>)}</div><span className="setting-help">仅影响后续日志，已显示的内容保持不变</span><span className="mcp-spacer" /><button type="button" className="button secondary small" onClick={pause}>{paused ? <Play /> : <Pause />}{paused ? '恢复显示' : '暂停显示'}</button><button type="button" className="button secondary small" onClick={clear}><Trash2 />清空显示</button></div>
         {filter && <div className="mcp-log-filter">连接：<code>{filter}</code><button type="button" className="icon-button" aria-label="取消连接筛选" onClick={() => setFilter('')}><X /></button></div>}
         {logError && <p role="alert" className="mcp-error">日志读取失败：{logError}</p>}
         {gap && <p role="status" className="setting-help">部分历史日志已回收，当前显示仍保留的记录。</p>}

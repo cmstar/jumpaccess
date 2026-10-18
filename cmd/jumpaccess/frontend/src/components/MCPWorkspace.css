@@ -32,7 +32,8 @@
 .mcp-connection-detail dl { display: flex; flex-wrap: wrap; gap: 18px 48px; margin: 20px 0; }
 .mcp-connection-detail dt { color: var(--muted); margin-bottom: 5px; }
 .mcp-connection-detail dd { margin: 0; }
-.mcp-log-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.mcp-log-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+.mcp-settings .mcp-log-controls .setting-help { margin: 0; }
 .mcp-levels { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .mcp-levels button { border: 0; border-radius: 3px; background: transparent; padding: 4px 12px; color: var(--muted); }
 .mcp-levels button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent-strong); }
