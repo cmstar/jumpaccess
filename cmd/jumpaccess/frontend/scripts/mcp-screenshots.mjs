@@ -1,0 +1,64 @@
+// 通过真实界面完成配置和启动，不向组件注入截图专用状态。
+export async function captureMCPScreenshots({ page, start, capture, terminalFont }) {
+  await start('mcp-setup')
+  const workspace = page.getByRole('region', { name: 'Agent MCP 工作区', exact: true })
+  await workspace.getByRole('tab', { name: '配置', selected: true, exact: true }).waitFor()
+  await workspace.getByText('尚未完成 MCP 配置。', { exact: false }).waitFor()
+  if (await workspace.getByRole('button', { name: '启动', exact: true }).isEnabled()) throw new Error('首次配置未保存前不能启动 MCP。')
+  await workspace.getByRole('button', { name: '生成', exact: true }).click()
+  await workspace.getByText('未保存', { exact: true }).waitFor()
+  const token = await workspace.getByLabel('MCP Bearer Token', { exact: true }).inputValue()
+  if (!token.startsWith('DEMO_ONLY_')) throw new Error('MCP 截图只能展示显式标识的演示 Token。')
+  await capture('mcp-01-config.png')
+
+  await workspace.getByRole('button', { name: '保存', exact: true }).click()
+  await workspace.getByText('未保存', { exact: true }).waitFor({ state: 'hidden' })
+  await workspace.getByRole('tab', { name: '日志', exact: true }).click()
+  // 使用共用设置提高文档可读性，同时验证日志入口能跳转终端样式。
+  await workspace.getByRole('button', { name: /终端样式/ }).click()
+  await page.getByRole('combobox', { name: '字体', exact: true }).fill(terminalFont)
+  await page.getByRole('combobox', { name: '字体', exact: true }).press('Enter')
+  await page.getByLabel('字号', { exact: true }).selectOption('14')
+  await page.getByLabel('行高', { exact: true }).selectOption('1.4')
+  await page.getByRole('button', { name: '关闭 设置 Tab', exact: true }).click()
+  await page.waitForFunction(font => {
+    const terminal = document.querySelector('.mcp-log-terminal')
+    return terminal && getComputedStyle(terminal).fontFamily.includes(font)
+      && getComputedStyle(terminal).fontSize === '14px'
+      && Math.abs(parseFloat(getComputedStyle(terminal).lineHeight) - 19.6) < 0.1
+  }, terminalFont)
+  // 级别只作用于后续日志，必须在启动前切换，不能重写历史内容。
+  await workspace.getByRole('button', { name: '详细', exact: true }).click()
+  await workspace.getByRole('button', { name: '启动', exact: true }).click()
+  const log = workspace.getByRole('log', { name: 'MCP 操作日志', exact: true })
+  await log.getByText('command="find /srv/builds -maxdepth 2 -type f"  cwd="/"', { exact: true }).waitFor()
+  if (!await log.getByText(/list_assets.*查询条件/).count() || !await log.getByText(/命令结束.*status=completed.*exit=1/).count()) throw new Error('MCP 日志截图必须包含查询条件和正常完成的非零退出结果。')
+  await workspace.getByLabel('MCP 实际地址', { exact: true }).waitFor()
+  const viewport = workspace.locator('.mcp-log-viewport')
+  if (await viewport.evaluate(el => el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)) throw new Error('MCP 日志截图应完整显示样例，不能裁切日志或出现横向滚动。')
+  await capture('mcp-02-logs.png')
+
+  await workspace.getByRole('tab', { name: /^连接/ }).click()
+  const table = workspace.getByRole('table')
+  await table.getByRole('row').filter({ hasText: 'builder' }).getByText('执行中', { exact: true }).waitFor()
+  await table.getByRole('row').filter({ hasText: 'web' }).getByText('空闲', { exact: true }).waitFor()
+  await table.getByRole('row').filter({ hasText: 'prod-db' }).getByText('SSH 已释放', { exact: true }).waitFor()
+  await table.getByRole('button', { name: 'prod-db', exact: true }).click()
+  await workspace.getByText('SSH 已闲置释放，下次执行时自动重连；逻辑连接 ID 仍然有效。', { exact: true }).waitFor()
+  if (!(await workspace.getByLabel('MCP 共享状态', { exact: true }).textContent()).includes('执行中 1')) throw new Error('MCP 统计必须与连接列表一致。')
+  await capture('mcp-03-connections.png')
+
+  // 截图后检查连接日志跳转、活动连接确认与服务停止，避免只有静态样例可看。
+  await workspace.getByRole('button', { name: '查看日志', exact: true }).click()
+  await workspace.getByRole('button', { name: '取消连接筛选', exact: true }).waitFor()
+  if (!(await log.textContent()).includes('SSH 连接已释放') || (await log.textContent()).includes('list_assets')) throw new Error('按连接查看日志的筛选不正确。')
+  await workspace.getByRole('tab', { name: /^连接/ }).click()
+  await table.getByRole('button', { name: 'builder', exact: true }).click()
+  await workspace.getByRole('button', { name: '关闭连接', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: '等待任务结束后关闭连接？', exact: true })
+  await confirm.getByRole('button', { name: '等待并关闭', exact: true }).click()
+  await table.getByRole('button', { name: 'builder', exact: true }).waitFor({ state: 'hidden' })
+  await workspace.getByRole('button', { name: '停止', exact: true }).click()
+  await workspace.getByRole('button', { name: '启动', exact: true }).waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('.mcp-actions .primary')?.disabled)
+}

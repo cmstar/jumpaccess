@@ -18,7 +18,7 @@ import type {
   SFTPConflictChoice,
 } from './backend'
 
-export type DemoScenario = 'ready' | 'empty' | 'expired'
+export type DemoScenario = 'ready' | 'empty' | 'expired' | 'mcp-setup'
 
 // 每次创建均有独立的内存状态，不调用桌面绑定或正式服务。
 export function createPreviewBackend(options: { scenario?: DemoScenario } = {}): Backend {
@@ -224,10 +224,13 @@ export function createPreviewBackend(options: { scenario?: DemoScenario } = {}):
   if (options.scenario === 'expired') {
     state.profiles[0].auth = { loggedIn: true, expired: true, refreshAvailable: false, expiresAt: new Date(Date.now() - 3600_000).toISOString() }
   }
+  if (options.scenario === 'mcp-setup') {
+    state.workspace = { activeTabId: 'system:mcp', tabs: [{ id: 'system:mcp', type: 'mcp' }] }
+  }
 
   return {
     bootstrap: () => delay(clone(state)),
-    mcp: createMCPPreviewBackend(),
+    mcp: createMCPPreviewBackend({ configured: options.scenario !== 'empty' && options.scenario !== 'mcp-setup' }),
     listOrganizations: () => delay([{ id: 'org-dev', name: '研发中心' }, { id: 'org-platform', name: '工程效能' }, { id: 'org-dr', name: '灾备中心' }]),
     async listAssets(request) {
       const query = request.search.toLowerCase()
