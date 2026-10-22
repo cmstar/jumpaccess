@@ -26,6 +26,8 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 当前开发版同时提供 SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。CLI MCP 命令尚未实现。
 
+Agent 也可异步下载远端文件或目录：服务优先使用 SFTP，不可用时尝试 `sz`，自动压缩并在本地还原，支持持续追加的日志。下载使用独立连接，完成后返回运行 MCP 的电脑上的文件路径。目标需提供 POSIX/Python 3.7+，通过 `download_files` 发起，再用 `get_download` 等待结果；详见 [MCP 文件下载](docs/manual/agent-mcp.md#让-agent-下载文件)。
+
 GUI 默认不自动启动 MCP 服务；可在 MCP 配置页开启“随应用启动 MCP”，下次启动应用时在后台启动服务，退出应用会停止服务。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
 
 ## 界面预览

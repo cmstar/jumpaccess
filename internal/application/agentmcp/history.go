@@ -21,17 +21,20 @@ type History struct {
 	fifo, events, outputQueue list.List
 	sequence, evictedThrough  uint64
 	inputBytes, outputBytes   int
+	downloadBytes             int
 }
 
 type operationRecord struct {
-	id         string
-	active     bool
-	owner      *Engine
-	job        *execution
-	open       *openOperation
-	node       *list.Element
-	events     []*list.Element
-	inputBytes int
+	id            string
+	active        bool
+	owner         *Engine
+	job           *execution
+	open          *openOperation
+	download      *download
+	node          *list.Element
+	events        []*list.Element
+	inputBytes    int
+	downloadBytes int
 }
 
 type LogLine struct {
@@ -107,7 +110,11 @@ func (h *History) removeLocked(r *operationRecord) {
 		delete(r.owner.opens, r.id)
 		r.owner.openHistory = slices.DeleteFunc(r.owner.openHistory, func(op *openOperation) bool { return op == r.open })
 	}
+	if r.download != nil && r.owner != nil {
+		delete(r.owner.downloads, r.id)
+	}
 	h.inputBytes -= r.inputBytes
+	h.downloadBytes -= r.downloadBytes
 	h.fifo.Remove(r.node)
 	delete(h.records, r.id)
 	r.events = nil

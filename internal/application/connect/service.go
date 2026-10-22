@@ -18,6 +18,7 @@ var (
 	ErrAccountNotFound               = errors.New("account not found")
 	ErrAccountAmbiguous              = errors.New("account is ambiguous")
 	ErrInteractiveCredentialRequired = errors.New("interactive account credential is required")
+	ErrProtocolNotPermitted          = errors.New("protocol not permitted")
 )
 
 type ConfigLoader interface {
@@ -95,7 +96,7 @@ func (s Service) Prepare(ctx context.Context, options Options) (Prepared, error)
 		return Prepared{}, err
 	}
 	if !supportsProtocol(asset.Protocols, protocol) {
-		return Prepared{}, fmt.Errorf("asset %q does not permit %s", asset.Name, strings.ToUpper(protocol))
+		return Prepared{}, fmt.Errorf("%w: asset %q does not permit %s", ErrProtocolNotPermitted, asset.Name, strings.ToUpper(protocol))
 	}
 	account, err := resolveAccount(asset.Accounts, selection.Account, options)
 	if err != nil {

@@ -106,7 +106,7 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
   }
   function stopOrRestart(action: 'stop' | 'restart', confirmed = false) {
     if (!backend || busyRef.current) return
-    if (!confirmed && confirmServiceActions && (statusRef.current?.counts?.executions || 0) > 0) { setConfirmation(action); return }
+    if (!confirmed && confirmServiceActions && ((statusRef.current?.counts?.executions || 0) + (statusRef.current?.counts?.downloads || 0)) > 0) { setConfirmation(action); return }
     setServiceAction(action)
     void run(() => backend[action](), acceptStatus, 'service', true).finally(() => setServiceAction(null))
   }
@@ -122,7 +122,7 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
   const controlsLocked = busy || !status || external
 
   return <section className="settings-card mcp-settings" id="settings-mcp">
-    <PageHeading eyebrow="Agent 接入" title="MCP Server" icon={Plug} description="向 Agent 提供资源查询和 SSH 命令执行能力，并通过 Streamable HTTP 协议通信。"><span className="mcp-provider">{providerDescription}</span></PageHeading>
+    <PageHeading eyebrow="Agent 接入" title="MCP Server" icon={Plug} description="向 Agent 提供资源查询、SSH 命令执行和文件下载能力，并通过 Streamable HTTP 协议通信。"><span className="mcp-provider">{providerDescription}</span></PageHeading>
     {!backend ? <p className="setting-help">当前预览不提供 MCP 服务。</p> : <>
       <div className="mcp-service-controls">
         <div className="mcp-service-summary"><strong className={`mcp-state ${running || external ? 'running' : ''}`}><span />{stateLabel}{running && <small>{elapsed ? `已运行 ${elapsed} 分钟` : '刚刚启动'}</small>}</strong>
@@ -134,8 +134,8 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
           <button type="button" className={`button secondary small mcp-restart${status?.restartRequired && !dirty ? ' mcp-restart-pending' : ''}`} disabled={controlsLocked || !running || dirty || Boolean(statusError)} onClick={() => stopOrRestart('restart')}><RotateCw />{serviceAction === 'restart' ? '重启中…' : '重启'}</button>
         </div>
       </div>
-      {running && status?.counts && <div className="mcp-counts" aria-label="MCP 共享状态"><span>逻辑连接 {status.counts.connections}</span><span>SSH 连接 {status.counts.ssh_connections}</span><span>连接中 {status.counts.connecting}</span><span>执行中 {status.counts.executions}</span>{status.counts.unknown_executions > 0 && <span>结果未知 {status.counts.unknown_executions}</span>}</div>}
-      {serviceAction ? <p className="setting-help" role="status">正在请求停止并清理任务…</p> : running && (status?.counts?.executions || 0) > 0 && <p className="setting-help">停止或重启会请求停止当前共享任务；无法确认结果时，远端命令可能继续运行。</p>}
+      {running && status?.counts && <div className="mcp-counts" aria-label="MCP 共享状态"><span>逻辑连接 {status.counts.connections}</span><span>SSH 连接 {status.counts.ssh_connections}</span><span>连接中 {status.counts.connecting}</span><span>执行中 {status.counts.executions}</span><span>下载中 {status.counts.downloads || 0}</span>{(status.counts.download_transport_slots || 0) > 0 && <span>下载预留连接 {status.counts.download_transport_slots}</span>}{status.counts.unknown_executions > 0 && <span>结果未知 {status.counts.unknown_executions}</span>}{(status.counts.unknown_downloads || 0) > 0 && <span>下载结果未知 {status.counts.unknown_downloads}</span>}</div>}
+      {serviceAction ? <p className="setting-help" role="status">正在请求停止并清理任务…</p> : running && ((status?.counts?.executions || 0) + (status?.counts?.downloads || 0)) > 0 && <p className="setting-help">停止或重启会请求停止当前共享任务；无法确认结果时，远端命令可能继续运行。</p>}
       {status?.stopWarning && <p className="mcp-error" role="alert">{status.stopWarning}</p>}
       {external && <p className="setting-help">请在提供 MCP 服务的进程中停止或重启服务。</p>}
       {needsSetup && <p className="mcp-notice" role="status"><Info />尚未完成 MCP 配置。请先检查监听设置并生成或填写 Bearer Token，保存后即可启动服务。</p>}
@@ -168,7 +168,7 @@ export function MCPSettings({ backend, active, configurationVisible = true, chil
         </fieldset>
       </form>}
       </div>
-      {confirmation && <MCPConfirm title={confirmation === 'stop' ? '停止 MCP 服务？' : '重启 MCP 服务？'} description={`当前有 ${status?.counts?.executions || 0} 个任务正在执行。将请求停止任务并关闭连接；无法确认远端结束时保留结果未知警告。`} action={confirmation === 'stop' ? '停止服务' : '重启服务'} onCancel={() => setConfirmation(null)} onConfirm={() => { const action = confirmation; setConfirmation(null); stopOrRestart(action, true) }} />}
+      {confirmation && <MCPConfirm title={confirmation === 'stop' ? '停止 MCP 服务？' : '重启 MCP 服务？'} description={`当前有 ${(status?.counts?.executions || 0) + (status?.counts?.downloads || 0)} 个任务正在执行。将请求停止任务并关闭连接；无法确认远端结束时保留结果未知警告。`} action={confirmation === 'stop' ? '停止服务' : '重启服务'} onCancel={() => setConfirmation(null)} onConfirm={() => { const action = confirmation; setConfirmation(null); stopOrRestart(action, true) }} />}
     </>}
   </section>
 }

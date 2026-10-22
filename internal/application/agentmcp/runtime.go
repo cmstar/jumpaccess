@@ -233,7 +233,7 @@ func (r *Runtime) stopLocked(ctx context.Context) error {
 		cleanupError := run.engine.Shutdown(cleanup)
 		finish()
 		stats := run.engine.Stats()
-		if cleanupError != nil || stats.Executions > 0 || stats.UnknownExecutions > 0 {
+		if cleanupError != nil || stats.Executions > 0 || stats.UnknownExecutions > 0 || stats.Downloads > 0 || stats.UnknownDownloads > 0 {
 			r.stopWarning = "服务已停止跟踪部分任务，无法确认其远端结果；请核对服务器状态，勿直接重跑原命令。"
 		}
 	}

@@ -72,6 +72,12 @@ func queryConditions(input any) string {
 		return fmt.Sprintf("execution_id=%s  cursor=%d  max_bytes=%d  wait_ms=%d", logQuote(in.ExecutionID), in.Cursor, in.MaxBytes, in.WaitMS)
 	case agentmcp.ExecutionsPageInput:
 		return "connection_id=" + logQuote(in.ConnectionID) + "  status=" + logQuote(in.Status) + "  " + page(in.PageInput)
+	case agentmcp.GetDownloadInput:
+		return "download_id=" + logQuote(in.DownloadID)
+	case agentmcp.DownloadIDInput:
+		return "download_id=" + logQuote(in.DownloadID)
+	case agentmcp.DownloadsPageInput:
+		return "status=" + logQuote(in.Status) + "  " + page(in.PageInput)
 	}
 	return ""
 }
@@ -121,6 +127,10 @@ func callDetails(input, output any, started time.Time) agentmcp.CallDetails {
 		d.Summary = pageSummary(out)
 	case agentmcp.Page[agentmcp.ExecutionView]:
 		d.Summary = pageSummary(out)
+	case agentmcp.Page[agentmcp.DownloadView]:
+		d.Summary = pageSummary(out)
+	case agentmcp.DownloadView:
+		d.Summary = "download_id=" + logQuote(out.ID) + "  status=" + logQuote(out.Status) + "  phase=" + logQuote(out.Phase)
 	case agentmcp.AssetResult:
 		d.Summary = fmt.Sprintf("count=1  accounts=%d  protocols=%d", len(out.Accounts), len(out.Protocols))
 	case agentmcp.ConnectionView:

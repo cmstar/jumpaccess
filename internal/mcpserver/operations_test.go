@@ -46,7 +46,7 @@ func TestOperationDiscoveryEpochErrorsAndRuntimeOwnership(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 9 {
+	if err != nil || len(tools.Tools) != 13 {
 		t.Fatalf("tools=%+v %v", tools, err)
 	}
 	for _, tool := range tools.Tools {

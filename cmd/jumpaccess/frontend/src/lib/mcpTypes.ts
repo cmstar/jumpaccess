@@ -14,7 +14,7 @@ export interface MCPStatus {
   tokenConfigured: boolean
   restartRequired: boolean
   error: string
-  counts?: { connections: number; ssh_connections: number; connecting: number; executions: number; unknown_executions: number; draining: boolean }
+  counts?: { connections: number; ssh_connections: number; connecting: number; executions: number; unknown_executions: number; downloads?: number; unknown_downloads?: number; download_transport_slots?: number; draining: boolean }
   stopWarning?: string
 }
 

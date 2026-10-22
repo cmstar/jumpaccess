@@ -14,6 +14,18 @@ function backend(overrides: Partial<MCPBackend> = {}): MCPBackend {
 }
 function view(value: MCPBackend, active = true) { return <NotificationProvider><MCPSettings backend={value} active={active} /></NotificationProvider> }
 
+test('只有文件下载时也显示进度数量并在停止前确认', async () => {
+  const api = backend({ status: vi.fn().mockResolvedValue({ ...running, counts: { connections: 0, ssh_connections: 0, connecting: 0, executions: 0, downloads: 2, unknown_downloads: 1, download_transport_slots: 4, unknown_executions: 0, draining: false } }) })
+  render(<NotificationProvider><MCPSettings backend={api} active confirmServiceActions /></NotificationProvider>)
+  expect(await screen.findByLabelText('MCP 共享状态')).toHaveTextContent('下载中 2')
+  expect(screen.getByLabelText('MCP 共享状态')).toHaveTextContent('下载结果未知 1')
+  await userEvent.click(screen.getByRole('button', { name: '停止' }))
+  expect(api.stop).not.toHaveBeenCalled()
+  expect(screen.getByRole('dialog')).toHaveTextContent('2 个任务正在执行')
+  await userEvent.click(screen.getByRole('button', { name: '停止服务' }))
+  await waitFor(() => expect(api.stop).toHaveBeenCalledOnce())
+})
+
 test('显示共享连接和任务数量，停止期间说明清理，停止后保留未知结果提示', async () => {
   let finish!: (value: MCPStatus) => void
   const api = backend({ status: vi.fn().mockResolvedValue({ ...running, counts: { connections: 2, ssh_connections: 1, connecting: 1, executions: 3, unknown_executions: 0, draining: false } }), stop: vi.fn().mockImplementation(() => new Promise<MCPStatus>(resolve => { finish = resolve })) })
@@ -36,7 +48,7 @@ test('初始化不自动启动；Token 明文单栏，缺少 Token 时不能启�
   expect(screen.queryByText('必填')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '启动' })).toBeDisabled()
   expect(screen.queryByRole('button', { name: '保存 Token' })).not.toBeInTheDocument()
-  expect(screen.getByText('向 Agent 提供资源查询和 SSH 命令执行能力，并通过 Streamable HTTP 协议通信。')).toBeInTheDocument()
+  expect(screen.getByText('向 Agent 提供资源查询、SSH 命令执行和文件下载能力，并通过 Streamable HTTP 协议通信。')).toBeInTheDocument()
   expect(api.start).not.toHaveBeenCalled()
 })
 

@@ -267,6 +267,10 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 ## 当前验证入口
 
+MCP 下载的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 脚本和真实 lrzsz 互操作为显式集成测试；在 Windows 可设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp ./internal/zmodem`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 验证有限读取的追加、轮转、截断与链接处理；完整覆盖需在 POSIX 环境执行。未启用 WSL／Linux 或缺少 lrzsz 时的跳过，不代表真实网关验收通过。
+
+下载复用 Go SFTP 客户端与 ZMODEM 接收协议时，同时回归 `internal/sftpclient`、`internal/clitransfer`、`internal/sshclient`，以及 GUI 的 `zmodem.test.ts`、`zmodemProgress.test.ts`。MCP 状态与停止提示另回归 `MCPSettings.test.tsx`、`MCPWorkspace.test.tsx`。不要通过截图脚本代替行为验证。
+
 以下命令从仓库根目录开始执行；前端 npm 脚本通过 `--prefix` 定位到前端目录，Wails 命令在桌面入口目录执行：
 
 ```powershell

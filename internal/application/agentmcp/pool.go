@@ -82,6 +82,8 @@ type EngineOptions struct {
 	Resolve             func(context.Context, Target) (ResolvedTarget, error)
 	Validate            func(context.Context, ResolvedTarget) error
 	Dial                func(context.Context, ResolvedTarget) (*ssh.Client, error)
+	OpenSFTP            func(context.Context, ResolvedTarget) (DownloadSFTP, error)
+	Download            func(context.Context, ResolvedTarget, DownloadInput, func(DownloadProgress)) (DownloadResult, error)
 	Limits              Limits
 	Now                 func() time.Time
 	MaintenanceInterval time.Duration
@@ -89,21 +91,24 @@ type EngineOptions struct {
 
 // Engine 归属于一次服务实例；HTTP 请求结束不取消它拥有的工作。
 type Engine struct {
-	mu               *sync.Mutex
-	history          *History
-	opts             EngineOptions
-	ctx              context.Context
-	cancel           context.CancelFunc
-	requests         *requests
-	sequence         uint64
-	closing          bool
-	connections      map[string]*connection
-	closed           []*connection
-	opens            map[string]*openOperation
-	openHistory      []*openOperation
-	executions       map[string]*execution
-	executionHistory []*execution
-	pages            *Queries
+	mu                   *sync.Mutex
+	history              *History
+	opts                 EngineOptions
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	requests             *requests
+	sequence             uint64
+	closing              bool
+	connections          map[string]*connection
+	closed               []*connection
+	opens                map[string]*openOperation
+	openHistory          []*openOperation
+	executions           map[string]*execution
+	executionHistory     []*execution
+	pages                *Queries
+	downloads            map[string]*download
+	downloadTransports   int
+	downloadCapabilities map[ResolvedTarget]downloadCapability
 }
 
 type ConnectionView struct {
@@ -183,6 +188,8 @@ func NewEngine(opts EngineOptions) *Engine {
 	}
 	e := &Engine{mu: &opts.History.mu, history: opts.History, opts: opts, ctx: ctx, cancel: cancel, requests: newRequests(opts.Instance, opts.Limits.Requests, opts.Limits.ActiveRequests), connections: make(map[string]*connection), opens: make(map[string]*openOperation), executions: make(map[string]*execution)}
 	e.pages = NewQueries(opts.Instance, nil, nil, nil)
+	e.downloads = make(map[string]*download)
+	e.downloadCapabilities = make(map[ResolvedTarget]downloadCapability)
 	go func() {
 		timer := time.NewTicker(opts.MaintenanceInterval)
 		defer timer.Stop()
@@ -560,7 +567,7 @@ func (e *Engine) liveCount() int {
 	return n
 }
 func (e *Engine) transportCount() int {
-	n := 0
+	n := e.downloadTransports
 	for _, c := range e.connections {
 		if c.client != nil || c.dial != nil {
 			n++
@@ -606,6 +613,7 @@ func (e *Engine) closeLocked(c *connection, reason string) {
 }
 func (e *Engine) pruneLocked() {
 	e.pruneExecutionsLocked()
+	e.pruneDownloadsLocked()
 	now := e.opts.Now()
 	for len(e.closed) > 0 && (len(e.closed) > e.opts.Limits.Closed || now.Sub(*e.closed[0].view.ClosedAt) >= e.opts.Limits.HistoryTTL) {
 		c := e.closed[0]

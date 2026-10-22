@@ -63,6 +63,14 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	e.closing = true
 	jobs := make([]*execution, 0)
+	downloadJobs := make([]*download, 0)
+	for _, job := range e.downloads {
+		if !terminal(job.view.Status) {
+			job.view.Status = "cancelling"
+			job.cancel()
+			downloadJobs = append(downloadJobs, job)
+		}
+	}
 	for _, job := range e.executions {
 		if !terminal(job.view.Status) {
 			jobs = append(jobs, job)
@@ -71,6 +79,16 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	}
 	e.mu.Unlock()
 	var err error
+	for _, job := range downloadJobs {
+		select {
+		case <-job.done:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		if err != nil {
+			break
+		}
+	}
 	for _, job := range jobs {
 		select {
 		case <-job.done:
@@ -82,6 +100,18 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 		}
 	}
 	e.mu.Lock()
+	for _, job := range downloadJobs {
+		if !terminal(job.view.Status) {
+			if job.view.Directory != "" {
+				job.view.Warnings = append(job.view.Warnings, "本地文件已完成；服务停止前未能确认远端临时文件清理结果")
+				e.finishDownloadLocked(job, "completed")
+				continue
+			}
+			job.view.Error = fault("REMOTE_STATE_UNKNOWN", "服务停止，未能确认远端下载准备进程已结束")
+			job.view.RemoteMayContinue = true
+			e.finishDownloadLocked(job, "unknown")
+		}
+	}
 	for _, job := range jobs {
 		if !terminal(job.view.Status) {
 			e.cancelLocked(job, true)

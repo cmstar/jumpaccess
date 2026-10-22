@@ -10,6 +10,10 @@ GUI 只保留有界显示投影，日志内容不含 stdout/stderr；颜色直�
 
 ## 当前状态
 
+MCP 下载与普通命令共用 `agentmcp.Engine` 的去重、生命周期和 `History`，但每个下载预留两条专用连接名额：SSH 用于准备、压缩、清理及 ZMODEM，SFTP 使用其自身的协议授权。已有 connection ID 只绑定目标身份，不借用活动命令通道。传输分别复用 `internal/sftpclient` 与 `internal/zmodem.Receive`，没有修改 CLI／GUI 交互式传输协议实现。
+
+下载使用通过 SSH 临时执行的 POSIX/Python 3.7+ 程序完成有限长度读取和流式 gzip／tar.gz，不安装远端服务。下载不计算文件内容 SHA-256，也不为哈希额外扫描暂存包；检查传输包与还原文件的准确长度、归档清单及格式自带校验，MCP 可选 `sha256` 字段不填充。监督进程将二进制输入送往 `sz`，以 SSH 写方向 EOF 请求停止，以独立 stderr 控制结果确认子进程已结束；确认失败返回未知。SFTP 暂存位置通过随机文件跨协议比对，候选配置不能替代验证。能力缓存为实例内最多 256 项、10 分钟。单项清单最多 1000 项，宿主下载元数据及活动预留共用 64 MiB 上限。下载后通过目录句柄约束本地写入，校验归档和各文件后才发布结果。设计理由见 [MCP 下载隔离与有限捕获](decisions/20261021-mcp-download-isolation.md)、[下载内容校验与扫描开销](decisions/20261021-mcp-download-validation.md)。
+
 MCP 默认远端时限模式的非交互命令在各自的执行通道内携带停止控制，业务命令的标准输入保持关闭。共享核心先验证控制能经实际 SSH 路径送达目标，再开放该模式；取消、确认期限和清理均归属于具体任务，不依赖网关转发 SSH 信号，也不影响后续复用连接的任务。
 
 JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。

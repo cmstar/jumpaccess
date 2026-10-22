@@ -3,6 +3,7 @@ package agentmcp
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/cmstar/jumpaccess/internal/application/connect"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
+	"github.com/cmstar/jumpaccess/internal/sftpclient"
 	"github.com/cmstar/jumpaccess/internal/sshhostkey"
 	"github.com/cmstar/jumpaccess/internal/sshupstream"
 	"github.com/cmstar/jumpaccess/internal/target"
@@ -124,23 +126,8 @@ func (b boundTokens) EnsureFresh(ctx context.Context, profile string) (credentia
 }
 
 func (c Connector) Dial(ctx context.Context, r ResolvedTarget) (*ssh.Client, error) {
-	if err := c.Validate(ctx, r); err != nil {
-		return nil, err
-	}
-	// 固定配置副本中不含 Alias，防止恰好同名的 Alias 覆盖已解析的资产 ID。
-	cfg := config.Default()
-	cfg.Profiles[r.Profile] = config.Profile{URL: r.Site, Organization: r.Organization}
-	service := c.Connect
-	service.Config = frozenConfig{cfg}
-	service.Tokens = boundTokens{c.Auth, r}
-	prepared, err := service.Prepare(ctx, connect.Options{Target: target.Input{Profile: r.Profile, Organization: r.Organization, Target: r.AssetID, Account: r.AccountID}, Protocol: "ssh", NonInteractive: true})
+	prepared, err := c.prepareProtocol(ctx, r, "ssh")
 	if err != nil {
-		return nil, asFault(err, "CONNECT_FAILED", "无法准备 SSH 连接，请检查目标权限和登录")
-	}
-	if prepared.Asset.ID != r.AssetID || prepared.Account.ID != r.AccountID {
-		return nil, fault("IDENTITY_CHANGED", "连接准备返回了不同目标或账号")
-	}
-	if err := c.Validate(ctx, r); err != nil {
 		return nil, err
 	}
 	callback, err := (sshhostkey.Store{Path: c.KnownHosts}).Callback(ctx, false)
@@ -152,4 +139,55 @@ func (c Connector) Dial(ctx context.Context, r ResolvedTarget) (*ssh.Client, err
 		return nil, fault("CONNECT_FAILED", "SSH 建连失败；请检查网络及主机信任，未知主机需先通过人用入口确认")
 	}
 	return client, nil
+}
+
+func (c Connector) prepareProtocol(ctx context.Context, r ResolvedTarget, protocol string) (connect.Prepared, error) {
+	if err := c.Validate(ctx, r); err != nil {
+		return connect.Prepared{}, err
+	}
+	// 固定配置副本中不含 Alias，防止恰好同名的 Alias 覆盖已解析的资产 ID。
+	cfg := config.Default()
+	cfg.Profiles[r.Profile] = config.Profile{URL: r.Site, Organization: r.Organization}
+	service := c.Connect
+	service.Config = frozenConfig{cfg}
+	service.Tokens = boundTokens{c.Auth, r}
+	prepared, err := service.Prepare(ctx, connect.Options{Target: target.Input{Profile: r.Profile, Organization: r.Organization, Target: r.AssetID, Account: r.AccountID}, Protocol: protocol, NonInteractive: true})
+	if err != nil {
+		if errors.Is(err, auth.ErrLoginRequired) {
+			return connect.Prepared{}, asFault(queryError(err), "AUTH_REQUIRED", "请重新登录")
+		}
+		if protocol == "sftp" && errors.Is(err, connect.ErrProtocolNotPermitted) {
+			return connect.Prepared{}, fault("SFTP_NOT_PERMITTED", "目标未授权 SFTP 协议")
+		}
+		return connect.Prepared{}, asFault(err, "CONNECT_FAILED", "无法准备连接，请检查目标协议权限和登录")
+	}
+	if prepared.Asset.ID != r.AssetID || prepared.Account.ID != r.AccountID {
+		return connect.Prepared{}, fault("IDENTITY_CHANGED", "连接准备返回了不同目标或账号")
+	}
+	if err := c.Validate(ctx, r); err != nil {
+		return connect.Prepared{}, err
+	}
+	return prepared, nil
+}
+
+func (c Connector) OpenDownloadSFTP(ctx context.Context, r ResolvedTarget) (DownloadSFTP, error) {
+	prepared, err := c.prepareProtocol(ctx, r, "sftp")
+	if err != nil {
+		return DownloadSFTP{}, err
+	}
+	callback, err := (sshhostkey.Store{Path: c.KnownHosts}).Callback(ctx, false)
+	if err != nil {
+		return DownloadSFTP{}, fault("HOST_KEY_UNAVAILABLE", "无法读取主机信任记录")
+	}
+	var root *string
+	for _, protocol := range prepared.Asset.Protocols {
+		if protocol.Name == "sftp" {
+			root = protocol.Settings.SFTPHome
+		}
+	}
+	client, err := sftpclient.Open(ctx, sftpclient.OpenOptions{Connection: prepared.Connection, HostKeyCallback: callback, Timeout: c.Timeout, RootPath: root, AccountUsername: prepared.Account.Username})
+	if err != nil {
+		return DownloadSFTP{}, fault("SFTP_UNAVAILABLE", "SFTP 连接不可用")
+	}
+	return DownloadSFTP{Client: client, Root: root, Account: prepared.Account.Username}, nil
 }

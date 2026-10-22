@@ -21,7 +21,7 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 独立工作区、连接和文本日志已接入共享操作仓库，支持可选后台自动启动；CLI MCP 待实现 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 工作区、共享任务、可选后台自动启动和异步文件下载已接入；下载自动适配 SFTP／ZMODEM 并压缩还原；CLI MCP 待实现 |
 
 ## 历史版本索引
 
