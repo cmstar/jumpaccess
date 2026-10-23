@@ -106,6 +106,7 @@ docs/               # 长期项目知识
 | [development.md](development.md) | 工程布局、配置、安全、测试、构建和发布约束；工具链、命令或开发流程变化时更新 |
 | [cli.md](cli.md) | 当前 CLI 对外契约；命令、参数、输出或兼容性变化时同步更新，继续保留现有路径 |
 | [standards/README.md](standards/README.md) | 专项规范用途、维护约定及规范索引；新增或修改专项约束时维护 |
+| [releases/README.md](releases/README.md) | 按版本保存的用户可读发布说明；正文随对应版本提交，编写与发布规则见[版本发布规范](standards/release.md) |
 | [decisions/README.md](decisions/README.md) | 决策的历史依据与当前、历史两类索引；重要取舍或有效范围变化时维护状态与后续说明 |
 | [specs/README.md](specs/README.md) | 当前需求与设计、历史版本两类索引；具体方案确定、实施或替代时更新状态和引用 |
 | [runbooks/README.md](runbooks/README.md) | 操作手册与验证状态索引；流程需要独立交接，或命令、环境、权限变化时维护 |
@@ -251,17 +252,19 @@ macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scrip
 
 ## 自动发布
 
-`.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步拒绝不符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的标签。标签指向的提交必须已经包含该工作流。发布顺序为：
+`.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步校验版本格式。`vX.Y.Z` 为正式版；带合法非正式尾缀的 `vX.Y.Z-...` 均为非正式版，不限于 `pre`，也包括 `alpha`、`beta`、`rc`、`nightly` 和自定义尾缀；当前不支持 `+build` 元数据。标签指向的提交必须已经包含该工作流。版本排序、发布说明和 Agent 发布操作的完整规则见[版本发布规范](standards/release.md)。发布顺序为：
 
 1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64 和 macOS arm64 的原生测试和严格构建。
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
-5. 汇总五个归档、生成 `checksums.txt`，根据上一个版本标签到当前标签之间的 Conventional Commits 生成分类 Release Notes，最后创建 GitHub Release。Release 标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和预发布后缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
+5. 汇总五个归档、生成 `checksums.txt`，读取标签对应提交中的 `docs/releases/<tag>.md` 作为 Release Notes 正文，再附加下载说明和完整变更链接；文件不存在时给出警告，并回退到 Conventional Commits 分类说明，文件存在但为空白时失败。最后创建 GitHub Release；标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和非正式尾缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
 
 源码中的 CLI/GUI `version` 保持为 `dev`，`wails.json` 的 `info.productVersion` 只作为开发占位值。发布工作流从标签移除前导 `v`，通过 `-ldflags "-X main.version=<version>"` 注入程序版本，并调用 `scripts/set-wails-version.mjs` 在 runner 临时工作副本中写入仅含 `X.Y.Z` 的平台元数据版本。该临时改动不会提交或推回仓库。
 
-Release Notes 由 `scripts/release-notes.mjs` 生成，识别 `feat`、`fix`、`perf`、`refactor`、`docs`、`build`、`ci`、`test`、`chore` 以及 `!`/`BREAKING CHANGE`。提交说明应继续使用清晰的 Conventional Commit 格式；首个版本链接到完整提交历史，后续版本链接到 GitHub 标签比较页。
+Release Notes 由 `scripts/release-notes.mjs` 统一生成。本机预览与工作流使用相同基准规则：候选版本来自成功发布、非草稿的 GitHub Releases，且对应标签必须在目标提交的历史中可达、语义版本低于目标。正式版选最高的较低正式版；非正式版先选相同 `X.Y.Z` 中最高的较低非正式版，没有时选最高的较低正式版；无基准时使用完整历史。不能仅按 Git 标签距离或发布时间选择基准，也不能把发布失败留下的标签当作已发布版本。
+
+逐版本正文由维护者或 Agent 根据真实差异归纳用户可见的最终变化，不逐条复制开发提交；详见[发布说明目录](releases/README.md)。Conventional Commits 仅作缺少正文时的回退，仍识别 `feat`、`fix`、`perf`、`refactor`、`docs`、`build`、`ci`、`test`、`chore` 以及 `!`/`BREAKING CHANGE`，提交说明继续沿用现有格式。当前机制不在 Actions 中调用模型；Agent 在推送标签前完成正文并纳入标签对应提交，Actions 负责验证、构建和发布。
 
 GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装 GitHub CLI。工作流只给最终 `publish` Job 配置 `contents: write`，并使用 GitHub 自动生成的短期 `GITHUB_TOKEN`。通常不需要保存额外 Secret；如果仓库或 Organization 策略禁止 Actions 写入内容，需要在 GitHub 的 `Settings → Actions → General → Workflow permissions` 中允许工作流写入。代码签名与 macOS notarization 尚未配置，后续启用时应通过 GitHub Actions Secrets 提供证书和凭据，不能提交到仓库。
 

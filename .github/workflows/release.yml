@@ -31,30 +31,34 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 验证并解析版本
-        id: version
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
-            throw "发布标签必须符合 vX.Y.Z 或 vX.Y.Z-prerelease：$env:GITHUB_REF_NAME"
-          }
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          $metadataVersion = $version.Split('-')[0]
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "metadata_version=$metadataVersion" >> $env:GITHUB_OUTPUT
-
-      - name: 配置 Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
       - name: 配置 Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: cmd/jumpaccess/frontend/package-lock.json
+
+      - name: 验证并解析版本
+        id: version
+        shell: bash
+        run: |
+          node --input-type=module - <<'NODE'
+          import { appendFileSync } from 'node:fs'
+          import { parseVersion } from './scripts/release-notes.mjs'
+          const tag = process.env.GITHUB_REF_NAME
+          const parsed = parseVersion(tag)
+          if (!parsed) {
+            throw new Error(`发布标签必须符合 vX.Y.Z 或 vX.Y.Z-prerelease：${tag}`)
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT,
+            `version=${tag.slice(1)}\nmetadata_version=${parsed.core.join('.')}\n`)
+          NODE
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: 运行 Go 测试
         run: go test ./...
@@ -368,11 +372,17 @@ jobs:
           )
 
       - name: 生成 Release Notes
-        run: >-
-          node scripts/release-notes.mjs
-          --tag "$GITHUB_REF_NAME"
-          --repository "$GITHUB_REPOSITORY"
-          --output release-notes.md
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/release-history.json"
+          node scripts/release-notes.mjs \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --releases-file "$RUNNER_TEMP/release-history.json" \
+            --output release-notes.md
 
       - name: 发布 Release
         shell: bash
