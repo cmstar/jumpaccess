@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
+	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -23,6 +24,7 @@ type Options struct {
 	Token    string
 	Queries  *agentmcp.Queries
 	Engine   *agentmcp.Engine
+	Cache    *downloadcache.Store
 }
 
 type ToolError struct {
@@ -70,7 +72,10 @@ func NewHandler(options Options) http.Handler {
 			data.Counts = &counts
 			data.Limits = options.Engine.Limits()
 			data.RequestEpoch = options.Engine.RequestEpoch()
-			data.Capabilities = append(data.Capabilities, "ssh_connections", "command_execution", "remote_deadline", "execution_control")
+			data.Capabilities = append(data.Capabilities, "ssh_connections", "command_execution", "remote_deadline", "execution_control", "file_downloads")
+			if options.Cache != nil {
+				data.Capabilities = append(data.Capabilities, "download_links")
+			}
 			if counts.Draining {
 				data.State = "draining"
 			}
@@ -82,12 +87,12 @@ func NewHandler(options Options) http.Handler {
 		registerQueries(server, options.Instance.ID, options.Queries, options.Engine)
 	}
 	if options.Engine != nil {
-		registerOperations(server, options.Instance.ID, options.Engine)
+		registerOperations(server, options.Instance.ID, options.Engine, options.Cache)
 	}
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20})
 	protected := protect(handler, options)
 	if options.Engine != nil {
-		return &managedHandler{Handler: protected, engine: options.Engine}
+		return &managedHandler{Handler: protected, engine: options.Engine, cache: options.Cache}
 	}
 	return protected
 }
@@ -95,14 +100,21 @@ func NewHandler(options Options) http.Handler {
 func protect(next http.Handler, options Options) http.Handler {
 	expected := sha256.Sum256([]byte(options.Token))
 	slots := make(chan struct{}, 64)
+	files := downloadHandler(options.Cache, downloadHTTPTimeouts{Idle: 60 * time.Second, Total: 15 * time.Minute})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if r.URL.Path != "/mcp" {
+		isDownload := strings.HasPrefix(r.URL.Path, downloadcache.RoutePrefix)
+		if r.URL.Path != "/mcp" && !isDownload {
 			http.NotFound(w, r)
 			return
 		}
 		if !validHost(r, options.Config) || !validOrigin(r) {
 			http.Error(w, "MCP 请求来源不被允许", http.StatusForbidden)
+			return
+		}
+		if isDownload {
+			// 领取签名只授权单个文件；不使用完整 MCP Token 或查询的 30 秒时限。
+			files.ServeHTTP(w, r)
 			return
 		}
 		auth := strings.Fields(r.Header.Get("Authorization"))
@@ -125,6 +137,11 @@ func protect(next http.Handler, options Options) http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		ctx = context.WithValue(ctx, downloadBaseKey{}, scheme+"://"+r.Host)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -135,6 +152,9 @@ func validHost(r *http.Request, cfg config.MCP) bool {
 		return false
 	}
 	ip := net.ParseIP(host)
+	if ip != nil && ip.IsUnspecified() {
+		return false
+	}
 	if !cfg.AllowLAN {
 		return strings.EqualFold(host, "localhost") || ip.IsLoopback()
 	}

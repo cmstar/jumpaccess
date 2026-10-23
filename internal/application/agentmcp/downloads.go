@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
 )
 
 type DownloadInput struct {
@@ -49,10 +51,32 @@ type DownloadProgress struct {
 	Published        *DownloadResult `json:"-"`
 }
 type DownloadResult struct {
+	Delivery        string           `json:"delivery,omitempty"`
+	Link            *DownloadLink    `json:"link,omitempty"`
+	Instructions    string           `json:"instructions,omitempty"`
+	RenamedEntries  []DownloadRename `json:"renamed_entries,omitempty"`
 	Directory       string           `json:"directory,omitempty"`
 	Files           []DownloadedFile `json:"files,omitempty"`
 	Warnings        []string         `json:"warnings,omitempty"`
 	RemoteArtifacts []string         `json:"remote_artifacts,omitempty"`
+}
+
+// ArchivePath 是准备包中的相对位置；只有同名独立来源被改名时返回对应关系。
+type DownloadRename struct {
+	Source      string `json:"source"`
+	ArchivePath string `json:"archive_path"`
+}
+type DownloadLink struct {
+	URL                string                 `json:"url,omitempty"`
+	FileName           string                 `json:"file_name"`
+	Format             string                 `json:"format"`
+	Size               int64                  `json:"size"`
+	ExpiresAt          time.Time              `json:"expires_at"`
+	RequiresExtraction bool                   `json:"requires_extraction"`
+	RestoreName        string                 `json:"restore_name"`
+	Artifact           downloadcache.Artifact `json:"-"`
+	Available          bool                   `json:"available"`
+	UnavailableReason  string                 `json:"unavailable_reason,omitempty"`
 }
 type DownloadView struct {
 	ID     string         `json:"download_id"`
@@ -75,6 +99,10 @@ type download struct {
 }
 
 func normalizeDownload(in DownloadInput) (DownloadInput, int, error) {
+	return normalizeDownloadForMode(in, "local")
+}
+
+func normalizeDownloadForMode(in DownloadInput, mode string) (DownloadInput, int, error) {
 	wait := 5000
 	if in.WaitMS != nil {
 		wait = *in.WaitMS
@@ -103,16 +131,18 @@ func normalizeDownload(in DownloadInput) (DownloadInput, int, error) {
 	sort.Strings(in.RemotePaths)
 	in.RemotePaths = slices.Compact(in.RemotePaths)
 	if in.LocalDirectory != "" {
-		if !filepath.IsAbs(in.LocalDirectory) || strings.ContainsRune(in.LocalDirectory, 0) || len(in.LocalDirectory) > 4096 {
+		if (mode != "link" && !filepath.IsAbs(in.LocalDirectory)) || strings.ContainsRune(in.LocalDirectory, 0) || !utf8.ValidString(in.LocalDirectory) || len(in.LocalDirectory) > 4096 {
 			return in, wait, fault("INVALID_ARGUMENT", "本地保存目录须为绝对路径")
 		}
-		in.LocalDirectory = filepath.Clean(in.LocalDirectory)
+		if mode != "link" {
+			in.LocalDirectory = filepath.Clean(in.LocalDirectory)
+		}
 	}
 	return in, wait, nil
 }
 
 func (e *Engine) DownloadFiles(ctx context.Context, in DownloadInput) (DownloadView, error) {
-	normalized, wait, err := normalizeDownload(in)
+	normalized, wait, err := normalizeDownloadForMode(in, e.opts.DeliveryMode)
 	if err != nil {
 		return DownloadView{}, err
 	}
@@ -280,7 +310,7 @@ func (e *Engine) runDownload(ctx context.Context, job *download, in DownloadInpu
 }
 func (e *Engine) finishDownloadLocked(job *download, status string) {
 	job.view.Status = status
-	job.view.FilesReady = status == "completed"
+	job.view.FilesReady = status == "completed" && job.view.Delivery != "link"
 	if status == "completed" {
 		job.view.Phase = "completed"
 	}
@@ -322,6 +352,11 @@ func cloneDownload(v DownloadView) DownloadView {
 	v.Files = slices.Clone(v.Files)
 	v.Warnings = slices.Clone(v.Warnings)
 	v.RemoteArtifacts = slices.Clone(v.RemoteArtifacts)
+	v.RenamedEntries = slices.Clone(v.RenamedEntries)
+	if v.Link != nil {
+		x := *v.Link
+		v.Link = &x
+	}
 	if v.Error != nil {
 		x := *v.Error
 		v.Error = &x

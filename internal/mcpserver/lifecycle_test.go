@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"net/http"
@@ -230,6 +231,73 @@ func TestLANHTTPStillRequiresTokenAndChecksOrigin(t *testing.T) {
 			defer response.Body.Close()
 			if response.StatusCode != tc.want {
 				t.Fatalf("HTTP 状态 = %d, want %d", response.StatusCode, tc.want)
+			}
+		})
+	}
+}
+
+type startupFailureHandler struct{ error }
+
+func (h startupFailureHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}
+func (h startupFailureHandler) StartupError() error                          { return h.error }
+
+func TestFactoryStartupFailureReleasesListenerAndInstanceLock(t *testing.T) {
+	_, settings, _ := runtimeFixture(t)
+	want := errors.New("领取缓存初始化失败")
+	r := agentmcp.NewRuntime(settings, "test", func(agentmcp.Instance, config.MCP, string) http.Handler { return startupFailureHandler{want} })
+	if _, err := r.Start(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("startup=%v", err)
+	}
+	status, err := r.Status(context.Background())
+	if err != nil || status.State != "failed" || status.Instance != nil {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
+	unlock, err := settings.AcquireInstance(context.Background())
+	if err != nil {
+		t.Fatalf("startup failure retained instance lock: %v", err)
+	}
+	unlock()
+	cfg, _ := settings.Config()
+	listener, err := net.Listen("tcp", cfg.Address())
+	if err != nil {
+		t.Fatalf("startup failure retained listener: %v", err)
+	}
+	listener.Close()
+}
+
+type shutdownWarningHandler struct {
+	err   error
+	stats agentmcp.EngineStats
+}
+
+func (h shutdownWarningHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}
+func (h shutdownWarningHandler) Shutdown(context.Context) error               { return h.err }
+func (h shutdownWarningHandler) Stats() agentmcp.EngineStats                  { return h.stats }
+
+func TestStopDistinguishesCleanupFailureFromUnknownRemoteWork(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler shutdownWarningHandler
+		remote  bool
+	}{
+		{name: "cache cleanup", handler: shutdownWarningHandler{err: errors.New("cache cleanup")}},
+		{name: "unknown remote", handler: shutdownWarningHandler{stats: agentmcp.EngineStats{UnknownDownloads: 1}}, remote: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, settings, _ := runtimeFixture(t)
+			r := agentmcp.NewRuntime(settings, "test", func(agentmcp.Instance, config.MCP, string) http.Handler { return tc.handler })
+			if _, err := r.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.Stop(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			status, err := r.Status(context.Background())
+			if err != nil || status.StopWarning == "" {
+				t.Fatalf("missing cleanup warning: %+v %v", status, err)
+			}
+			if strings.Contains(status.StopWarning, "远端") != tc.remote {
+				t.Fatalf("misleading cleanup warning: %s", status.StopWarning)
 			}
 		})
 	}

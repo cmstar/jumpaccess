@@ -56,18 +56,69 @@ func restoreDownload(ctx context.Context, filename, destination string, a remote
 	return restoreDownloadInto(ctx, file, root, a)
 }
 
+// 链接交付也验证清单；此检查不读取或完整解压传输文件。
+func validateDownloadManifest(a remoteArtifact) error {
+	if len(a.Entries) == 0 || len(a.Entries) > 1001 || a.Size < 0 {
+		return fault("INVALID_MANIFEST", "下载清单无效")
+	}
+	if a.Size > 1<<30 {
+		return fault("TRANSFER_TOO_LARGE", "传输文件超过 1 GiB")
+	}
+	switch a.Format {
+	case "raw", "gzip":
+		if len(a.Entries) != 1 || a.Entries[0].Directory || strings.Contains(a.Entries[0].Name, "/") || a.Wrapped {
+			return fault("INVALID_MANIFEST", "单文件下载清单无效")
+		}
+	case "tar.gz":
+	default:
+		return fault("COMPRESSION_UNAVAILABLE", "不支持的下载压缩格式")
+	}
+	if a.RootName != "" && (!validDownloadName(a.RootName) || strings.Contains(a.RootName, "/")) {
+		return fault("UNSAFE_ARCHIVE", "下载顶层名称无效")
+	}
+	if a.SuggestedName != "" && (!validDownloadName(a.SuggestedName) || strings.Contains(a.SuggestedName, "/")) {
+		return fault("UNSAFE_ARCHIVE", "建议保存名称无效")
+	}
+	seenNames := map[string]bool{}
+	names := map[string]string{}
+	directories := map[string]bool{}
+	for _, entry := range a.Entries {
+		if !validDownloadName(entry.Name) || seenNames[strings.ToLower(entry.Name)] || entry.Size < 0 || entry.Size > 1<<53 || (entry.Directory && entry.Size != 0) {
+			return fault("UNSAFE_ARCHIVE", "清单包含不支持、冲突或不安全的文件名")
+		}
+		if a.RootName != "" && strings.SplitN(entry.Name, "/", 2)[0] != a.RootName {
+			return fault("INVALID_MANIFEST", "下载内容与顶层名称不符")
+		}
+		seenNames[strings.ToLower(entry.Name)] = true
+		directories[entry.Name] = entry.Directory
+		for name := entry.Name; name != "."; name = path.Dir(name) {
+			key := strings.ToLower(name)
+			if previous, ok := names[key]; ok && previous != name {
+				return fault("UNSAFE_ARCHIVE", "清单路径存在大小写冲突")
+			}
+			names[key] = name
+		}
+	}
+	for _, entry := range a.Entries {
+		for parent := path.Dir(entry.Name); parent != "."; parent = path.Dir(parent) {
+			if directory, exists := directories[parent]; exists && !directory {
+				return fault("UNSAFE_ARCHIVE", "清单文件被同时用作父目录")
+			}
+		}
+	}
+	if a.Wrapped && (a.RootName == "" || !directories[a.RootName]) {
+		return fault("INVALID_MANIFEST", "多来源下载缺少结果目录")
+	}
+	return nil
+}
+
 func restoreDownloadInto(ctx context.Context, file *os.File, root *os.Root, a remoteArtifact) ([]DownloadedFile, error) {
-	if len(a.Entries) == 0 || len(a.Entries) > 1000 || a.Size < 0 || a.Size > 1<<53 {
-		return nil, fault("INVALID_MANIFEST", "下载清单无效")
+	if err := validateDownloadManifest(a); err != nil {
+		return nil, err
 	}
 	entries := make(map[string]remoteEntry, len(a.Entries))
-	seenNames := map[string]bool{}
 	for _, entry := range a.Entries {
-		if !validDownloadName(entry.Name) || seenNames[strings.ToLower(entry.Name)] || entry.Size < 0 || entry.Size > 1<<53 {
-			return nil, fault("UNSAFE_ARCHIVE", "清单包含不支持、冲突或不安全的文件名")
-		}
 		entries[entry.Name] = entry
-		seenNames[strings.ToLower(entry.Name)] = true
 	}
 	// 从同一文件句柄核对长度；内容直接进入还原过程，不预扫描暂存包。
 	info, err := file.Stat()
@@ -82,6 +133,9 @@ func restoreDownloadInto(ctx context.Context, file *os.File, root *os.Root, a re
 	}
 	files := []DownloadedFile{}
 	write := func(entry remoteEntry, reader io.Reader) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		name := filepath.FromSlash(entry.Name)
 		if entry.Directory {
 			return root.MkdirAll(name, 0700)
@@ -146,7 +200,7 @@ func restoreDownloadInto(ctx context.Context, file *os.File, root *os.Root, a re
 			}
 			seen[name] = true
 			if entry.Directory {
-				if header.Typeflag != tar.TypeDir {
+				if header.Typeflag != tar.TypeDir || header.Size != 0 {
 					return nil, fault("UNSAFE_ARCHIVE", "归档目录类型无效")
 				}
 			} else if (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) || header.Size != entry.Size {

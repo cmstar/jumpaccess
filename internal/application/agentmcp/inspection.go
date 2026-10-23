@@ -55,6 +55,7 @@ func (e *Engine) Limits() map[string]int64 {
 	return map[string]int64{
 		"connections": int64(l.Connections), "ssh_connections": int64(l.Transports), "operation_records": int64(e.history.limit), "execution_records": int64(l.Executions), "request_history": int64(l.Requests), "active_requests": int64(l.ActiveRequests), "input_bytes": 16 << 20, "output_bytes": int64(l.OutputBytes), "total_output_bytes": int64(l.TotalOutputBytes), "ssh_idle_ms": l.IdleTimeout.Milliseconds(), "history_ttl_ms": l.HistoryTTL.Milliseconds(), "default_timeout_ms": 300000, "max_timeout_ms": 3600000, "max_wait_ms": 5000,
 		"active_downloads": 4, "download_paths": 100, "download_entries": 1000, "download_metadata_bytes": 64 << 20, "download_default_timeout_ms": 1800000, "download_max_timeout_ms": 3600000, "download_start_max_wait_ms": 5000, "download_query_default_wait_ms": 20000, "download_query_max_wait_ms": 30000, "download_capability_cache_entries": 256, "download_capability_cache_ttl_ms": 600000,
+		"download_transport_max_bytes": 1 << 30, "download_cache_bytes": 8 << 30, "download_cache_files": 50, "download_link_ttl_ms": 1800000, "download_http_concurrency": 4, "download_http_per_file": 2, "download_http_idle_timeout_ms": 60000, "download_http_total_timeout_ms": 900000,
 	}
 }
 func (e *Engine) ConnectionsPage(ctx context.Context, in PageInput) (Page[ConnectionView], error) {

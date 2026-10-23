@@ -153,3 +153,25 @@ func TestRestoreDownloadWithoutDigestChecksLengthsAndGzipTrailer(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDownloadManifestWithoutReadingArtifact(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		a     remoteArtifact
+		valid bool
+	}{
+		{"valid", remoteArtifact{Format: "tar.gz", Size: 100, RootName: "logs", SuggestedName: "logs.tar.gz", Entries: []remoteEntry{{Name: "logs", Directory: true}, {Name: "logs/app.log", Size: 1 << 40}}}, true},
+		{"oversized transmission", remoteArtifact{Format: "raw", Size: 1<<30 + 1, Entries: []remoteEntry{{Name: "log"}}}, false},
+		{"file parent", remoteArtifact{Format: "tar.gz", Size: 100, Entries: []remoteEntry{{Name: "logs"}, {Name: "logs/app.log"}}}, false},
+		{"case alias parent", remoteArtifact{Format: "tar.gz", Size: 100, Entries: []remoteEntry{{Name: "Logs/a"}, {Name: "logs/b"}}}, false},
+		{"wrong root", remoteArtifact{Format: "gzip", Size: 100, RootName: "wrong", Entries: []remoteEntry{{Name: "app.log"}}}, false},
+		{"unsafe suggested name", remoteArtifact{Format: "gzip", Size: 100, SuggestedName: "../out.gz", Entries: []remoteEntry{{Name: "app.log"}}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDownloadManifest(tc.a)
+			if (err == nil) != tc.valid {
+				t.Fatalf("manifest valid=%v, error=%v", tc.valid, err)
+			}
+		})
+	}
+}

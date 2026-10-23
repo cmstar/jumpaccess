@@ -36,6 +36,9 @@ type remoteArtifact struct {
 	CompressionSkipped bool          `json:"compression_skipped"`
 	Size               int64         `json:"size"`
 	Entries            []remoteEntry `json:"entries"`
+	SuggestedName      string        `json:"suggested_name"`
+	RootName           string        `json:"root_name"`
+	Wrapped            bool          `json:"wrapped"`
 }
 type remoteReply struct {
 	OK   bool            `json:"ok"`
@@ -237,7 +240,7 @@ func remoteDownloadCall(ctx context.Context, client *ssh.Client, p map[string]an
 	if !reply.OK {
 		code := reply.Code
 		switch code {
-		case "SOURCE_CHANGED", "SOURCE_UNREADABLE", "UNSUPPORTED_FILE_TYPE", "UNSUPPORTED_PATH", "TOO_MANY_FILES", "STAGING_INSIDE_SOURCE", "COMPRESSION_UNAVAILABLE", "FILE_PERMISSION_DENIED", "TEMPORARY_FILE_CHANGED":
+		case "SOURCE_CHANGED", "SOURCE_UNREADABLE", "UNSUPPORTED_FILE_TYPE", "UNSUPPORTED_PATH", "TOO_MANY_FILES", "STAGING_INSIDE_SOURCE", "COMPRESSION_UNAVAILABLE", "FILE_PERMISSION_DENIED", "TEMPORARY_FILE_CHANGED", "TRANSFER_TOO_LARGE":
 		default:
 			code = "REMOTE_PREPARATION_FAILED"
 		}

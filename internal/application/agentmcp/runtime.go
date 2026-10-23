@@ -167,6 +167,13 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 		listener.Close()
 		return Status{}, fmt.Errorf("MCP 协议处理器不可用")
 	}
+	if startup, ok := handler.(interface{ StartupError() error }); ok {
+		if startupErr := startup.StartupError(); startupErr != nil {
+			listener.Close()
+			r.lastError = startupErr.Error()
+			return Status{}, startupErr
+		}
+	}
 	if tlsConfig != nil {
 		listener = tls.NewListener(listener, tlsConfig)
 	}
@@ -228,13 +235,17 @@ func (r *Runtime) stopLocked(ctx context.Context) error {
 	}
 	run.stopping = true
 	r.stopWarning = ""
+	warningEvent := "service_cleanup_warning"
 	if run.engine != nil {
 		cleanup, finish := context.WithTimeout(ctx, 4*time.Second)
 		cleanupError := run.engine.Shutdown(cleanup)
 		finish()
 		stats := run.engine.Stats()
-		if cleanupError != nil || stats.Executions > 0 || stats.UnknownExecutions > 0 || stats.Downloads > 0 || stats.UnknownDownloads > 0 {
+		if stats.Executions > 0 || stats.UnknownExecutions > 0 || stats.Downloads > 0 || stats.UnknownDownloads > 0 {
 			r.stopWarning = "服务已停止跟踪部分任务，无法确认其远端结果；请核对服务器状态，勿直接重跑原命令。"
+			warningEvent = "execution_unknown"
+		} else if cleanupError != nil {
+			r.stopWarning = "服务已停止，部分资源未能完整清理；请查看告警并核对残留临时文件。"
 		}
 	}
 	run.cancel()
@@ -246,7 +257,7 @@ func (r *Runtime) stopLocked(ctx context.Context) error {
 	r.clearLocked(run)
 	r.history.Record(run.info.ID, "service_stopped", "INFO", 1, "MCP 服务已停止")
 	if r.stopWarning != "" {
-		r.history.Record(run.info.ID, "execution_unknown", "WARN", 1, r.stopWarning)
+		r.history.Record(run.info.ID, warningEvent, "WARN", 1, r.stopWarning)
 	}
 	return err
 }

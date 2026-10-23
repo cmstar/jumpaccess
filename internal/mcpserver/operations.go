@@ -7,17 +7,25 @@ import (
 	"time"
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
+	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type managedHandler struct {
 	http.Handler
 	engine *agentmcp.Engine
+	cache  *downloadcache.Store
 }
 
-func (h *managedHandler) Shutdown(ctx context.Context) error { return h.engine.Shutdown(ctx) }
-func (h *managedHandler) Stats() agentmcp.EngineStats        { return h.engine.Stats() }
-func (h *managedHandler) Retire()                            { h.engine.Retire() }
+func (h *managedHandler) Shutdown(ctx context.Context) error {
+	err := h.engine.Shutdown(ctx)
+	if h.cache != nil {
+		err = errors.Join(err, h.cache.Close())
+	}
+	return err
+}
+func (h *managedHandler) Stats() agentmcp.EngineStats { return h.engine.Stats() }
+func (h *managedHandler) Retire()                     { h.engine.Retire() }
 func (h *managedHandler) ListConnections(ctx context.Context, in struct{}) ([]agentmcp.ConnectionView, error) {
 	return h.engine.ListConnections(ctx, in)
 }
@@ -25,7 +33,7 @@ func (h *managedHandler) CloseConnection(ctx context.Context, in agentmcp.CloseI
 	return h.engine.CloseConnection(ctx, in)
 }
 
-func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine) {
+func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine, cache *downloadcache.Store) {
 	addOperation(server, instance, "open_connection", "按明确目标打开或复用共享 SSH 连接。request_key 格式为实例:当前 request_epoch:UUID；重试须保留原键和参数。关闭的逻辑 ID 不可重新打开。", false, e.Open, e)
 	addOperation(server, instance, "list_connections", "分页查看共享连接与实际 SSH 状态；查询不会重连或延长闲置时间。", true, e.ConnectionsPage, e)
 	addOperation(server, instance, "get_connection", "查看逻辑连接及最近仍保留的未知任务。空未知列表不能证明历史任务均已停止。", true, e.GetConnection, e)
@@ -34,10 +42,10 @@ func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine)
 	addOperation(server, instance, "get_execution", "使用 execution_id 和输出 seq 游标查询长任务。查询不会取消任务或延长截止时间；保留输出可能有缺口。", true, e.GetExecution, e)
 	addOperation(server, instance, "list_executions", "分页找回仍保留的共享任务，不返回命令正文和环境变量。", true, e.ExecutionsPage, e)
 	addOperation(server, instance, "cancel_execution", "只针对指定 execution_id 请求停止。request_stop 不保证立即终止，需继续查询；detach 放弃跟踪，远端可能继续运行。不得按本地取消推断远端停止。", false, e.CancelExecution, e)
-	addOperation(server, instance, "download_files", "异步下载明确目标的普通文件或目录。提供 target 或 connection_id（仅确定身份）、remote_paths 绝对路径和 request_key。最新日志须先查询具体路径。自动压缩还原，优先 SFTP、回退 sz；需要 POSIX/Python 3。local_directory 是 MCP 宿主的目录，默认系统下载目录；不传文件正文。默认等待 5 秒，取得 download_id 后持续 get_download 至终态，files_ready 才代表本地文件可用。重试保留原键；未知或过期不得自动换键重跑。", false, e.DownloadFiles, e)
-	addOperation(server, instance, "get_download", "等待或查询下载。默认等待至终态或 20 秒，wait_ms 可选 0–30000；窗口结束不取消任务，不延长时限。ok 仅说明查询成功，需检查 status、files_ready、error 和清理告警。返回路径位于 MCP 宿主，不保证远端 Agent 可访问。", true, e.GetDownload, e)
-	addOperation(server, instance, "list_downloads", "分页找回当前实例仍保留的下载任务摘要。服务重启不恢复任务，找不到记录不代表未执行。", true, e.DownloadsPage, e)
-	addOperation(server, instance, "cancel_download", "请求取消指定 download_id，需继续 get_download 等待确认。只影响本下载；cancelling 是请求已发出，unknown 表示无法确认远端结束。", false, e.CancelDownload, e)
+	addOperation(server, instance, "download_files", "异步下载明确目标的普通文件或目录；提供 target 或 connection_id（仅确定身份）、remote_paths 绝对路径和 request_key。最新日志先确定具体路径。服务自动压缩，优先 SFTP、回退 sz；需 POSIX/Python 3，传输文件最多 1 GiB。local_directory 表达保存意图：delivery=local 时属于服务电脑，默认系统下载目录；delivery=link 时由调用方使用，服务不访问该目录。默认等待 5 秒，取得 download_id 后持续 get_download 至终态。local 且 files_ready=true 表示最终文件可直接使用，不再解压或校验；link 仅表示文件已准备好，须领取后按 requires_extraction 解开服务添加的外层，成功后清理本次自动压缩包（用户要求保留除外）。无需额外哈希、压缩包测试、远端逐文件对账或 rsync。重试保留原键，未知或过期不得自动换键重跑。", false, decorateDownloadCall(cache, e.DownloadFiles), e)
+	addOperation(server, instance, "get_download", "长等待查询同一下载任务，默认 20 秒，wait_ms 可选 0–30000；窗口结束不取消或延长任务。ok 仅表示查询成功，检查 status、delivery、files_ready、link.available、error 和清理告警。delivery=local 且 files_ready=true 的文件已就绪，直接使用，无需再解压、哈希或校验。delivery=link 时领取 link.url 到调用方设备，仅按 requires_extraction 解开新增外层，成功后清理本次自动压缩包；失败保留包并报告。无需独立压缩包测试、哈希或远端 rsync。链接过期或调用方无法领取时如实报告未下载，不自动重做远端传输。", true, decorateDownloadCall(cache, e.GetDownload), e)
+	addOperation(server, instance, "list_downloads", "分页找回当前实例仍保留的下载任务。delivery=local 的 files_ready 只指服务电脑；delivery=link 需继续领取和必要解压，不能把准备完成说成已保存到调用方。历史回收不撤销未过期的既有链接；服务重启后旧链接失效，找不到记录不代表未执行。", true, decorateDownloadPageCall(cache, e.DownloadsPage), e)
+	addOperation(server, instance, "cancel_download", "请求取消指定 download_id，需继续 get_download 等待确认。只影响本下载；cancelling 是请求已发出，unknown 表示无法确认远端结束。已完成任务不撤销链接或删除最终文件；中断 HTTP 领取只终止该次请求。", false, decorateDownloadCall(cache, e.CancelDownload), e)
 }
 
 func addOperation[In, Out any](server *mcp.Server, instance, name, description string, readOnly bool, call func(context.Context, In) (Out, error), engine *agentmcp.Engine) {

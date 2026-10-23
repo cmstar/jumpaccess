@@ -66,6 +66,42 @@ class Capture(io.RawIOBase):
         super().close()
 
 
+class LimitedWriter:
+    """限制传输包的实际写入量，原始内容大小不参与此限制。"""
+    def __init__(self, target, limit):
+        self.target, self.limit, self.written = target, limit, 0
+
+    def write(self, data):
+        if len(data) > self.limit - self.written:
+            raise Problem('TRANSFER_TOO_LARGE')
+        size = self.target.write(data)
+        self.written += size
+        return size
+
+    def flush(self):
+        self.target.flush()
+
+    def tell(self):
+        return self.written
+
+
+def independent_paths(paths):
+    # 先验证每个请求路径，再去重；不存在或不支持的子路径不能被父路径掩盖。
+    validated = {}
+    for source in paths:
+        fd = open_path(source)
+        try:
+            mode = os.fstat(fd).st_mode
+            if not stat.S_ISDIR(mode) and not stat.S_ISREG(mode):
+                raise Problem('UNSUPPORTED_FILE_TYPE')
+            validated[source] = stat.S_ISDIR(mode)
+        finally:
+            os.close(fd)
+    return [source for source in validated if not any(
+        other != source and directory and os.path.commonpath([source, other]) == other
+        for other, directory in validated.items())]
+
+
 def inventory(paths, stage):
     entries, names = [], set()
 
@@ -100,7 +136,17 @@ def inventory(paths, stage):
 
 def prepare(p):
     stage = p['stage']
-    entries = inventory(p['paths'], stage)
+    paths = independent_paths(p['paths'])
+    entries = inventory(paths, stage)
+    wrapped = len(paths) > 1
+    root_name = entries[0]['name']
+    if wrapped:
+        root_name = p.get('result_name', 'JumpAccess-download')
+        if not root_name or '/' in root_name or root_name in ('.', '..'):
+            raise Problem('UNSUPPORTED_PATH')
+        for entry in entries:
+            entry['name'] = root_name + '/' + entry['name']
+        entries.insert(0, dict(source='', name=root_name, directory=True))
     single = len(entries) == 1 and not entries[0]['directory']
     compressed = ('.gz', '.zip', '.bz2', '.xz', '.7z', '.rar', '.zst', '.tgz', '.jar', '.war')
     mode = 'raw' if single and entries[0]['source'].lower().endswith(compressed) else ('gzip' if single else 'tar.gz')
@@ -121,12 +167,13 @@ def prepare(p):
         artifact_identity = identity(os.fstat(fd))
         print('\n' + p['marker'] + ':' + json.dumps(dict(artifact=dict(path=os.path.join(stage, name + '.part'), identity=artifact_identity))), file=sys.stderr, flush=True)
         with os.fdopen(fd, 'wb') as raw:
+            limited = LimitedWriter(raw, min(p.get('max_bytes', 1 << 30), 1 << 30))
             archive = None
-            stream = raw
+            stream = limited
             if mode == 'gzip':
-                stream = gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0)
+                stream = gzip.GzipFile(filename='', mode='wb', fileobj=limited, mtime=0)
             elif mode == 'tar.gz':
-                archive = tarfile.open(fileobj=raw, mode='w|gz', format=tarfile.PAX_FORMAT)
+                archive = tarfile.open(fileobj=limited, mode='w|gz', format=tarfile.PAX_FORMAT)
             try:
                 for entry in entries:
                     if entry['directory']:
@@ -151,7 +198,7 @@ def prepare(p):
             finally:
                 if archive:
                     archive.close()
-                elif stream is not raw:
+                elif stream is not limited:
                     stream.close()
             raw.flush()
             os.fsync(raw.fileno())
@@ -162,7 +209,8 @@ def prepare(p):
         # 准备完毕后只读取文件大小，不为内容哈希再次扫描整个暂存包。
         with os.fdopen(os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory), 'rb') as result:
             size = os.fstat(result.fileno()).st_size
-        return dict(path=os.path.join(stage, name), format=mode, compression_skipped=compression_skipped, size=size, identity=artifact_identity, entries=entries)
+        suggested_name = root_name + {'raw': '', 'gzip': '.gz', 'tar.gz': '.tar.gz'}[mode]
+        return dict(path=os.path.join(stage, name), format=mode, compression_skipped=compression_skipped, size=size, identity=artifact_identity, entries=entries, suggested_name=suggested_name, root_name=root_name, wrapped=wrapped)
     finally:
         os.close(directory)
 

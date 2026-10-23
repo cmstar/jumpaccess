@@ -102,8 +102,8 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	for _, job := range downloadJobs {
 		if !terminal(job.view.Status) {
-			if job.view.Directory != "" {
-				job.view.Warnings = append(job.view.Warnings, "本地文件已完成；服务停止前未能确认远端临时文件清理结果")
+			if job.view.Directory != "" || job.view.Link != nil {
+				job.view.Warnings = append(job.view.Warnings, "文件准备已完成；服务停止前未能确认远端临时文件清理结果")
 				e.finishDownloadLocked(job, "completed")
 				continue
 			}

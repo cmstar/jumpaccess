@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
 	"github.com/cmstar/jumpaccess/internal/downloads"
 	"github.com/cmstar/jumpaccess/internal/zmodem"
 )
@@ -102,18 +103,18 @@ func downloadStagingCandidates(root *string, home, account string, cached downlo
 }
 
 func (e *Engine) performDownload(ctx context.Context, target ResolvedTarget, in DownloadInput, update func(DownloadProgress)) (result DownloadResult, err error) {
+	mode := e.opts.DeliveryMode
+	if mode != "link" {
+		mode = "local"
+	}
+	result.Delivery = mode
 	base := in.LocalDirectory
-	if base == "" {
+	if mode == "local" && base == "" {
 		base, err = downloads.Directory()
 		if err != nil {
 			return result, fault("LOCAL_DIRECTORY_UNAVAILABLE", "无法取得系统下载目录，请指定 local_directory")
 		}
 	}
-	baseRoot, err := os.OpenRoot(base)
-	if err != nil {
-		return result, fault("LOCAL_DIRECTORY_UNAVAILABLE", "本地保存目录不存在或不可访问")
-	}
-	defer baseRoot.Close()
 	uuidBytes := make([]byte, 16)
 	if _, err = rand.Read(uuidBytes); err != nil {
 		return result, err
@@ -122,19 +123,38 @@ func (e *Engine) performDownload(ctx context.Context, target ResolvedTarget, in 
 	uuidBytes[8] = (uuidBytes[8] & 63) | 128
 	id := time.Now().UTC().Format("20060102T150405Z") + "-" + fmt.Sprintf("%x-%x-%x-%x-%x", uuidBytes[:4], uuidBytes[4:6], uuidBytes[6:8], uuidBytes[8:10], uuidBytes[10:])
 	tempName := ".jumpaccess-download-" + id + ".part"
-	if err = baseRoot.Mkdir(tempName, 0700); err != nil {
-		return result, fault("LOCAL_WRITE_FAILED", "无法创建本地下载临时目录")
-	}
-	defer func() {
-		if cleanupErr := baseRoot.RemoveAll(tempName); cleanupErr != nil {
-			result.Warnings = append(result.Warnings, "本地临时文件清理失败："+filepath.Join(base, tempName))
+	var tempRoot *os.Root
+	if mode == "local" {
+		baseRoot, openErr := os.OpenRoot(base)
+		if openErr == nil {
+			defer baseRoot.Close()
+			openErr = baseRoot.Mkdir(tempName, 0700)
+			if openErr == nil {
+				created, statErr := baseRoot.Lstat(tempName)
+				defer func() {
+					if cleanupErr := removeOwnedDownloadDirectory(baseRoot, tempName, created); cleanupErr != nil {
+						result.Warnings = append(result.Warnings, "本地临时文件清理失败或身份已变化："+filepath.Join(base, tempName))
+					}
+				}()
+				openErr = statErr
+				if openErr == nil {
+					tempRoot, openErr = baseRoot.OpenRoot(tempName)
+				}
+			}
 		}
-	}()
-	tempRoot, err := baseRoot.OpenRoot(tempName)
-	if err != nil {
-		return result, err
+		if openErr != nil {
+			if !errors.Is(openErr, os.ErrPermission) {
+				return result, fault("LOCAL_DIRECTORY_UNAVAILABLE", "本地保存目录不存在、不可用或无法写入；不会创建目标目录")
+			}
+			mode, result.Delivery = "link", "link"
+			result.Warnings = append(result.Warnings, "服务没有目标目录的写入权限，改为下载链接；请在调用方保存")
+		} else {
+			defer tempRoot.Close()
+		}
 	}
-	defer tempRoot.Close()
+	if mode == "link" && e.opts.DownloadCache == nil {
+		return result, fault("DOWNLOAD_CACHE_UNAVAILABLE", "下载领取缓存未配置")
+	}
 	if e.opts.Dial == nil {
 		return result, fault("DOWNLOAD_UNAVAILABLE", "SSH 下载连接未配置")
 	}
@@ -285,7 +305,7 @@ func (e *Engine) performDownload(ctx context.Context, target ResolvedTarget, in 
 	capability.Physical, capability.Virtual = location.physical, location.virtual
 	e.cacheDownloadCapability(target, capability)
 	update(DownloadProgress{Phase: "compressing", Protocol: protocol})
-	body, err = call(ctx, map[string]any{"op": "prepare", "paths": in.RemotePaths, "stage": location.physical, "stem": ".jumpaccess-download-" + id}, nil)
+	body, err = call(ctx, map[string]any{"op": "prepare", "paths": in.RemotePaths, "stage": location.physical, "stem": ".jumpaccess-download-" + id, "result_name": "JumpAccess-" + id, "max_bytes": downloadcache.MaxArtifactSize}, nil)
 	if err != nil {
 		return result, err
 	}
@@ -293,147 +313,160 @@ func (e *Engine) performDownload(ctx context.Context, target ResolvedTarget, in 
 	if json.Unmarshal(body, &artifact) != nil || artifact.Size < 0 || artifact.Size >= math.MaxInt64 || path.Dir(artifact.Path) != location.physical || !strings.HasPrefix(path.Base(artifact.Path), ".jumpaccess-download-"+id+".") {
 		return result, fault("INVALID_MANIFEST", "远端传输文件清单无效")
 	}
+	if artifact.Size > downloadcache.MaxArtifactSize {
+		return result, fault("TRANSFER_TOO_LARGE", "准备后的传输文件超过 1 GiB")
+	}
+	normalizeArtifactNames(&artifact)
+	if err = validateDownloadManifest(artifact); err != nil {
+		return result, err
+	}
 	if artifact.CompressionSkipped {
 		result.Warnings = append(result.Warnings, "远端缺少 gzip 压缩能力，已准备有限长度的原始文件")
 	}
 	progress := DownloadProgress{Phase: "transferring", Protocol: protocol, TransferBytes: artifact.Size}
 	update(progress)
-	local, err := tempRoot.OpenFile("artifact", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	receive := func(local *os.File) error {
+		progress.TransferredBytes = 0
+		update(progress)
+		write := &downloadWriter{file: local, update: func(n int64) { progress.TransferredBytes = n; update(progress) }}
+		// 局部错误变量不能覆盖外层最终结果；仅本地写错误允许更换接收位置。
+		var err error
+		if protocol == "sftp" {
+			stopRead := context.AfterFunc(ctx, func() { sftp.Client.Close() })
+			reader, openErr := sftp.Client.Open(path.Join(location.virtual, path.Base(artifact.Path)))
+			if openErr == nil {
+				var copied int64
+				copied, err = io.Copy(write, downloadContextReader{ctx, io.LimitReader(reader, artifact.Size+1)})
+				reader.Close()
+				if err == nil && copied != artifact.Size {
+					err = io.ErrUnexpectedEOF
+				}
+			} else {
+				err = openErr
+			}
+			stopRead()
+			if err != nil && write.err == nil && ctx.Err() == nil {
+				// 关闭本任务的 SFTP 连接后，才通过另一协议发送原封不动的暂存文件。
+				sftp.Client.Close()
+				capability.Physical, capability.Virtual = "", ""
+				e.cacheDownloadCapability(target, capability)
+				if !environment.SZ {
+					return fault("NO_DOWNLOAD_PROTOCOL", "SFTP 传输失败；远端未提供 sz")
+				}
+				result.Warnings = append(result.Warnings, "SFTP 传输失败，已切换 ZMODEM 传输同一份内容")
+				protocol = "zmodem"
+				progress.Protocol = protocol
+				if err = local.Truncate(0); err != nil {
+					return &downloadLocalWriteError{err}
+				}
+				if _, err = local.Seek(0, io.SeekStart); err != nil {
+					return &downloadLocalWriteError{err}
+				}
+				write.bytes = 0
+				progress.TransferredBytes = 0
+				update(progress)
+			} else if err != nil {
+				if write.err != nil {
+					return &downloadLocalWriteError{write.err}
+				}
+				return err
+			}
+		}
+		if protocol == "zmodem" {
+			if artifact.Size > math.MaxUint32 {
+				return fault("ZMODEM_SIZE_LIMIT", "SFTP 不可用，且实际传输文件达到 4 GiB，无法使用 ZMODEM")
+			}
+			transferCtx, stopTransfer := context.WithCancel(ctx)
+			handshakeTimer := time.AfterFunc(30*time.Second, stopTransfer)
+			_, err = call(transferCtx, map[string]any{"op": "sz", "path": artifact.Path}, func(reader io.Reader, writer io.Writer) error {
+				return receiveDownloadZMODEM(reader, writer, artifact, write, func() { handshakeTimer.Stop() })
+			})
+			handshakeExpired := transferCtx.Err() != nil && ctx.Err() == nil
+			handshakeTimer.Stop()
+			stopTransfer()
+			if handshakeExpired && !remoteUnknown(err) {
+				err = fault("ZMODEM_HANDSHAKE_FAILED", "sz 握手超时，已确认停止本次传输")
+			}
+			if err != nil {
+				// 远端停止未确认时不能重传，也不能让本地写错误掩盖远端未知状态。
+				if write.err != nil && !remoteUnknown(err) {
+					return &downloadLocalWriteError{write.err}
+				}
+				if !remoteUnknown(err) && ctx.Err() == nil {
+					e.mu.Lock()
+					delete(e.downloadCapabilities, target)
+					e.mu.Unlock()
+				}
+				return err
+			}
+		}
+		info, statErr := local.Stat()
+		if statErr != nil {
+			return &downloadLocalWriteError{statErr}
+		}
+		if info.Size() != artifact.Size {
+			return fault("TRANSFER_SIZE_MISMATCH", "接收文件的字节长度与准备结果不符")
+		}
+		// 最终文件还原和缓存 Commit 各自负责 Sync；不重复同步内部传输副本。
+		return ctx.Err()
+	}
+	destination, err := receivePreparedDownload(ctx, e.opts.DownloadCache, artifact, mode == "link", func() (*os.File, error) {
+		return tempRoot.OpenFile("artifact", os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	}, receive)
+	defer func() {
+		if closeErr := destination.Close(); closeErr != nil {
+			result.Warnings = append(result.Warnings, "下载接收文件关闭或缓存半成品清理失败，将继续尝试清理")
+		}
+	}()
+	if destination.FellBack {
+		result.Warnings = append(result.Warnings, "服务没有目标目录的写入权限，改为下载链接；请在调用方保存")
+	}
 	if err != nil {
-		return result, fault("LOCAL_WRITE_FAILED", "本地无法保存下载文件")
-	}
-	defer local.Close()
-	write := &downloadWriter{file: local, update: func(n int64) { progress.TransferredBytes = n; update(progress) }}
-	if protocol == "sftp" {
-		reader, openErr := sftp.Client.Open(path.Join(location.virtual, path.Base(artifact.Path)))
-		if openErr == nil {
-			var copied int64
-			copied, err = io.Copy(write, downloadContextReader{ctx, io.LimitReader(reader, artifact.Size+1)})
-			reader.Close()
-			if err == nil && copied != artifact.Size {
-				err = io.ErrUnexpectedEOF
-			}
-		} else {
-			err = openErr
-		}
-		if err != nil && write.err == nil && ctx.Err() == nil {
-			// 关闭本任务的 SFTP 连接后，才通过另一协议发送原封不动的暂存文件。
-			sftp.Client.Close()
-			capability.Physical, capability.Virtual = "", ""
-			e.cacheDownloadCapability(target, capability)
-			if !environment.SZ {
-				return result, fault("NO_DOWNLOAD_PROTOCOL", "SFTP 传输失败；远端未提供 sz")
-			}
-			result.Warnings = append(result.Warnings, "SFTP 传输失败，已切换 ZMODEM 传输同一份内容")
-			if err = local.Truncate(0); err != nil {
-				return result, err
-			}
-			if _, err = local.Seek(0, io.SeekStart); err != nil {
-				return result, err
-			}
-			write.bytes = 0
-			protocol = "zmodem"
-			progress.Protocol = protocol
-			progress.TransferredBytes = 0
-			update(progress)
-		} else if err != nil {
-			return result, err
-		}
-	}
-	if protocol == "zmodem" {
-		if artifact.Size > math.MaxUint32 {
-			return result, fault("ZMODEM_SIZE_LIMIT", "SFTP 不可用，且实际传输文件达到 4 GiB，无法使用 ZMODEM")
-		}
-		transferCtx, stopTransfer := context.WithCancel(ctx)
-		handshakeTimer := time.AfterFunc(30*time.Second, stopTransfer)
-		_, err = call(transferCtx, map[string]any{"op": "sz", "path": artifact.Path}, func(reader io.Reader, writer io.Writer) error {
-			return receiveDownloadZMODEM(reader, writer, artifact, write, func() { handshakeTimer.Stop() })
-		})
-		handshakeExpired := transferCtx.Err() != nil && ctx.Err() == nil
-		handshakeTimer.Stop()
-		stopTransfer()
-		if handshakeExpired && !remoteUnknown(err) {
-			err = fault("ZMODEM_HANDSHAKE_FAILED", "sz 握手超时，已确认停止本次传输")
-		}
-		if err != nil {
-			if !remoteUnknown(err) && ctx.Err() == nil {
-				e.mu.Lock()
-				delete(e.downloadCapabilities, target)
-				e.mu.Unlock()
-			}
-			return result, err
-		}
-	}
-	if err = local.Sync(); err != nil {
 		return result, err
 	}
-	if err = local.Close(); err != nil {
-		return result, err
-	}
+	local, pending := destination.File, destination.Pending
 	progress.Phase = "verifying"
 	progress.TransferredBytes = artifact.Size
 	update(progress)
-	if err = tempRoot.Mkdir("files", 0700); err != nil {
-		return result, err
-	}
-	progress.Phase = "extracting"
-	update(progress)
-	artifactFile, err := tempRoot.Open("artifact")
-	if err != nil {
-		return result, err
-	}
-	defer artifactFile.Close()
-	extractionRoot, err := tempRoot.OpenRoot("files")
-	if err != nil {
-		return result, err
-	}
-	defer extractionRoot.Close()
-	files, err := restoreDownloadInto(ctx, artifactFile, extractionRoot, artifact)
-	if err != nil {
-		return result, err
-	}
-	artifactFile.Close()
-	extractionRoot.Close()
 	if err = ctx.Err(); err != nil {
 		return result, err
 	}
-	progress.Phase = "publishing"
-	update(progress)
-	finalName := "JumpAccess-" + id
-	if err = baseRoot.Mkdir(finalName, 0700); err != nil {
-		return result, err
-	}
-	published := false
-	defer func() {
-		if !published {
-			if cleanupErr := baseRoot.RemoveAll(finalName); cleanupErr != nil {
-				result.Warnings = append(result.Warnings, "本地发布目录清理失败："+filepath.Join(base, finalName))
+	var delivered DownloadResult
+	if pending != nil {
+		cached, commitErr := pending.Commit(artifact.SuggestedName)
+		if commitErr != nil {
+			return result, downloadCacheError(commitErr)
+		}
+		delivered = preparedDownloadLink(artifact, cached)
+	} else {
+		if _, err = local.Seek(0, io.SeekStart); err != nil {
+			return result, err
+		}
+		progress.Phase = "extracting"
+		update(progress)
+		delivered, err = publishDownload(ctx, local, base, artifact, id)
+		if err != nil {
+			result.Warnings = append(result.Warnings, delivered.Warnings...)
+			if !errors.Is(err, os.ErrPermission) || ctx.Err() != nil {
+				return result, err
 			}
-		}
-	}()
-	directory, err := tempRoot.Open("files")
-	if err != nil {
-		return result, err
-	}
-	items, err := directory.ReadDir(-1)
-	directory.Close()
-	if err != nil {
-		return result, err
-	}
-	for _, item := range items {
-		if err = ctx.Err(); err != nil {
-			return result, err
-		}
-		if err = baseRoot.Rename(filepath.Join(tempName, "files", item.Name()), filepath.Join(finalName, item.Name())); err != nil {
-			return result, err
+			if e.opts.DownloadCache == nil {
+				return result, fault("DOWNLOAD_CACHE_UNAVAILABLE", "目标目录权限不足，且下载领取缓存未配置")
+			}
+			cached, importErr := cacheOpenDownload(ctx, e.opts.DownloadCache, local, artifact)
+			if importErr != nil {
+				return result, downloadCacheError(importErr)
+			}
+			delivered = preparedDownloadLink(artifact, cached)
+			result.Warnings = append(result.Warnings, "服务没有目标目录的写入权限，改为下载链接；请在调用方保存")
+		} else {
+			delivered.Delivery = "local"
+			delivered.Instructions = localDownloadInstructions
 		}
 	}
-	result.Directory = filepath.Join(base, finalName)
-	for i := range files {
-		files[i].Path = filepath.Join(result.Directory, filepath.FromSlash(files[i].Path))
-	}
-	result.Files = files
-	published = true
+	delivered.Warnings = append(result.Warnings, delivered.Warnings...)
+	delivered.RenamedEntries = downloadRenames(artifact)
+	result = delivered
 	progress.Phase = "cleanup"
 	ready := result
 	for _, file := range owned {
@@ -459,6 +492,9 @@ type downloadWriter struct {
 
 func (w *downloadWriter) Write(p []byte) (int, error) {
 	n, err := w.file.Write(p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
 	w.bytes += int64(n)
 	if err != nil {
 		w.err = err
