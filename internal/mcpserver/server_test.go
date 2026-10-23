@@ -104,7 +104,13 @@ func TestHTTPMCPRealClientAndSingleInstanceLifecycle(t *testing.T) {
 		t.Fatal("无法识别外部实例", err)
 	}
 	cfg, _ := settings.Config()
-	cfg.Port++
+	// 相邻端口可能正被 HTTP 客户端占用；让系统选择并暂时保留新的监听端口。
+	nextListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nextListener.Close()
+	cfg.Port = nextListener.Addr().(*net.TCPAddr).Port
 	if err := settings.SaveConfig(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +130,15 @@ func TestHTTPMCPRealClientAndSingleInstanceLifecycle(t *testing.T) {
 	} else {
 		unlock()
 	}
-	if _, err := r.Start(ctx); err != nil {
+	if err := nextListener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := r.Start(ctx)
+	if err != nil {
 		t.Fatal("服务无法重新启动", err)
+	}
+	if restarted.Instance == nil || restarted.Instance.Config.Port != cfg.Port || restarted.Instance.ID == started.Instance.ID {
+		t.Fatal("重启没有应用新端口或更换实例")
 	}
 }
 
