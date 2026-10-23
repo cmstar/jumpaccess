@@ -15,6 +15,13 @@ download = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(download)
 
 
+@contextlib.contextmanager
+def physical_temporary_directory():
+    # macOS 的临时路径可能经过 /var 链接，样例本身仍须满足拒绝父目录链接的规则。
+    with tempfile.TemporaryDirectory() as directory:
+        yield os.path.realpath(directory)
+
+
 class CaptureTests(unittest.TestCase):
     def test_transmission_limit_counts_only_written_bytes(self):
         target = io.BytesIO()
@@ -26,7 +33,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_prepare_deduplicates_containment_and_preserves_empty_directory(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             stage = os.path.join(directory, 'stage')
             source = os.path.join(directory, 'logs')
             os.mkdir(stage)
@@ -43,7 +50,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_multi_source_archive_wraps_once_and_keeps_duplicate_basenames(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             stage = os.path.join(directory, 'stage')
             os.mkdir(stage)
             sources = []
@@ -63,7 +70,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_prepare_limits_compressed_artifact_and_leaves_only_owned_partial(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             stage = os.path.join(directory, 'stage')
             os.mkdir(stage)
             source = os.path.join(directory, 'app.log')
@@ -76,7 +83,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_compressed_source_size_does_not_use_transmission_limit(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             stage = os.path.join(directory, 'stage')
             os.mkdir(stage)
             source = os.path.join(directory, 'app.log')
@@ -92,7 +99,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_containment_does_not_hide_invalid_child(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             with self.assertRaises(FileNotFoundError):
                 download.independent_paths([directory, os.path.join(directory, 'missing')])
             child = os.path.join(directory, 'link')
@@ -103,7 +110,7 @@ class CaptureTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_prepare_without_content_hash(self):
         for filename in ('app.log', 'original.gz'):
-            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
+            with self.subTest(filename=filename), physical_temporary_directory() as directory:
                 stage = os.path.join(directory, 'stage')
                 os.mkdir(stage)
                 source = os.path.join(directory, filename)
@@ -123,7 +130,7 @@ class CaptureTests(unittest.TestCase):
                 self.assertEqual(actual, content)
 
     def test_appends_do_not_extend_capture(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             name = os.path.join(directory, 'app.log')
             with open(name, 'wb') as f:
                 f.write(b'original')
@@ -135,7 +142,7 @@ class CaptureTests(unittest.TestCase):
                 self.assertEqual(capture.size, 8)
 
     def test_short_read_is_source_changed(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             name = os.path.join(directory, 'app.log')
             with open(name, 'wb') as f:
                 f.write(b'original')
@@ -147,7 +154,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX inode semantics')
     def test_rename_rotation_preserves_open_file(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             name = os.path.join(directory, 'app.log')
             with open(name, 'wb') as f:
                 f.write(b'original')
@@ -159,7 +166,7 @@ class CaptureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'requires POSIX directory descriptors')
     def test_inventory_rejects_symlinks_and_own_staging(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with physical_temporary_directory() as directory:
             name = os.path.join(directory, 'app.log')
             with open(name, 'wb') as f:
                 f.write(b'original')

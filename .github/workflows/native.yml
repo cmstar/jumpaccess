@@ -67,6 +67,14 @@ jobs:
         working-directory: cmd/jumpaccess/frontend
         run: npm ci
 
+      - name: 安装 POSIX 下载集成测试依赖
+        if: runner.os == 'macOS'
+        run: brew install lrzsz
+
+      - name: 运行 POSIX 下载脚本测试
+        if: runner.os == 'macOS'
+        run: python3 -B internal/application/agentmcp/download_remote_test.py
+
       - name: 运行原生 Go 测试
         run: go test -count=1 ./...
 

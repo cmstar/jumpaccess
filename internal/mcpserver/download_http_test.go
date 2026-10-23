@@ -171,8 +171,22 @@ func TestDownloadStreamOverridesServerDeadlineAndReleasesTimedOutLease(t *testin
 		{"total timeout", time.Second, 60 * time.Millisecond, 150 * time.Millisecond, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store, artifact := cacheArtifact(t, 8<<20)
-			server := httptest.NewUnstartedServer(downloadHandler(store, downloadHTTPTimeouts{Idle: tc.idle, Total: tc.total}))
+			size := int64(8 << 20)
+			if tc.wantComplete {
+				// 覆盖默认截止时间只需小正文，不依赖 CI 在两秒内传完 8 MiB。
+				size = 4096
+			}
+			store, artifact := cacheArtifact(t, size)
+			handler := downloadHandler(store, downloadHTTPTimeouts{Idle: tc.idle, Total: tc.total})
+			handlerDone := make(chan struct{})
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(handlerDone)
+				if tc.wantComplete {
+					// 等默认 WriteTimeout 到期后再领取，验证正文采用独立截止时间。
+					time.Sleep(tc.pause)
+				}
+				handler.ServeHTTP(w, r)
+			}))
 			server.Config.WriteTimeout = 20 * time.Millisecond
 			server.Config.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
 				_ = c.(*net.TCPConn).SetWriteBuffer(1024)
@@ -185,7 +199,9 @@ func TestDownloadStreamOverridesServerDeadlineAndReleasesTimedOutLease(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			time.Sleep(tc.pause)
+			if !tc.wantComplete {
+				time.Sleep(tc.pause)
+			}
 			n, copyErr := io.Copy(io.Discard, response.Body)
 			response.Body.Close()
 			if tc.wantComplete && (copyErr != nil || n != artifact.Size) {
@@ -193,6 +209,12 @@ func TestDownloadStreamOverridesServerDeadlineAndReleasesTimedOutLease(t *testin
 			}
 			if !tc.wantComplete && (copyErr == nil || n >= artifact.Size) {
 				t.Fatalf("timeout did not truncate: %d / %d, %v", n, artifact.Size, copyErr)
+			}
+			// 客户端按 Content-Length 读完时，服务端可能尚未执行 defer lease.Close。
+			select {
+			case <-handlerDone:
+			case <-time.After(5 * time.Second):
+				t.Fatal("下载处理未结束，无法检查领取名额释放")
 			}
 			u, _ := url.Parse(link)
 			for range 2 {

@@ -49,7 +49,11 @@ func downloadLinuxFixture(t *testing.T) (EngineOptions, string, string) {
 	if runtime.GOOS == "windows" && distro == "" {
 		t.Skip("设置 JUMPACCESS_TEST_WSL 以运行 POSIX SSH 集成测试")
 	}
-	directory := t.TempDir()
+	// macOS 的临时目录可能经过 /var 链接；测试源路径须符合远端拒绝父目录链接的规则。
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	stage := filepath.Join(directory, "stage")
 	os.Mkdir(stage, 0700)
 	opts := poolOptions(t)

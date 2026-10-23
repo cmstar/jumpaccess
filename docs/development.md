@@ -230,7 +230,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 
 GUI 构建脚本保持兼容 macOS 系统 Bash：启用 `set -u` 时，参数数组需包含基础构建参数，避免展开空数组。`node --test scripts/*.test.mjs` 会用 Wails 替身验证三个目标平台的实参；Windows 默认查找 Git 安装目录中的 Bash，也可通过 `JUMPACCESS_TEST_BASH` 指定路径。
 
-`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
+`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。macOS runner 通过 Homebrew 安装 `lrzsz`，运行 POSIX 下载脚本测试，并在 Go 测试中覆盖模拟 SSH 网关的 SFTP 与真实 `sz` 回退。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
 
 Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。
 
@@ -267,7 +267,9 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 ## 当前验证入口
 
-MCP 下载的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 脚本和真实 lrzsz 互操作为显式集成测试；在 Windows 可设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp ./internal/zmodem`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 验证有限读取的追加、轮转、截断与链接处理；完整覆盖需在 POSIX 环境执行。未启用 WSL／Linux 或缺少 lrzsz 时的跳过，不代表真实网关验收通过。
+MCP 下载的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 下载集成测试在 macOS/Linux 上直接运行，需预先安装 Python 3 与 `lrzsz`；Windows 需显式设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志；测试临时目录先解析为真实路径，避免 macOS 的系统目录链接触发远端拒绝链接的校验。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 验证有限读取的追加、轮转、截断与链接处理；完整覆盖需在 POSIX 环境执行。ZMODEM 独立互操作测试见上文 CLI 传输约定，未启用所需环境时的跳过不代表真实网关验收通过。
+
+HTTP 下载测试应在服务端 handler 返回后检查领取名额是否释放，客户端收到完整 `Content-Length` 不代表服务端清理已经结束。默认写超时覆盖使用小正文和服务端延迟验证，空闲／总超时仍通过阻塞的大正文验证，避免将 CI 的 TCP 吞吐速度当作功能要求。
 
 下载复用 Go SFTP 客户端与 ZMODEM 接收协议时，同时回归 `internal/sftpclient`、`internal/clitransfer`、`internal/sshclient`，以及 GUI 的 `zmodem.test.ts`、`zmodemProgress.test.ts`。MCP 状态与停止提示另回归 `MCPSettings.test.tsx`、`MCPWorkspace.test.tsx`。不要通过截图脚本代替行为验证。
 
