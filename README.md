@@ -45,8 +45,8 @@ GUI 默认不自动启动 MCP 服务；可在 MCP 配置页开启“随应用启
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/screenshots/profiles.png" width="420" alt="JumpAccess 多 Profile 管理"><br>
-      <sub><b>多 Profile 管理</b></sub>
+      <img src="docs/screenshots/mcp-02-logs.png" width="420" alt="JumpAccess MCP Server 运行状态与调用日志"><br>
+      <sub><b>MCP Server</b></sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/screenshots/ssh-terminal.png" width="420" alt="JumpAccess SSH 终端"><br>
