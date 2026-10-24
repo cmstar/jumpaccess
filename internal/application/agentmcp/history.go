@@ -215,7 +215,7 @@ func FormatLogLine(line LogLine, ansi bool) string {
 		}
 		return "\x1b[" + code + "m" + value + "\x1b[0m"
 	}
-	timestamp := style(line.Time.Local().Format("15:04:05"), "2")
+	timestamp := style(line.Time.Local().Format("01-02 15:04:05"), "2")
 	levelColor := map[string]string{"DEBUG": "36", "INFO": "32", "WARN": "33", "ERROR": "31"}[line.Severity]
 	level := style(fmt.Sprintf("%-5s", safeLogText(line.Severity)), levelColor)
 	connection := ""

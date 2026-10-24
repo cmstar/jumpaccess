@@ -106,6 +106,23 @@ test('标准级别显示查询完成摘要，详细级别仅增加后续查询�
   expect(screen.queryByText('旧查询条件')).not.toBeInTheDocument()
 })
 
+test('日志时间使用本地月日，补零并区分跨日和跨年的同一时刻', async () => {
+  const { preferences } = await createPreviewBackend().bootstrap()
+  vi.useFakeTimers()
+  const cases = [
+    { date: new Date(2026, 0, 2, 3, 4, 5), expected: '01-02 03:04:05' },
+    { date: new Date(2026, 0, 3, 3, 4, 5), expected: '01-03 03:04:05' },
+    { date: new Date(2026, 11, 31, 3, 4, 5), expected: '12-31 03:04:05' },
+    { date: new Date(2027, 0, 1, 3, 4, 5), expected: '01-01 03:04:05' },
+    { date: new Date(2027, 0, 1, 0, 0, 0), expected: '01-01 00:00:00' },
+  ]
+  const lines = cases.map(({ date }, index) => ({ ...line(index + 1, `时间样例 ${index}`), time: date.toISOString() }))
+  render(<NotificationProvider><MCPWorkspace backend={api(lines)} hidden={false} preferences={preferences} onTerminalStyle={() => {}} /></NotificationProvider>)
+  await act(async () => {})
+  const log = screen.getByRole('log')
+  expect(Array.from(log.querySelectorAll('.mcp-log-time'), node => node.textContent)).toEqual(cases.map(({ expected }) => expected))
+})
+
 test('日志的级别、连接和命令输入沿用 ANSI 色板语义，详细程度不改变结果级别', async () => {
   const { preferences } = await createPreviewBackend().bootstrap()
   vi.useFakeTimers()

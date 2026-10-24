@@ -10,6 +10,11 @@ import './MCPWorkspace.css'
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 const time = (value: string) => new Date(value).toLocaleTimeString([], { hour12: false })
+const logTime = (value: string) => {
+  const date = new Date(value)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
 // 展示缓存不拥有业务结果。按行数与字符数双限额，暂停缓存也遵守相同上限。
 function bounded(lines: MCPLogLine[]) {
   let length = 0, start = lines.length
@@ -139,7 +144,7 @@ export function MCPWorkspace({ backend, hidden, preferences, onSavePreferences, 
         <div className="mcp-log-terminal" aria-label="MCP 日志终端" style={terminalStyle}>
           <div className="mcp-console-head"><span className={`mcp-collect-dot ${status?.state === 'running' ? 'running' : ''}`} /><span>{status?.state === 'running' ? '正在采集' : status?.state === 'external' ? '由其他宿主持有' : '采集已停止'}</span>{paused && <span role="status">显示已暂停{pendingCount > 0 ? ` · ${pendingCount} 条待显示` : ''}</span>}<span className="mcp-spacer" /><button type="button" className="mcp-palette-link" onClick={onTerminalStyle}>{palette.name} · 终端样式<ExternalLink /></button></div>
           <div className="mcp-log-viewport" ref={viewport} onScroll={event => { const el = event.currentTarget; followingRef.current = el.scrollHeight - el.clientHeight - el.scrollTop < 12; setFollowing(followingRef.current) }}>
-            <div role="log" aria-live="off" aria-label="MCP 操作日志">{filtered.map(line => <div key={line.sequence} className="mcp-log-line"><span className="mcp-log-time">{time(line.time)}</span>{'  '}<span className={`mcp-severity-${line.severity.toLowerCase()}`}>{line.severity.padEnd(5)}</span>{' '}{line.connectionID && <><span className="mcp-log-connection">[{line.connectionID}]</span>{' '}</>}<span className={line.event === 'command_input' ? 'mcp-log-command' : ''}>{line.text}</span></div>)}{!filtered.length && <div className="mcp-log-empty">{filter ? '该连接暂无已显示的日志' : '等待新日志…'}</div>}</div>
+            <div role="log" aria-live="off" aria-label="MCP 操作日志">{filtered.map(line => <div key={line.sequence} className="mcp-log-line"><span className="mcp-log-time">{logTime(line.time)}</span>{'  '}<span className={`mcp-severity-${line.severity.toLowerCase()}`}>{line.severity.padEnd(5)}</span>{' '}{line.connectionID && <><span className="mcp-log-connection">[{line.connectionID}]</span>{' '}</>}<span className={line.event === 'command_input' ? 'mcp-log-command' : ''}>{line.text}</span></div>)}{!filtered.length && <div className="mcp-log-empty">{filter ? '该连接暂无已显示的日志' : '等待新日志…'}</div>}</div>
           </div>
           <div className="mcp-console-footer"><span>只读 · {filtered.length} 行</span><span className="mcp-spacer" /><button type="button" aria-pressed={following} onClick={follow}><ArrowDownToLine />{following ? '跟随最新' : '回到最新'}</button></div>
         </div>

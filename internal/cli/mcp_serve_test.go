@@ -421,6 +421,41 @@ func TestMCPServeAppliesColorToEachStreamIndependently(t *testing.T) {
 	}
 }
 
+func TestMCPLogOutputIncludesLocalMonthAndDay(t *testing.T) {
+	for _, ansi := range []bool{false, true} {
+		var stdout, stderr serveTestBuffer
+		output := newMCPLogWriter(&stdout, &stderr, ansi, ansi)
+		defer output.close()
+		for _, test := range []struct {
+			year  int
+			month time.Month
+			day   int
+			want  string
+		}{
+			{2026, time.January, 2, "01-02 03:04:05"},
+			{2026, time.January, 3, "01-03 03:04:05"},
+			{2026, time.December, 31, "12-31 03:04:05"},
+			{2027, time.January, 1, "01-01 03:04:05"},
+		} {
+			stamp := time.Date(test.year, test.month, test.day, 3, 4, 5, 0, time.Local).UTC()
+			for _, severity := range []string{"INFO", "ERROR"} {
+				if _, err := output.write(context.Background(), agentmcp.LogLine{Time: stamp, Severity: severity, Text: "message"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := test.want
+			if ansi {
+				want = "\x1b[2m" + want + "\x1b[0m"
+			}
+			for _, text := range []string{stdout.String(), stderr.String()} {
+				if !strings.Contains(text, want+"  ") {
+					t.Fatalf("日志应包含本地月日和时间 %q（ANSI=%t）：%q", want, ansi, text)
+				}
+			}
+		}
+	}
+}
+
 func TestMCPServeKeepsRunningWhenSavedConfigCannotBeRead(t *testing.T) {
 	runtime, settings, _ := serveTestFixture(t)
 	var stdout, stderr serveTestBuffer
