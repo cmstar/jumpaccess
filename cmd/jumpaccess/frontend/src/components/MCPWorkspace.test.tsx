@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { MCPWorkspace } from './MCPWorkspace'
 import { NotificationProvider } from './Notifications'
@@ -104,6 +104,37 @@ test('标准级别显示查询完成摘要，详细级别仅增加后续查询�
   await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
   expect(screen.getByText('查询条件 profile="work"')).toBeInTheDocument()
   expect(screen.queryByText('旧查询条件')).not.toBeInTheDocument()
+})
+
+test('日志的级别、连接和命令输入沿用 ANSI 色板语义，详细程度不改变结果级别', async () => {
+  const { preferences } = await createPreviewBackend().bootstrap()
+  vi.useFakeTimers()
+  const lines: MCPLogLine[] = [
+    { ...line(1, '命令结束 exit=7', 2), event: 'execution_finished', connectionID: 'instance:c:1' },
+    { ...line(2, '命令结束 status=unknown'), severity: 'WARN', event: 'execution_finished' },
+    { ...line(3, '调用失败 code=CONNECT_FAILED'), severity: 'ERROR' },
+    { ...line(4, '标准级别不显示的输入', 3), event: 'command_input' },
+  ]
+  render(<NotificationProvider><MCPWorkspace backend={api(lines)} hidden={false} preferences={preferences} onTerminalStyle={() => {}} /></NotificationProvider>)
+  await act(async () => {})
+  const log = within(screen.getByRole('log'))
+  expect(log.getByText('INFO')).toHaveClass('mcp-severity-info')
+  expect(log.getByText('WARN')).toHaveClass('mcp-severity-warn')
+  expect(log.getByText('ERROR')).toHaveClass('mcp-severity-error')
+  expect(log.getByText('[instance:c:1]')).toHaveClass('mcp-log-connection')
+  expect(log.getByText('命令结束 exit=7').closest('.mcp-log-line')?.querySelector('.mcp-log-time')).toBeInTheDocument()
+  expect(log.queryByText('标准级别不显示的输入')).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: '详细' }))
+  lines.push({ ...line(5, 'command="pwd"  cwd="/tmp"', 3), event: 'command_input' })
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(log.getByText('DEBUG')).toHaveClass('mcp-severity-debug')
+  expect(log.getByText('command="pwd" cwd="/tmp"')).toHaveClass('mcp-log-command')
+  expect(log.getByText('命令结束 exit=7')).not.toHaveClass('mcp-log-command')
+  const terminal = screen.getByLabelText('MCP 日志终端')
+  for (const [color, value] of Object.entries({ red: '#bf616a', green: '#a3be8c', yellow: '#ebcb8b', blue: '#81a1c1', cyan: '#88c0d0' })) {
+    expect(terminal.style.getPropertyValue(`--mcp-terminal-${color}`)).toBe(value)
+  }
 })
 
 test('逻辑连接与 SSH 释放分别展示，忙碌关闭需确认，停止服务需确认', async () => {

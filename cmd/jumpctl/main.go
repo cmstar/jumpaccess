@@ -69,6 +69,8 @@ func run() int {
 		Auth:        authService,
 		Connect:     core.Connect,
 		Resources:   core.Resources,
+		MCP:         core.NewMCP("cli"),
+		MCPSettings: core.MCPSettings,
 		SelectAccount: func(accounts []jumpserver.Account) (jumpserver.Account, error) {
 			return terminalprompt.SelectAccount(os.Stdin, os.Stderr, accounts)
 		},
@@ -126,7 +128,9 @@ func run() int {
 		},
 	})
 	if err := command.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if !cli.ErrorReported(err) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return 1
 	}
 	return 0

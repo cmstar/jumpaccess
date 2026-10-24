@@ -47,8 +47,8 @@
 
 | 决策日期 | 决策文档链接 | 状态 | 仍有效范围 | 实施状态 | 后续依据 | 当前规则入口 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-18 | [MCP 共享操作历史与文本日志](20261018-mcp-shared-operation-history.md) | 有效 | 共享内存仓库、去重回收、GUI 日志语义 | 核心与 GUI 已实施；CLI 入口待实现 | — | [MCP 设计](../specs/agent-mcp.md) |
-| 2026-10-21 | [MCP 下载隔离与有限捕获](20261021-mcp-download-isolation.md) | 部分被替代 | 自动协议选择、专用连接、有限捕获、取消及临时文件清理 | 共享核心与 GUI MCP 已接入；CLI MCP 入口不在本轮范围 | [内容校验调整](20261021-mcp-download-validation.md) | [MCP 文件传输](../specs/agent-mcp.md#文件传输) |
+| 2026-10-18 | [MCP 共享操作历史与文本日志](20261018-mcp-shared-operation-history.md) | 有效 | 共享内存仓库、去重回收、CLI／GUI 日志语义 | 核心与 CLI／GUI 已实施 | [CLI 接入补充](20261018-mcp-shared-operation-history.md#2026-10-25-cli-接入补充) | [MCP 设计](../specs/agent-mcp.md) |
+| 2026-10-21 | [MCP 下载隔离与有限捕获](20261021-mcp-download-isolation.md) | 部分被替代 | 自动协议选择、专用连接、有限捕获、取消及临时文件清理 | 共享核心与 CLI／GUI MCP 已接入 | [内容校验调整](20261021-mcp-download-validation.md)、[CLI 接入补充](20261021-mcp-download-isolation.md#2026-10-25-cli-接入补充) | [MCP 文件传输](../specs/agent-mcp.md#文件传输) |
 | 2026-10-21 | [MCP 下载内容校验与扫描开销](20261021-mcp-download-validation.md) | 有效 | 不计算文件内容 SHA-256；直接保存保留还原检查，链接交付不额外完整解压 | 共享下载核心已接入，Python 环境要求不变 | [两种交付方式](../specs/agent-mcp-file-transfer.md) | [MCP 文件传输](../specs/agent-mcp-file-transfer.md) |
 
 ## 历史决策索引

@@ -209,18 +209,24 @@ func safeLogText(value string) string {
 
 // FormatLogLine 的 ANSI 编号与 GUI 色板语义相同。外部终端决定实际颜色。
 func FormatLogLine(line LogLine, ansi bool) string {
-	level := safeLogText(line.Severity)
-	if ansi {
-		color := map[string]string{"DEBUG": "36", "INFO": "32", "WARN": "33", "ERROR": "31"}[line.Severity]
-		if color != "" {
-			level = "\x1b[" + color + "m" + level + "\x1b[0m"
+	style := func(value, code string) string {
+		if !ansi || code == "" {
+			return value
 		}
+		return "\x1b[" + code + "m" + value + "\x1b[0m"
 	}
+	timestamp := style(line.Time.Local().Format("15:04:05"), "2")
+	levelColor := map[string]string{"DEBUG": "36", "INFO": "32", "WARN": "33", "ERROR": "31"}[line.Severity]
+	level := style(fmt.Sprintf("%-5s", safeLogText(line.Severity)), levelColor)
 	connection := ""
 	if line.ConnectionID != "" {
-		connection = " [" + safeLogText(line.ConnectionID) + "]"
+		connection = style("["+safeLogText(line.ConnectionID)+"]", "34") + " "
 	}
-	return line.Time.Local().Format("15:04:05") + "  " + level + connection + "  " + safeLogText(line.Text)
+	message := safeLogText(line.Text)
+	if line.Event == "command_input" {
+		message = style(message, "33")
+	}
+	return timestamp + "  " + level + " " + connection + message
 }
 
 // CallDetails 只接受调用摘要和经过白名单筛选的条件，不持有原始请求或响应。

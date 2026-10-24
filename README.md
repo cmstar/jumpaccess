@@ -22,13 +22,13 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 ## Agent 接入（开发中）
 
-当前源码中的 GUI 通过顶部“MCP”快捷入口打开独立 Agent MCP Tab，页头显示 MCP Server，依次提供日志、连接和配置三个页面，以及 Streamable HTTP 服务的手动启动、停止和重启。关闭 Tab 不停止服务。Token 与监听设置统一保存至 `config.toml`，配置修改保存后在下次启动或重启时生效。多个 Agent 可以共用同一服务查询 Profile、组织、资产、授权账号和 Alias；需要先完成相应 Profile 的 JumpServer 登录。操作步骤见 [GUI MCP Server 指南](docs/manual/agent-mcp.md)。
+当前源码中的 CLI 和 GUI 都可以承载同一套 Streamable HTTP MCP 服务。CLI 使用 `jumpctl mcp config` 查看配置，带 `--rotate-token` 等修改选项时保存并回显配置；使用 `jumpctl mcp serve` 前台运行并持续输出调用日志，`jumpctl mcp status` 查看状态。GUI 通过顶部“MCP”快捷入口打开独立工作区，提供日志、连接和配置页面，以及手动启动、停止和重启。Token 与监听设置统一保存至 `config.toml`，CLI 配置查看和保存后回显直接显示完整 Token；配置修改在下次启动或重启时生效。同一应用数据目录只运行一个实例，多个 Agent 可以共用服务；需要先完成相应 Profile 的 JumpServer 登录。操作步骤见 [MCP Server 指南](docs/manual/agent-mcp.md)。
 
-当前开发版同时提供 SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。CLI MCP 命令尚未实现。
+两个宿主共用资源查询、SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。
 
-Agent 也可异步下载远端文件或目录：服务优先使用 SFTP，不可用时尝试 `sz`，自动压缩并在本地还原，支持持续追加的日志。下载使用独立连接，完成后返回运行 MCP 的电脑上的文件路径。目标需提供 POSIX/Python 3.7+，通过 `download_files` 发起，再用 `get_download` 等待结果；详见 [MCP 文件下载](docs/manual/agent-mcp.md#让-agent-下载文件)。
+Agent 也可异步下载远端文件或目录：服务优先使用 SFTP，不可用时尝试 `sz`，自动压缩，支持持续追加的日志。下载使用独立连接，根据监听配置直接保存到运行 MCP 的电脑，或提供限时下载链接。目标需提供 POSIX/Python 3.7+，通过 `download_files` 发起，再用 `get_download` 等待结果；详见 [MCP 文件下载](docs/manual/agent-mcp.md#让-agent-下载文件)。
 
-GUI 默认不自动启动 MCP 服务；可在 MCP 配置页开启“随应用启动 MCP”，下次启动应用时在后台启动服务，退出应用会停止服务。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
+GUI 默认不自动启动 MCP 服务；可在 MCP 配置页开启“随应用启动 MCP”，关闭 MCP Tab 不停止服务，退出应用会停止服务。CLI 按 Ctrl+C 停止服务后保留终端已有日志和滚动历史，不清屏。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。本轮 CLI 接入验证以本机自动化和集成测试为限，macOS 原生及真实 Agent 客户端仍需验收。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
 
 ## 界面预览
 
@@ -266,7 +266,7 @@ npm run screenshots -- --only=mcp
 npm run screenshots -- --only=mcp --check
 ```
 
-MCP 截图涵盖配置与自动启动、详细日志和连接管理，并嵌入 [GUI MCP Server 指南](docs/manual/agent-mcp.md)。脚本从首次配置场景出发，通过真实界面生成 Token、保存配置并开启“随应用启动 MCP”；第一张图完整展示页头及两张限宽卡片，服务仍处于停止状态。随后切换详细级别并手动启动服务，展示同排的级别提示、样例日志和连接。日志使用终端样式中的系统等宽字体、14px 字号和 1.4 倍行高。MCP 截图中的 Token 显式标为 `DEMO_ONLY`。
+MCP 截图涵盖配置与自动启动、详细日志和连接管理，并嵌入 [MCP Server 指南](docs/manual/agent-mcp.md#在-gui-中使用)。脚本从首次配置场景出发，通过真实界面生成 Token、保存配置并开启“随应用启动 MCP”；第一张图完整展示页头及两张限宽卡片，服务仍处于停止状态。随后切换详细级别并手动启动服务，展示同排的级别提示、样例日志和连接。日志使用终端样式中的系统等宽字体、14px 字号和 1.4 倍行高。MCP 截图中的 Token 显式标为 `DEMO_ONLY`。
 
 截图包含[快速连接搜索结果](docs/screenshots/quick-connect.png)：打开快速连接，输入 `prod`，展示匹配的多个别名和资产、登录账号及 SSH/SFTP 入口。
 

@@ -125,6 +125,37 @@ jumpctl auth login --profile work --no-browser
 
 程序只接受目标严格匹配 `jms://auth/callback` 且 `state` 与当前登录流程一致的回调。Authorization Code 只用于当前 Token 交换，不会写入配置或普通输出。
 
+## MCP Server
+
+CLI 和 GUI 使用同一套 Streamable HTTP MCP 核心、配置与工具；同一应用数据目录只允许一个服务实例。先通过 `auth login` 完成所需 Profile 的 JumpServer 登录，再配置并启动 MCP。操作流程见 [MCP Server 用户指南](manual/agent-mcp.md#在-cli-中使用)。
+
+| 命令 | 作用 |
+| --- | --- |
+| `jumpctl mcp serve [--log-level <level>] [--color <mode>]` | 读取已保存配置并在前台提供 MCP 服务，持续输出操作日志 |
+| `jumpctl mcp status` | 查看运行状态、宿主、实际地址、启动时间和是否需要重启，不显示 Token |
+| `jumpctl mcp config [选项...]` | 无修改选项时查看完整配置；带修改选项时合并指定字段、完整校验并一次保存，再以相同格式回显全部配置，包括明文 Token 和服务 URL |
+
+`config` 不带修改选项时只读显示，不创建或保存配置；`--help` 等展示选项也不触发写入。带下列任一修改选项时进入保存流程，可以单项修改，也可以一次修改多项，未指定字段保持原值。显式 `--allow-lan=false` 同样属于修改。没有跨命令草稿或额外的 `save` 操作，也不提供 `set`、`get` 子命令或兼容别名。支持的修改选项为：
+
+| 选项 | 行为 |
+| --- | --- |
+| `--listen-host <IP或localhost>` | 设置监听地址，默认 `127.0.0.1` |
+| `--port <1–65535>` | 设置端口，默认 `39287` |
+| `--allow-lan=true\|false` | 设置是否允许局域网访问，默认 `false` |
+| `--tls-cert <path>` | 设置 TLS 证书路径 |
+| `--tls-key <path>` | 设置 TLS 私钥路径 |
+| `--no-tls` | 同时清空 TLS 证书与私钥路径，与两个 TLS 路径选项互斥 |
+| `--token <value>` | 手动设置 Token，接受 32 字节随机值的无填充 Base64url 编码 |
+| `--rotate-token` | 首次生成或替换 Token，与 `--token` 互斥，可和网络设置一起保存 |
+
+首次保存没有 Token 时，必须同时指定 `--token` 或 `--rotate-token`。非回环监听必须允许局域网访问，TLS 证书与私钥必须配对且可加载。任何校验或保存失败均不提交部分修改；成功后完整回显配置，Token 不掩码。配置显示与保存后回显的字段名均使用与设置选项一致的连字符形式，例如 `allow-lan` 对应 `--allow-lan`。配置可以在服务运行时保存，但监听、TLS 和 Token 均在下次启动或重启时才生效。
+
+`serve` 的 `--log-level` 接受 `minimal`、`standard`、`detailed`，对应 GUI 的精简、标准、详细，默认 `standard`。`DEBUG`／`INFO` 写 stdout，`WARN`／`ERROR` 与宿主诊断写 stderr；单个调用失败不会结束服务，远端命令非零退出仍按正常完成记录真实退出码，命令 stdout/stderr 正文由 Agent 查询任务获取。
+
+`--color` 接受 `auto`、`always`、`never`，默认 `auto`。两个输出流分别判断终端能力：支持 ANSI 的终端显示颜色，文件和管道默认纯文本；自动模式同时尊重非空 `NO_COLOR` 和 `TERM=dumb`。`always` 强制保留颜色，`never` 关闭颜色。颜色沿用 GUI 的级别、连接 ID、命令输入及时间语义，实际色值由当前终端主题决定；这两个选项仅影响本次运行。
+
+`serve` 前台运行期间不返回 Shell 提示符，状态与配置操作可在另一个终端执行。Ctrl+C 停止服务、释放监听和连接后返回，终端已有日志与滚动历史原样保留，不清屏。正常停止返回 `0`；启动失败或宿主运行故障返回非零。重启时重新执行 `serve`，不提供后台启动、跨进程停止／重启或独立 Token 命令。重复启动会报告已有实例，不能自动换端口。
+
 ## 资源发现
 
 | 命令 | 作用 |
@@ -226,4 +257,4 @@ MVP 只转发 SSH session 能力，包括 env、PTY、shell/exec、窗口变化�
 - 普通命令的结果写 stdout，错误写 stderr。
 - `proxy` 在完成认证、目标解析、Connection Token、上游 host key 校验和上游 SSH 握手之前，不向 stdout 发出 SSH banner。
 - 未登录或 Refresh Token 已失效时，错误会提示运行 `jumpctl auth login`。
-- Token、密码、Connection Token、client-url 和私钥不得出现在 TOML、普通输出或错误文本中。
+- OAuth Token、密码、Connection Token、client-url 和私钥不得出现在 TOML、普通输出或错误文本中。MCP 访问 Token 作为独立的明文配置保存在 TOML，并在 `mcp config` 查看和保存成功后完整显示。

@@ -18,7 +18,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 
 ## CLI 与 GUI 共同行为变更
 
-开发中的 [Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。按当前需求分阶段先接入 GUI、后接入 CLI 时，应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 GUI 已接入配置、Token、HTTP 服务启停、资源查询和 SSH 执行工具；CLI MCP 宿主入口尚未实现。
+[Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。分阶段交付时应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 CLI 与 GUI 均已接入配置、Token、HTTP 服务及共享工具，CLI 提供前台日志，GUI 提供工作区与连接管理。本轮 CLI 接入以本机自动化与集成测试为验证范围，macOS 原生与真实 Agent 客户端仍需分别验收。
 
 以产品能力判断修改范围。CLI 和 GUI 都支持的功能，其业务规则、结果和通用终端输出属于共同契约；代码是否物理共享、用户示例来自哪一端、先定位到哪个文件，都不能据此缩小为单端修改。用户未明确限定入口时，默认要求两端同时生效。
 
@@ -127,10 +127,11 @@ docs/               # 长期项目知识
 ## 配置与凭据
 
 - 非敏感配置使用 TOML；MCP 访问 Token 与网络设置统一保存于该文件，OAuth 凭据仍独立管理。相关边界见 [MCP 设计](specs/agent-mcp.md)。
+- CLI MCP 配置入口将 Token 作为普通明文配置：`mcp config` 无修改选项时只读显示完整值，`mcp config --token <value>` 手动设置，`--rotate-token` 首次生成或替换，两者互斥，不设置独立 Token 命令组。`config` 带显式修改选项时，通过共享 `Settings.UpdateConfig` 在配置锁内读取最新值、合并指定字段、完整校验并原子保存，成功后按只读查看的相同格式回显全部配置；失败不保存部分字段或新 Token。根据修改选项是否显式传入判断读写，`--allow-lan=false` 属于修改，帮助等展示选项不写配置；不提供 `set`、`get` 子命令或兼容别名。GUI 仍使用整份保存接口，两者共用校验。完整契约见 [CLI 命令与配置](specs/agent-mcp.md#cli-命令与配置)，参数见 [CLI 参考](cli.md#mcp-server)。
 - MCP 网络设置与 Token 统一保存在共享配置的可选 `[mcp]` 节，由配置锁保护并原子替换；核心装配不启动监听。旧配置读取和普通保存不新增该节；旧开发版独立 MCP Token 仅在配置中尚无 Token 时兼容读取，读取不写文件，用户显式保存后以 TOML 为准。运行中的服务继续使用启动快照，所有变更均在重启后生效；实例描述只保存去除 Token 的配置和指纹，不保存明文 Token。端口、地址、访问范围、Token 和 TLS 配对由共享核心校验，显式保存时还验证证书与私钥可加载。首次保存 MCP 设置后，旧版本严格解码会拒绝该节；回退前停止服务、备份配置并移除 `[mcp]`，保留其他配置和 OAuth 凭据。
 - MCP 使用官方 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 的无协议会话 Streamable HTTP，保留业务状态在共享 Runtime 中。协议检查覆盖 `2025-11-25` 初始化与 `2026-07-28` 发现流程；SDK HTTP 集成测试不替代真实 Agent 客户端验收。HTTP 使用必填的预共享 Bearer Token、Host／Origin 检查、可选 TLS、请求大小和并发上限，不提供 OAuth 授权服务器或跨域浏览器入口。显式允许 LAN 后可以使用 HTTP + Token；TLS 两项须同时留空或同时填写。
 - MCP 命令控制的回归须覆盖 SSH 网关不转发信号、停止控制输入丢失、取消早于执行应答、取消确认超时和旧取消不影响新任务。POSIX/Python 3 封装测试在 Windows 上通过 `JUMPACCESS_TEST_WSL` 显式选择 WSL 发行版；未启用时会跳过，不能以跳过结果代替远端控制验证。共享核心与 HTTP 集成检查使用 `go test -race ./internal/application/agentmcp ./internal/mcpserver`。
-- MCP 连接与日志的业务数据保留在 `internal/application/agentmcp`，GUI 只负责独立 Tab、过滤与文本投影；CLI MCP 入口本阶段不实现。共享操作仓库与每个 Engine 使用同一把锁，不能在锁内调用订阅者、Wails 或终端 I/O。日志不包含 stdout/stderr、环境变量、Token 或上游原始错误；命令输入仅在详细投影中显示。工具查询的标准摘要与详细条件属于同一操作，条件按类型白名单提取并限制长度，不序列化完整请求或响应；新增工具须核对正常、失败、重复请求和无状态变更路径的日志覆盖。覆盖混合日志挤出结果后不重放、活动保护、2500 条去重总容量、跨重启输出总额度与旧 Engine 释放，以及日志级别切换、暂停、清空、迟到响应和关闭 Tab 不停止服务。GUI 回归入口为 `npm --prefix cmd/jumpaccess/frontend test -- src/components/MCPWorkspace.test.tsx src/components/MCPSettings.test.tsx src/App.test.tsx`。新增 Go 绑定必须由 Wails 构建生成。
+- MCP 连接与日志的业务数据保留在 `internal/application/agentmcp`，GUI 只负责独立 Tab、过滤与文本投影，CLI 从同一共享 History 读取并输出前台日志。共享操作仓库与每个 Engine 使用同一把锁，不能在锁内调用订阅者、Wails 或终端 I/O。日志不包含 stdout/stderr、环境变量、Token 或上游原始错误；命令输入仅在详细投影中显示。工具查询的标准摘要与详细条件属于同一操作，条件按类型白名单提取并限制长度，不序列化完整请求或响应；新增工具须核对正常、失败、重复请求和无状态变更路径的日志覆盖。覆盖混合日志挤出结果后不重放、活动保护、2500 条去重总容量、跨重启输出总额度与旧 Engine 释放，以及日志级别切换、暂停、清空、迟到响应和关闭 Tab 不停止服务。CLI 与共享核心回归入口为 `go test -race ./internal/cli ./internal/application/agentmcp ./internal/mcpserver`；GUI 回归入口为 `npm --prefix cmd/jumpaccess/frontend test -- src/components/MCPWorkspace.test.tsx src/components/MCPSettings.test.tsx src/App.test.tsx`，宿主适配另运行 `go test ./cmd/jumpaccess`。新增 Go 绑定必须由 Wails 构建生成。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
 - OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
@@ -156,6 +157,7 @@ docs/               # 长期项目知识
 
 - CLI 使用 Cobra 的唯一前缀匹配，进程级开关只初始化一次。`internal/cli/prefix.go` 为命令组统一校验未匹配的子命令，并校验 `help` 的目标路径；内置 `help`、`completion` 在构建命令树时初始化。新增命令需考虑同层级名称和别名的前缀冲突，测试完整名称优先、唯一缩写、歧义不执行及位置参数和选项值保持原样。
 - 普通交互命令可以使用 stdout/stderr 与用户沟通。
+- `jumpctl mcp serve` 前台阻塞并按共享日志游标串行输出，`DEBUG`／`INFO` 写 stdout，`WARN`／`ERROR` 和宿主诊断写 stderr；不根据远端命令退出码或 stderr 重新划分日志级别，不重复打印已记录的同一错误。显示详细程度复用 GUI 三档；ANSI 语义覆盖级别、时间、连接 ID 和命令输入，两个流分别判断终端能力，支持自动、强制和关闭颜色。终端 I/O 不持有 History 锁，停止时的资源释放与日志输出均有界；日志普通追加，不使用备用屏幕，Ctrl+C 退出保留已输出文本及终端滚动历史，不清屏。回归分别验证 GUI 日志与 CLI 分流、颜色、重定向及停止行为，具体约定见 [CLI 前台日志与输出](specs/agent-mcp.md#cli-前台日志与输出)。
 - CLI 直接 SSH 会话在建连后立即复查本地 PTY 尺寸，并每 200ms 检查窗口、分屏或字号变化；只在有效尺寸变化时发送 SSH `window-change`，会话退出后停止。macOS 回归测试使用本地真实 PTY 和模拟 SSH 服务端覆盖放大、缩小和正常退出，不连接真实服务器。
 - `jumpctl proxy` 的 stdout 专用于 SSH 协议数据；日志、诊断和可操作错误只写 stderr。
 - Proxy 模式不得启动浏览器或请求交互选择。认证或目标解析失败时返回明确的非零退出码。

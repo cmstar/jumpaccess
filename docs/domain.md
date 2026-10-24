@@ -8,7 +8,7 @@ JumpAccess 面向需要通过 JumpServer 访问远程 Asset 的用户。用户�
 
 JumpAccess 负责认证、资源发现、目标解析和连接编排；JumpServer 仍然是用户授权、Organization、Asset、Account 及会话访问策略的权威来源。
 
-开发中的 Agent 接入场景见 [MCP 设计草案](specs/agent-mcp.md)。GUI 可启动共享核心，支持资源查询、固定目标与登录身份的 SSH 连接复用和非交互命令执行；CLI MCP 入口仍待接通。Alias 歧义不选择首项，查询和执行不改变人类当前选择；工作目录和环境随命令传入。Agent 的逻辑连接、任务与人用 SSH Session 独立管理，生命周期、取消和未知结果边界集中维护在设计中。
+Agent 接入场景见 [MCP 设计](specs/agent-mcp.md)。CLI 和 GUI 均可启动同一共享核心，支持资源查询、固定目标与登录身份的 SSH 连接复用和非交互命令执行。Alias 歧义不选择首项，查询和执行不改变人类当前选择；工作目录和环境随命令传入。Agent 的逻辑连接、任务与人用 SSH Session 独立管理，生命周期、取消和未知结果边界集中维护在设计中。
 
 MCP 下载也绑定明确目标及登录身份，独立于命令连接。Agent 先解析“最新日志”等描述，再提交明确路径；服务按可用协议自动下载。SFTP 根目录限制不改变 SSH 的源文件读取权限，暂存目录必须验证双方可达。正在追加的文件按每次实际打开时的长度捕获，不能宣称多文件来自同一时刻的快照。重复请求返回原任务，重启不恢复下载；清理告警与文件是否可用分别表达。
 
@@ -127,7 +127,7 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 - GUI 退出 Profile 登录前必须要求确认；退出会撤销并清除该 Profile 的 OAuth 凭据，但保留 Profile 配置、Organization、Alias 和已经建立的 SSH Session。
 - CLI 删除 Profile 时必须在 stderr 明确列出删除范围，并且只有从 stdin 收到精确的 `yes` 后才能执行；其他输入、空输入或 EOF 均取消删除。
 - GUI 删除 Profile 会一并清除其 Server URL、Organization、全部 Alias 和本地 OAuth 凭据，并断开该 Profile 的 SSH/SFTP Session 并取消其传输；不会删除 JumpServer 上的 Asset 或 Account。删除当前 Profile 后按名称选择下一个 Profile，没有剩余项时回到未配置状态。
-- Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。
+- OAuth Token、Connection Token、密码、Cookie 和私钥不得进入 TOML、日志或普通命令输出。MCP 访问 Token 独立作为普通明文配置保存在 `config.toml` 并在 GUI 配置页显示；CLI 配置查看和保存后回显同样显示完整值，统一使用 `mcp config`：无修改选项时只读查看，手动设置、生成和替换通过修改选项完成，见 [MCP 设计](specs/agent-mcp.md#cli-命令与配置)。
 - Access Token 刷新只服务于后续 API 请求和新连接，不得主动终止已经建立的 SSH Session。
 - Proxy 模式保持非交互：不打开浏览器、不在 stdout 输出提示、不在账号歧义时要求用户选择。
 - Proxy 模式的失败原因写入 stderr 并返回非零退出码，使调用方能够区分未登录、认证过期、账号歧义和连接失败。

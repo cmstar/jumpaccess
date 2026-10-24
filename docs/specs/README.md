@@ -21,8 +21,8 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | 开发中；GUI 工作区、共享任务、可选后台自动启动和异步文件下载已接入；CLI MCP 待实现；文件传输详见独立方案 |
-| Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | 共享核心与 GUI MCP 已接入；维护核心流程与产品边界，test207 临时样例已验收 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | CLI 前台服务、配置与日志及 GUI 工作区均已接入共享核心；CLI 本机自动化与集成验证，macOS 原生及真实 Agent 客户端待验收；文件传输详见独立方案 |
+| Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | CLI／GUI 共用下载核心；维护核心流程与产品边界，既有 test207 临时样例验收范围不扩展为 CLI 客户端验收 |
 
 ## 历史版本索引
 

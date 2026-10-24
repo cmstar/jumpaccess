@@ -30,7 +30,10 @@ func (s Settings) Config() (config.MCP, error) {
 	if err != nil {
 		return config.MCP{}, err
 	}
-	cfg := value.MCPSettings()
+	return s.withLegacyToken(value.MCPSettings())
+}
+
+func (s Settings) withLegacyToken(cfg config.MCP) (config.MCP, error) {
 	if cfg.Token == "" && s.Credentials != nil {
 		data, err := s.Credentials.Get(tokenKey)
 		if err != nil && !errors.Is(err, credential.ErrNotFound) {
@@ -49,6 +52,47 @@ func (s Settings) Config() (config.MCP, error) {
 
 // SaveConfig 一次原子写入完整配置；运行中的服务继续使用启动快照。
 func (s Settings) SaveConfig(ctx context.Context, value config.MCP) error {
+	if err := validateSavedConfig(value); err != nil {
+		return err
+	}
+	return s.Store.Update(ctx, func(current *config.Config) error { current.MCP = &value; return nil })
+}
+
+// UpdateConfig 在配置锁内读取最新值、合并修改并一次保存，避免覆盖并发修改的未指定字段。
+// 变更回调不可再次获取配置锁；返回值仅在保存成功时有效。
+func (s Settings) UpdateConfig(ctx context.Context, change func(*config.MCP) error) (config.MCP, error) {
+	if err := ctx.Err(); err != nil {
+		return config.MCP{}, err
+	}
+	var saved config.MCP
+	err := s.Store.Update(ctx, func(current *config.Config) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		value, err := s.withLegacyToken(current.MCPSettings())
+		if err != nil {
+			return err
+		}
+		if err := change(&value); err != nil {
+			return err
+		}
+		if err := validateSavedConfig(value); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current.MCP = &value
+		saved = value
+		return nil
+	})
+	if err != nil {
+		return config.MCP{}, err
+	}
+	return saved, nil
+}
+
+func validateSavedConfig(value config.MCP) error {
 	if err := value.Validate(); err != nil {
 		return err
 	}
@@ -60,7 +104,7 @@ func (s Settings) SaveConfig(ctx context.Context, value config.MCP) error {
 			return fmt.Errorf("无法加载 MCP TLS 证书和私钥，请检查路径、权限与内容")
 		}
 	}
-	return s.Store.Update(ctx, func(current *config.Config) error { current.MCP = &value; return nil })
+	return nil
 }
 
 // AcquireInstance 约束服务生存期，同一应用数据目录只允许一个宿主监听。

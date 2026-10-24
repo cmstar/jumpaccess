@@ -58,6 +58,7 @@ type runningServer struct {
 	info     Instance
 	server   *http.Server
 	done     chan struct{}
+	finished chan struct{}
 	cancel   context.CancelFunc
 	unlock   func() error
 	stopping bool
@@ -179,7 +180,7 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 	}
 	base, cancel := context.WithCancel(context.Background())
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 65 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return base }}
-	run := &runningServer{info: info, server: server, cancel: cancel, unlock: unlock, done: make(chan struct{})}
+	run := &runningServer{info: info, server: server, cancel: cancel, unlock: unlock, done: make(chan struct{}), finished: make(chan struct{})}
 	run.engine, _ = handler.(managedEngine)
 	if err := r.writeInstance(info); err != nil {
 		cancel()
@@ -192,18 +193,46 @@ func (r *Runtime) startLocked(ctx context.Context) (Status, error) {
 	r.active, r.lastError, keep = run, "", true
 	r.history.Record(info.ID, "service_started", "INFO", 1, "MCP 服务已启动  "+info.URL+"  host="+r.host)
 	go func() {
-		err := server.Serve(listener)
+		_ = server.Serve(listener)
 		close(run.done)
 		r.mu.Lock()
-		defer r.mu.Unlock()
 		if r.active == run && !run.stopping {
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				r.lastError = "MCP HTTP 服务意外停止"
-			}
+			r.lastError = "MCP HTTP 服务意外停止"
 			r.clearLocked(run)
 		}
+		r.mu.Unlock()
+		close(run.finished)
 	}()
 	return r.localStatus(cfg, true), nil
+}
+
+// Wait 等待当前监听结束，不依赖运行期间可能发生变化的磁盘配置。
+// 取消等待不停止服务；宿主使用独立清理上下文调用 Stop。
+func (r *Runtime) Wait(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	run, lastError := r.active, r.lastError
+	r.mu.Unlock()
+	if run == nil {
+		if lastError != "" {
+			return errors.New(lastError)
+		}
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-run.finished:
+		r.mu.Lock()
+		stopped := run.stopping
+		r.mu.Unlock()
+		if !stopped {
+			return fmt.Errorf("MCP HTTP 服务意外停止")
+		}
+		return nil
+	}
 }
 
 func (r *Runtime) Stop(ctx context.Context) error {
