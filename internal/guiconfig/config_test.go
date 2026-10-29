@@ -2,7 +2,6 @@ package guiconfig
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -184,25 +183,27 @@ func TestDecodeAcceptsPersistedWorkspaceTabs(t *testing.T) {
 	}
 }
 
-func TestDecodeRejectsUnknownField(t *testing.T) {
-	_, err := Decode([]byte("" +
-		"version = 1\n" +
-		"unknown = true\n"))
-	if err == nil {
-		t.Fatal("Decode error = nil, want unknown field error")
+func TestDecodeIgnoresUnknownFieldsAcrossVersions(t *testing.T) {
+	for _, version := range []int{1, 2, 3, CurrentVersion, CurrentVersion + 1} {
+		_, err := Decode([]byte(fmt.Sprintf("version = %d\nunknown = true\n[mcp]\nauto_start = false\n", version)))
+		if err != nil {
+			t.Fatalf("version %d: %v", version, err)
+		}
 	}
 }
 
-func TestDecodeReportsNewerVersionBeforeUnknownFields(t *testing.T) {
-	_, err := Decode([]byte("" +
+func TestDecodeAcceptsNewerVersionWithCompatibleKnownFields(t *testing.T) {
+	got, err := Decode([]byte("" +
 		fmt.Sprintf("version = %d\n", CurrentVersion+1) +
 		"[future]\n" +
 		"future = true\n"))
-	if err == nil {
-		t.Fatal("Decode error = nil, want version incompatibility")
+	if err != nil || got.Version != CurrentVersion+1 {
+		t.Fatalf("version = %d, error = %v", got.Version, err)
 	}
-	if got := err.Error(); !strings.Contains(got, fmt.Sprintf("GUI config version %d is newer than supported version %d; update JumpAccess", CurrentVersion+1, CurrentVersion)) {
-		t.Fatalf("Decode error = %q, want actionable version incompatibility", got)
+	for _, raw := range []string{"version = 0", "version = -1", "version = 99\n[terminal]\nfont_size = \"large\"", "version = 99\n[terminal]\nfont_size = -1"} {
+		if _, err := Decode([]byte(raw)); err == nil {
+			t.Fatal("accepted invalid known field")
+		}
 	}
 }
 

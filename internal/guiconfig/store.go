@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BurntSushi/toml"
+	"github.com/cmstar/jumpaccess/internal/configfile"
 	"github.com/cmstar/jumpaccess/internal/filelock"
 )
 
@@ -51,6 +51,26 @@ func (s Store) Save(value Config) (err error) {
 	if err := value.Validate(); err != nil {
 		return err
 	}
+	original, err := configfile.Read(s.Path)
+	if err != nil {
+		return err
+	}
+	if version, _ := original["version"].(int64); version == 1 || version == 2 {
+		// 已迁移到新分组的旧字段应移除；同组中的未知字段仍保留。
+		for group, fields := range map[string][]string{
+			"appearance": {"terminal_font_family", "terminal_font_size"},
+			"behavior":   {"confirm_close_active_session", "show_tab_close_buttons"},
+		} {
+			if table, ok := original[group].(map[string]any); ok {
+				for _, field := range fields {
+					delete(table, field)
+				}
+				if len(table) == 0 {
+					delete(original, group)
+				}
+			}
+		}
+	}
 	directory := filepath.Dir(s.Path)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return fmt.Errorf("create GUI config directory: %w", err)
@@ -69,7 +89,7 @@ func (s Store) Save(value Config) (err error) {
 	if err = temporary.Chmod(0o600); err != nil {
 		return fmt.Errorf("protect temporary GUI config: %w", err)
 	}
-	if err = toml.NewEncoder(temporary).Encode(value); err != nil {
+	if err = configfile.Encode(temporary, value, original); err != nil {
 		return fmt.Errorf("encode GUI config: %w", err)
 	}
 	if err = temporary.Sync(); err != nil {

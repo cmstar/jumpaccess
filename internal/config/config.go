@@ -71,12 +71,9 @@ func Default() Config {
 
 func Decode(data []byte) (Config, error) {
 	result := Default()
-	metadata, err := toml.Decode(string(data), &result)
+	_, err := toml.Decode(string(data), &result)
 	if err != nil {
 		return Config{}, fmt.Errorf("decode TOML: %w", err)
-	}
-	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
-		return Config{}, fmt.Errorf("unknown TOML field %q", undecoded[0].String())
 	}
 	if err := result.Validate(); err != nil {
 		return Config{}, err
@@ -85,7 +82,7 @@ func Decode(data []byte) (Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if c.Version != CurrentVersion {
+	if c.Version < CurrentVersion {
 		return fmt.Errorf("unsupported config version %d", c.Version)
 	}
 	if c.Profiles == nil {

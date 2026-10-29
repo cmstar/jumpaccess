@@ -213,40 +213,19 @@ func Decode(data []byte) (Config, error) {
 	if header.Version == 1 || header.Version == 2 {
 		return decodeLegacy(data, header.Version)
 	}
-	if header.Version >= 3 && header.Version < CurrentVersion {
-		return decodeGroupedPreferences(data)
-	}
-	if header.Version > CurrentVersion {
-		return Config{}, fmt.Errorf("GUI config version %d is newer than supported version %d; update JumpAccess", header.Version, CurrentVersion)
-	}
-	if header.Version != CurrentVersion {
+	if header.Version < 1 {
 		return Config{}, fmt.Errorf("unsupported GUI config version %d", header.Version)
 	}
-
-	result := Default()
-	metadata, err := toml.Decode(string(data), &result)
-	if err != nil {
-		return Config{}, fmt.Errorf("decode GUI TOML: %w", err)
-	}
-	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
-		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
-	}
-	if err := result.Validate(); err != nil {
-		return Config{}, err
-	}
-	return result, nil
+	return decodeGroupedPreferences(data)
 }
 
 func decodeGroupedPreferences(data []byte) (Config, error) {
 	result := Default()
-	metadata, err := toml.Decode(string(data), &result)
+	_, err := toml.Decode(string(data), &result)
 	if err != nil {
 		return Config{}, fmt.Errorf("decode GUI TOML: %w", err)
 	}
-	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
-		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
-	}
-	result.Version = CurrentVersion
+	result.Version = max(result.Version, CurrentVersion)
 	if err := result.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -269,12 +248,9 @@ func decodeLegacy(data []byte, version int) (Config, error) {
 		Workspace: defaults.Workspace,
 		Window:    defaults.Window,
 	}
-	metadata, err := toml.Decode(string(data), &legacy)
+	_, err := toml.Decode(string(data), &legacy)
 	if err != nil {
 		return Config{}, fmt.Errorf("decode GUI TOML: %w", err)
-	}
-	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
-		return Config{}, fmt.Errorf("unknown GUI TOML field %q", undecoded[0].String())
 	}
 	result := defaults
 	result.Appearance.Theme = legacy.Appearance.Theme
@@ -311,7 +287,7 @@ func (c Config) Validate() error {
 	if err := c.Terminal.Background.Validate(); err != nil {
 		return err
 	}
-	if c.Version != CurrentVersion {
+	if c.Version < CurrentVersion {
 		return fmt.Errorf("unsupported GUI config version %d", c.Version)
 	}
 	switch c.Appearance.Theme {

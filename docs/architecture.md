@@ -35,7 +35,7 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 | 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好、Tab 工作区和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
-| 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias 和非敏感行为配置 |
+| 配置 | `internal/config` 管理 Profile、Alias 和非敏感行为配置；校验已知字段并原子保存 TOML，与 `internal/guiconfig` 共用 `internal/configfile` 保留其他版本写入的未知字段和较高版本号 |
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
@@ -173,6 +173,8 @@ ProxyCommand 有两层独立主机信任：
 2. JumpAccess 使用应用根目录的 `known_hosts` 验证上游 JumpServer gateway。Proxy 模式不接受未知密钥，用户需先通过直接 SSH 审阅指纹。
 
 ## 数据与平台边界
+
+`config.toml` 与 `gui.toml` 采用前向兼容读写：未知字段不阻止启动，较高版本号在已知结构仍可解析且校验通过时允许读取；现有旧版 GUI 迁移继续生效。保存前重新读取原文件，按当前模型更新已知字段，保留未知字段及较高版本号，不将已经删除的 Profile、Alias 或 Tab 恢复回来。Tab 扩展字段按 ID 对应，排序不改变归属；原文件无法解析时停止保存，避免丢失未知数据。保存保留字段值，不承诺保留 TOML 注释与排版；未知字段在当前版本中不生效。决策及兼容边界见 [配置前向兼容](decisions/20261029-config-forward-compatibility.md)。
 
 每个用户使用单一应用根目录：
 
