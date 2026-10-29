@@ -482,7 +482,7 @@ test('当前 Profile 未登录时启动后自动打开 Profile 页面', async ()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
-test('Tab 快捷键从搜索框双向循环、跟随拖动排序并恢复可见焦点', async () => {
+test('Tab 快捷键从搜索框双向循环、跟随拖动排序并恢复焦点', async () => {
   const backend = makeBackend()
   const user = userEvent.setup()
   render(<App backend={backend} />)
@@ -510,6 +510,45 @@ test('Tab 快捷键从搜索框双向循环、跟随拖动排序并恢复可见�
   fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true, shiftKey: true })
   expect(profileTab).toHaveAttribute('aria-selected', 'true')
   await waitFor(() => expect(backend.saveWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ activeTabId: 'system:profiles' })))
+})
+
+test('Tab 快捷键不显示按钮焦点框，普通 Tab 和方向导航仍保留焦点提示', async () => {
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValue({ ...bootstrapState, workspace: {
+      activeTabId: 'system:profiles',
+      tabs: [{ id: 'system:assets', type: 'assets' }, { id: 'system:profiles', type: 'profiles' }],
+    } }),
+  })
+  const user = userEvent.setup()
+  render(<><style>{appStyles}</style><App backend={backend} /></>)
+  const assetsTab = await screen.findByRole('tab', { name: '资产' })
+  const profileTab = screen.getByRole('tab', { name: 'Profile' })
+  const cycleToAssets = async () => {
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    fireEvent.keyUp(window, { key: 'Tab', ctrlKey: true })
+    await waitFor(() => expect(assetsTab).toHaveFocus())
+    expect(assetsTab).toHaveStyle({ outline: 'none' })
+  }
+  await cycleToAssets()
+  fireEvent.keyDown(assetsTab, { key: 'Control', ctrlKey: true })
+  expect(assetsTab).toHaveStyle({ outline: 'none' })
+  // Home 的目标仍是当前标签，也应恢复键盘导航提示。
+  fireEvent.keyDown(assetsTab, { key: 'Home' })
+  expect(assetsTab).toHaveFocus()
+  expect(assetsTab).not.toHaveStyle({ outline: 'none' })
+  fireEvent.keyDown(assetsTab, { key: 'ArrowRight' })
+  expect(profileTab).toHaveFocus()
+  expect(profileTab).not.toHaveStyle({ outline: 'none' })
+  await cycleToAssets()
+  await user.tab()
+  await user.tab({ shift: true })
+  expect(assetsTab).toHaveFocus()
+  expect(assetsTab).not.toHaveStyle({ outline: 'none' })
+  await user.click(profileTab)
+  await cycleToAssets()
+  await user.click(profileTab)
+  await user.click(assetsTab)
+  expect(assetsTab).not.toHaveStyle({ outline: 'none' })
 })
 
 test('Tab 快捷键在 SSH 全屏中先恢复窗口，失败或弹窗期间不切换', async () => {

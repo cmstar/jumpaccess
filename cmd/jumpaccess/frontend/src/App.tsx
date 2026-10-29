@@ -416,6 +416,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       const selected = document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
       selected?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
       const terminal = document.querySelector<HTMLTextAreaElement>('.terminal-host .xterm-helper-textarea')
+      if (!terminal && selected) selected.dataset.shortcutFocus = 'true'
       const target = terminal ?? selected
       target?.focus({ preventScroll: true })
     })
@@ -1397,7 +1398,11 @@ function TitleBar({ backend, activeTabID, auth, fullscreen, onActivate, onClose,
           onClick={() => onActivate(tab.id)}
           onMouseEnter={() => { if (isConnectionTab(tab)) tabDisplayNames.load(tab) }}
           onFocus={() => { if (isConnectionTab(tab)) tabDisplayNames.load(tab) }}
-          onKeyDown={(event) => activateFromKeyboard(event, index)}
+          onBlur={(event) => { delete event.currentTarget.dataset.shortcutFocus }}
+          onKeyDown={(event) => {
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) delete event.currentTarget.dataset.shortcutFocus
+            activateFromKeyboard(event, index)
+          }}
           role="tab"
           tabIndex={tab.id === activeTabID ? 0 : -1}
           title={isConnectionTab(tab) ? tabTooltip(tab, tabDisplayNames.names(tab)) : tabTitle(tab)}
