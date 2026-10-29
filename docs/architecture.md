@@ -80,6 +80,8 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 
 新 Tab 的插入位置由 Tab reducer 统一处理，桌面前端传入当前 GUI 偏好 `tabs.new_tab_position`：`end` 追加到末尾，`after_current` 插入当前 Tab 右侧。单例页和 SSH/SFTP 页共用该规则；已存在单例页的激活及工作区恢复不重排 Tab。
 
+桌面 Tab 导航使用 Windows/macOS 共用的 `Control+Tab` / `Control+Shift+Tab`，由前端捕获完整按键序列，Tab reducer 按当前排列循环激活；组合键不会进入 xterm 或发送给 SSH。模态弹窗期间不切换，全屏时复用窗口恢复流程，成功后才激活目标；切换后将目标标签滚动至可见范围，SSH 恢复终端焦点，其他页面聚焦对应 Tab 按钮。
+
 终端当前使用 xterm DOM 渲染器。产品光标值 `quarter_block` 在共用渲染参数中映射为原生 `underline`，预览和会话宿主通过限定 CSS 将其加粗为字符格高度的约 25%，沿用原生光标颜色与闪烁。此适配依赖 DOM 光标结构；将来切换 Canvas/WebGL 渲染器或升级 xterm 时，必须重新验证或补充对应实现，不能直接把产品自定义值传给 xterm。
 
 终端背景由应用级 Provider 统一加载，预览和 SSH 会话共用独立的背景容器。容器以终端方案底色打底，图片层单独设置透明度；xterm 创建时启用透明背景支持，图片加载成功后仅把默认背景的 alpha 设为 0，保留 RGB、ANSI 色、光标和选区参数。背景范围包含终端内容及内边距，排除外层框体和工具栏，固定在可视区域并不随输出滚动；切换图片或开关只更新显示，不重建终端和 SSH Session。图片失败时恢复纯色，设置页显示原因。

@@ -96,6 +96,9 @@ export type TabAction = {
   type: 'activate'
   id: string
 } | {
+  type: 'cycle'
+  direction: 1 | -1
+} | {
   type: 'begin-connection'
   tabID: string
   reconnecting: boolean
@@ -144,6 +147,12 @@ export function reduceTabs(state: TabWorkspace, action: TabAction, newTabPositio
   }
   if (action.type === 'activate') {
     return state.tabs.some((tab) => tab.id === action.id) ? { ...state, activeTabID: action.id } : state
+  }
+  if (action.type === 'cycle') {
+    if (state.tabs.length < 2) return state
+    const index = state.tabs.findIndex(tab => tab.id === state.activeTabID)
+    const nextIndex = index < 0 ? 0 : (index + action.direction + state.tabs.length) % state.tabs.length
+    return { ...state, activeTabID: state.tabs[nextIndex].id }
   }
   if (action.type === 'drop-profile') {
     const belongsToProfile = (tab: AppTab) => isConnectionTab(tab) && tab.descriptor.profile === action.profile

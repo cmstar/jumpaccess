@@ -43,6 +43,7 @@ import { AssetIcon } from './components/AssetIcon'
 import { NotificationProvider, useNotifications } from './components/Notifications'
 import { useCopyText } from './components/useCopyText'
 import { useTerminalFullscreen } from './model/useTerminalFullscreen'
+import { useTabShortcuts } from './model/useTabShortcuts'
 import { DeveloperSettings } from './components/DeveloperSettings'
 import appIconURL from '../../build/appicon.svg'
 import type { TerminalActions } from './components/TerminalPane'
@@ -397,6 +398,29 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const selectedDetail = selectedAsset ? details[selectedAsset.id] : undefined
   const activeTab = workspace.tabs.find((tab) => tab.id === workspace.activeTabID)
   const terminalFullscreen = useTerminalFullscreen(backend, activeTab, showError, () => showInfo(navigator.platform.toLowerCase().includes('mac') ? '已进入全屏，按 F11 退出；鼠标移到顶部可显示退出按钮。' : '已进入全屏，按 F11 或 Alt+Enter 退出；鼠标移到顶部可显示退出按钮。'))
+  const keyboardTabFocus = useRef('')
+  useTabShortcuts(direction => {
+    if (workspaceRef.current.tabs.length < 2) return
+    void terminalFullscreen.runWindowed(() => {
+      if (workspaceRef.current.tabs.length < 2 || document.querySelector('[role="dialog"]')) return
+      dispatchTabs({ type: 'cycle', direction })
+      keyboardTabFocus.current = workspaceRef.current.activeTabID
+    })
+  })
+  useEffect(() => {
+    if (!keyboardTabFocus.current) return
+    if (keyboardTabFocus.current !== workspace.activeTabID) { keyboardTabFocus.current = ''; return }
+    const frame = requestAnimationFrame(() => {
+      keyboardTabFocus.current = ''
+      if (document.querySelector('[role="dialog"]')) return
+      const selected = document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
+      selected?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+      const terminal = document.querySelector<HTMLTextAreaElement>('.terminal-host .xterm-helper-textarea')
+      const target = terminal ?? selected
+      target?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [workspace])
   const filteredAssets = useMemo(() => assets.results.filter((asset) => {
     if (aliasFilter === 'with-alias') return asset.aliases.length > 0
     if (aliasFilter === 'without-alias') return asset.aliases.length === 0

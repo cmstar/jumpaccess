@@ -187,6 +187,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 - stdout、stderr、退出码以及敏感信息脱敏。
 - Token 刷新失败不会关闭活动 SSH Session。
 - React 界面通过可注入的类型化后端测试分页、Alias 搜索与账号选择、设置持久化、Tab 状态机与工作区恢复、SSH 断连/重连/输出事件和主机密钥确认。
+- Tab 快捷键覆盖 Windows/macOS 的 Control 双向循环、拖动后顺序、连续按键、焦点恢复、弹窗和全屏恢复失败；在 xterm 处理前消费整段组合键事件，并验证普通 Tab 不受影响。浏览器演示中的实体 Ctrl+Tab 可能由浏览器保留，合成事件测试不代表完成原生 WebView2/WKWebView 按键验收。
 
 真实账号只用于开发者本机手工 smoke test，用来确认浏览器登录、MFA、真实 API、Connection Token 和 SSH 完整链路。账号、密码和 Token 不通过对话传递，不进入自动 CI；程序需要登录时，由开发者本人在系统浏览器中完成。
 

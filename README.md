@@ -170,6 +170,12 @@ Host production-web
 
 `proxy` 模式不打开浏览器，也不提示选择 Account。缺少登录、Refresh Token 失效、目标或 Account 不唯一、上游主机尚未信任时，进程会在 SSH banner 之前失败，只向 stderr 写入可操作错误并返回非零状态。先运行 `jumpctl auth login` 完成授权；未知上游 gateway 需要先用 `jumpctl ssh` 进行一次人工指纹确认。
 
+## 桌面 Tab 切换
+
+Windows 使用 `Ctrl+Tab` 切换到右侧下一个 Tab，`Ctrl+Shift+Tab` 切换到左侧上一个 Tab；macOS 使用相同的 `Control+Tab`、`Control+Shift+Tab`。按 Tab 栏当前顺序首尾循环，支持持续按住 Control 连按 Tab，也支持长按；只有一个 Tab 时保持原位。
+
+焦点在 SSH 终端或输入框内也可切换，切换到 SSH 后可继续输入。弹窗打开期间暂停切换；终端全屏时先恢复窗口再切换，恢复失败则保持当前 Tab。组合键不会发送给远端，普通 `Tab` 和 `Shift+Tab` 保留原行为。这是桌面客户端的快捷键，浏览器演示中的实体按键可能由外部浏览器优先处理。
+
 ## SSH 终端全屏
 
 在 SSH Tab 按 F11 切换全屏，Windows 也支持 Alt+Enter ；再按一次恢复原窗口位置、大小或最大化状态。全屏隐藏 Tab 栏和底部状态栏，鼠标移到顶部中央可显示会话名称和退出按钮。Esc 仍用于终端操作。
