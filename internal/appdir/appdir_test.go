@@ -31,8 +31,26 @@ func TestRootForDarwinUsesApplicationSupport(t *testing.T) {
 	}
 }
 
+func TestRootForLinuxUsesUserConfigDirectory(t *testing.T) {
+	got, err := RootFor("linux", "", "/home/alice/.config")
+	if err != nil {
+		t.Fatalf("RootFor returned error: %v", err)
+	}
+
+	const want = "/home/alice/.config/JumpAccess"
+	if got != want {
+		t.Fatalf("RootFor() = %q, want %q", got, want)
+	}
+}
+
 func TestRootForWindowsRejectsMissingLocalAppData(t *testing.T) {
 	if _, err := RootFor("windows", "", ""); err == nil {
 		t.Fatal("RootFor() error = nil, want missing LOCALAPPDATA error")
+	}
+}
+
+func TestRootForLinuxRejectsMissingUserConfigDirectory(t *testing.T) {
+	if _, err := RootFor("linux", "", ""); err == nil {
+		t.Fatal("RootFor() error = nil, want missing user config directory error")
 	}
 }

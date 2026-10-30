@@ -160,6 +160,8 @@ test('读取目标标签中的说明正文，并自动保留下载说明和比�
   assert.doesNotMatch(notes, /开发过程中的临时修复|不应进入发布说明的未提交改动/)
   assert.match(notes, /## 下载说明/)
   assert.match(notes, /jumpctl-v2\.0\.0-windows-amd64\.zip/)
+  assert.match(notes, /jumpctl-v2\.0\.0-linux-amd64\.tar\.gz/)
+  assert.match(notes, /jumpctl-v2\.0\.0-linux-arm64\.tar\.gz/)
   assert.match(notes, /checksums\.txt/)
   assert.match(notes, /compare\/v1\.0\.0\.\.\.v2\.0\.0/)
 })

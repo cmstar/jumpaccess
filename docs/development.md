@@ -13,7 +13,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 - GUI 使用 Wails 2.14，前端使用 React、TypeScript 和 Vite。Wails 项目根位于 `cmd/jumpaccess`，与根 Go module 共用依赖。
 - 前端开发和 CI 使用 Node.js 24；前端依赖和脚本以 `cmd/jumpaccess/frontend/package.json` 与 `package-lock.json` 为准。
 - 桌面应用图标的唯一设计源为 `cmd/jumpaccess/build/appicon.svg`；`appicon.png` 是由该 SVG 渲染的 1024×1024 构建输入，Windows 多尺寸图标为 `cmd/jumpaccess/build/windows/icon.ico`。三者使用同一“终端 chevron 穿过跳板网关”标记，不以生成式栅格图作为发布源。
-- Windows 和 macOS 都是目标平台。
+- CLI 目标平台为 Windows、macOS，以及 Ubuntu 24.04 LTS 上的 Linux amd64/arm64；Ubuntu 22.04 LTS 作为预期兼容平台，尚未纳入持续验证。Ubuntu 20.04 LTS 及更早版本和其他未验证的 Ubuntu LTS 不属于正式支持基线。Wails GUI 目标平台仍为 Windows 和 macOS。
 - JumpServer Client `v4.1.6` 是首个协议行为参考，不应成为运行时依赖。
 
 ## CLI 与 GUI 共同行为变更
@@ -134,9 +134,10 @@ docs/               # 长期项目知识
 - MCP 连接与日志的业务数据保留在 `internal/application/agentmcp`，GUI 只负责独立 Tab、过滤与文本投影，CLI 从同一共享 History 读取并输出前台日志。共享操作仓库与每个 Engine 使用同一把锁，不能在锁内调用订阅者、Wails 或终端 I/O。日志不包含 stdout/stderr、环境变量、Token 或上游原始错误；命令输入仅在详细投影中显示。工具查询的标准摘要与详细条件属于同一操作，条件按类型白名单提取并限制长度，不序列化完整请求或响应；新增工具须核对正常、失败、重复请求和无状态变更路径的日志覆盖。覆盖混合日志挤出结果后不重放、活动保护、2500 条去重总容量、跨重启输出总额度与旧 Engine 释放，以及日志级别切换、暂停、清空、迟到响应和关闭 Tab 不停止服务。CLI 与共享核心回归入口为 `go test -race ./internal/cli ./internal/application/agentmcp ./internal/mcpserver`；GUI 回归入口为 `npm --prefix cmd/jumpaccess/frontend test -- src/components/MCPWorkspace.test.tsx src/components/MCPSettings.test.tsx src/App.test.tsx`，宿主适配另运行 `go test ./cmd/jumpaccess`。新增 Go 绑定必须由 Wails 构建生成。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
-- OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
+- Linux 应用数据根目录在设置 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/JumpAccess`，否则为 `~/.config/JumpAccess`。
+- OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 与 Linux 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
 - Profile 名不按文件名规则清洗或规范化；配置拒绝空名称、首尾空白、控制字符以及 `.`、`..`，凭据后端使用 `SHA-256("oauth/" + profile)` 生成固定长度文件名。这样允许 Unicode 和文件系统保留字符，并避免字符替换规则造成确定性碰撞。
-- Windows Credential Manager 与 macOS Keychain 只用于 ProxyCommand host key，不参与 OAuth Token 读写。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
+- Windows Credential Manager、macOS Keychain 与 Linux `ssh/proxy_host_ed25519_key` 只用于 ProxyCommand host key，不参与 OAuth Token 读写。Linux `ssh` 目录权限为 `0700`，私钥权限为 `0600`。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
 - macOS 使用 `SecItemCopyMatching`、`SecItemAdd`、`SecItemUpdate`、`SecItemDelete`，保持文件型 Keychain、`JumpAccess:` service 前缀和空 account，兼容旧版本条目，不切换到 Data Protection Keychain。原生回归在 macOS 上运行 `JUMPACCESS_TEST_KEYCHAIN=1 CGO_ENABLED=1 CGO_CFLAGS='-Werror=deprecated-declarations' go test ./internal/credential -run TestNativeKeychainLegacyCompatibility -count=1`；该测试会在默认 Keychain 创建并清理唯一命名的合成条目，可能触发系统授权提示，默认不运行。它覆盖传统条目读取、更新、二进制与空值、新增、删除和未找到语义。
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
@@ -233,7 +234,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 
 GUI 构建脚本保持兼容 macOS 系统 Bash：启用 `set -u` 时，参数数组需包含基础构建参数，避免展开空数组。`node --test scripts/*.test.mjs` 会用 Wails 替身验证三个目标平台的实参；Windows 默认查找 Git 安装目录中的 Bash，也可通过 `JUMPACCESS_TEST_BASH` 指定路径。
 
-`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。macOS runner 通过 Homebrew 安装 `lrzsz`，运行 POSIX 下载脚本测试，并在 Go 测试中覆盖模拟 SSH 网关的 SFTP 与真实 `sz` 回退。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
+`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；Linux 使用当前明确的 Ubuntu 24.04 LTS amd64/arm64 原生 runner，关闭 CGO，安装 `lrzsz` 后执行全量 Go 测试、平台 race、`go vet`、POSIX 下载脚本、`jumpctl` 构建及 CLI/MCP help smoke。Ubuntu 24.04 LTS 是唯一持续验证和正式支持的 Linux 基线；Ubuntu 22.04 LTS 仅为预期兼容平台。新增或更新正式支持的 Ubuntu LTS 时，须先在两个架构上完成同等验证并更新支持矩阵，不能由“LTS”名称自动扩大产品承诺。无需等到打版本标签才发现平台编译问题。macOS runner 通过 Homebrew 安装 `lrzsz`，运行 POSIX 下载脚本测试，并在 Go 测试中覆盖模拟 SSH 网关的 SFTP 与真实 `sz` 回退。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
 
 Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。
 
@@ -248,7 +249,7 @@ $env:CGO_LDFLAGS = '-O2 -g -Wl,--fatal-warnings'
 
 默认没有警告豁免。确实无法立即修复的诊断必须在改动中写明具体文件或依赖版本、诊断名称、保留理由和移除条件；自有 C/Objective-C 代码仅在最小调用范围内用 diagnostic push/pop 将指定诊断降为 warning，保留日志。禁止全局 `-w`、`-Wno-error`、`continue-on-error` 或忽略构建退出码；第三方依赖警告优先升级或修复依赖，不预设整类豁免。
 
-失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64 和 macOS arm64 三项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
+失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64、macOS arm64、Linux amd64 和 Linux arm64 五项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
 
 macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scripts/darwin-link.sh` 调用 clang。Go 1.25 会为本项目和 Wails 2.14.0 中各个含 Objective-C 的 CGO 包追加 `-lobjc`，触发 [Go #67799](https://github.com/golang/go/issues/67799) 所述的重复库警告。脚本只保留首个 `-lobjc`，其他参数、严格警告与链接失败退出码均保持原样；不关闭重复库警告。上游修复后可移除脚本与两处 GUI 构建的 `-extld` 参数。本机 macOS 严格构建也应向 Wails 的 `-ldflags` 传入该脚本的绝对路径。
 
@@ -256,11 +257,12 @@ macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scrip
 
 `.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步校验版本格式。`vX.Y.Z` 为正式版；带合法非正式尾缀的 `vX.Y.Z-...` 均为非正式版，不限于 `pre`，也包括 `alpha`、`beta`、`rc`、`nightly` 和自定义尾缀；当前不支持 `+build` 元数据。标签指向的提交必须已经包含该工作流。版本排序、发布说明和 Agent 发布操作的完整规则见[版本发布规范](standards/release.md)。发布顺序为：
 
-1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64 和 macOS arm64 的原生测试和严格构建。
+1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64、macOS arm64、Linux amd64 和 Linux arm64 的原生测试和严格构建。
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
-5. 汇总五个归档、生成 `checksums.txt`，读取标签对应提交中的 `docs/releases/<tag>.md` 作为 Release Notes 正文，再附加下载说明和完整变更链接；文件不存在时给出警告，并回退到 Conventional Commits 分类说明，文件存在但为空白时失败。最后创建 GitHub Release；标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和非正式尾缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
+5. 在 Ubuntu 24.04 LTS amd64/arm64 原生 runner 上分别以 `CGO_ENABLED=0` 构建内含 MCP Server 的 `jumpctl`，连同许可证文件压缩为对应架构的 tar.gz。
+6. 汇总七个归档、生成 `checksums.txt`，读取标签对应提交中的 `docs/releases/<tag>.md` 作为 Release Notes 正文，再附加下载说明和完整变更链接；文件不存在时给出警告，并回退到 Conventional Commits 分类说明，文件存在但为空白时失败。最后创建 GitHub Release；标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和非正式尾缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
 
 源码中的 CLI/GUI `version` 保持为 `dev`，`wails.json` 的 `info.productVersion` 只作为开发占位值。发布工作流从标签移除前导 `v`，通过 `-ldflags "-X main.version=<version>"` 注入程序版本，并调用 `scripts/set-wails-version.mjs` 在 runner 临时工作副本中写入仅含 `X.Y.Z` 的平台元数据版本。该临时改动不会提交或推回仓库。
 

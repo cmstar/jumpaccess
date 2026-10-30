@@ -91,6 +91,8 @@ export function renderReleaseNotes({ commits = [], body, previousTag, repository
     `- \`jumpaccess-${tag}-windows-amd64.zip\`：Windows 桌面 GUI`,
     `- \`jumpctl-${tag}-darwin-amd64.tar.gz\`：macOS Intel CLI`,
     `- \`jumpctl-${tag}-darwin-arm64.tar.gz\`：macOS Apple Silicon CLI`,
+    `- \`jumpctl-${tag}-linux-amd64.tar.gz\`：Linux amd64 CLI 与 MCP`,
+    `- \`jumpctl-${tag}-linux-arm64.tar.gz\`：Linux arm64 CLI 与 MCP`,
     `- \`jumpaccess-${tag}-darwin-universal.zip\`：macOS Universal 桌面 GUI`,
     '- `checksums.txt`：所有发布文件的 SHA-256 校验值',
     '',

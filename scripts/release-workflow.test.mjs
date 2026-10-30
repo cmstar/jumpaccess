@@ -43,6 +43,17 @@ function runScript(script, env, cwd = workspace) {
   return result
 }
 
+test('发布工作流原生构建并校验 Linux amd64 与 arm64 jumpctl 发布物', () => {
+  assert.match(workflow, /build-linux-cli:/u)
+  assert.match(workflow, /arch: amd64[\s\S]*runner: ubuntu-24\.04/u)
+  assert.match(workflow, /arch: arm64[\s\S]*runner: ubuntu-24\.04-arm/u)
+  assert.match(workflow, /GOOS=linux GOARCH=\$\{\{ matrix\.arch \}\} go build/u)
+  assert.match(workflow, /jumpctl-v\$VERSION-linux-\$\{\{ matrix\.arch \}\}\.tar\.gz/u)
+  assert.match(workflow, /"jumpctl-\$GITHUB_REF_NAME-linux-amd64\.tar\.gz"/u)
+  assert.match(workflow, /"jumpctl-\$GITHUB_REF_NAME-linux-arm64\.tar\.gz"/u)
+  assert.match(workflow, /- build-linux-cli/u)
+})
+
 test('发布工作流保留任意合法非正式尾缀，并为桌面元数据提取纯版本号', (t) => {
   const directory = temporaryDirectory(t)
   for (const tag of ['v2.0.0', 'v2.0.0-preview.1', 'v2.0.0-nightly.20261024', 'v2.0.0-test-foo']) {
