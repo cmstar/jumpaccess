@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、进程生命周期内自动续期、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口、多 xterm SSH 会话和独立 SFTP 文件传输。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、进程生命周期内自动续期、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口、多 xterm SSH 会话和独立 SFTP 文件传输。2026-11-02 已完成 Ubuntu 24.04 LTS / WSL2 amd64 的真实 JumpServer CLI 与 MCP 验收，以及 Codex 原生调用和 Cursor 客户端接入验证；范围见 [Linux 验收结果](specs/linux-support.md#73-已完成的验收与待确认项)。macOS 原生、Linux 双架构原生 CI 和 Go 1.25.x 结果仍待确认，实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -18,7 +18,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 
 ## CLI 与 GUI 共同行为变更
 
-[Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。分阶段交付时应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 CLI 与 GUI 均已接入配置、Token、HTTP 服务及共享工具，CLI 提供前台日志，GUI 提供工作区与连接管理。本轮 CLI 接入以本机自动化与集成测试为验证范围，macOS 原生与真实 Agent 客户端仍需分别验收。
+[Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。分阶段交付时应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 CLI 与 GUI 均已接入配置、Token、HTTP 服务及共享工具，CLI 提供前台日志，GUI 提供工作区与连接管理。Linux CLI 宿主已完成真实环境命令执行、下载和生命周期验收；Codex 与 Cursor 的验证范围见 [Linux 验收结果](specs/linux-support.md#73-已完成的验收与待确认项)，不据此宣称 Wails GUI 或 macOS 原生验收通过。
 
 以产品能力判断修改范围。CLI 和 GUI 都支持的功能，其业务规则、结果和通用终端输出属于共同契约；代码是否物理共享、用户示例来自哪一端、先定位到哪个文件，都不能据此缩小为单端修改。用户未明确限定入口时，默认要求两端同时生效。
 

@@ -1,14 +1,14 @@
 # Agent MCP 接入设计
 
-状态：共享核心及 CLI／GUI 宿主已接入。GUI 提供独立 MCP 工作区、连接管理、文本日志、配置、Token、启停及可选后台自动启动；CLI 提供前台服务、状态查询、配置修改与持续日志。两端通过同一核心提供资源查询、SSH 连接复用、命令任务、输出、超时与取消，以及异步文件下载、自动协议适配和压缩还原。本轮 CLI 接入的验证范围为本机自动化与集成测试，macOS 原生及真实 Agent 客户端仍需验收。
+状态：共享核心及 CLI／GUI 宿主已接入。GUI 提供独立 MCP 工作区、连接管理、文本日志、配置、Token、启停及可选后台自动启动；CLI 提供前台服务、状态查询、配置修改与持续日志。两端通过同一核心提供资源查询、SSH 连接复用、命令任务、输出、超时与取消，以及异步文件下载、自动协议适配和压缩还原。Linux CLI 宿主已完成真实环境命令、下载和生命周期验收，Codex 原生调用、Cursor CLI 工具发现及 Cursor WSL GUI 只读查询通过；范围见 [Linux 验收结果](linux-support.md#73-已完成的验收与待确认项)。macOS 原生及 Wails GUI 的真实客户端验收仍需独立确认。
 
-更新日期：2026-10-25。文件传输的直接保存、链接交付、权限回退及生命周期独立维护于[文件传输设计](agent-mcp-file-transfer.md)。
+更新日期：2026-11-02。文件传输的直接保存、链接交付、权限回退及生命周期独立维护于[文件传输设计](agent-mcp-file-transfer.md)。
 
 ## 目标与范围
 
 让 AI Agent 独立通过 JumpAccess 查询 JumpServer 资源、选择服务器与账号，执行已授权命令，并下载远端日志和其他文件。多个 Agent、多轮对话可以共用同一个 MCP 服务，减少重复连接和认证的等待。
 
-CLI 与 GUI 均提供相同的 **Streamable HTTP MCP** 服务，使用同一套配置、工具和结果语义。目标客户端包括支持该接入方式的 Codex、Claude Code 等 Agent；Windows 与 macOS 上的产品行为保持一致。
+CLI 与 GUI 均提供相同的 **Streamable HTTP MCP** 服务，使用同一套配置、工具和结果语义。CLI 支持 Windows、macOS 和 Ubuntu 24.04 LTS amd64/arm64，GUI 支持 Windows/macOS；目标客户端包括支持该接入方式的 Codex、Cursor、Claude Code 等 Agent。
 
 首期范围包括资源查询、连接管理、非交互命令执行、文件下载、长任务查询、超时与取消，以及单 Token 鉴权。文件下载由服务自动选择协议并准备内容；直接保存与链接领取的行为见独立设计。实际访问仍受 JumpServer 账号权限和策略约束，命令审批流程不在本次范围内。
 

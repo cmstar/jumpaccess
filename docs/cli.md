@@ -71,6 +71,7 @@ Alias 适合批量直接编辑。每用户应用根目录为：
 
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
+- Linux：设置 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/JumpAccess`，否则为 `~/.config/JumpAccess`；WSL2 使用其 Linux 环境中的目录。
 
 Profile 名保持用户输入的精确值，不按文件名规则改写。名称不能是空值、不能带首尾空白或控制字符，也不能是 `.`、`..`；Unicode、路径分隔符和平台保留名由凭据文件名摘要隔离，不会直接进入路径。
 
@@ -236,7 +237,7 @@ jumpctl proxy <target> [--profile <name>] [--organization <org>] [--account <acc
 
 Proxy 模式是非交互的 SSH server façade：stdout 只承载 SSH 协议字节，诊断只写 stderr。它不会打开浏览器、选择 Account 或信任未知上游 host key。Asset 沿用首个精确匹配规则；Account 必须由 Alias、显式参数或唯一可用账号确定，否则报错。
 
-Windows 上，`jumpctl proxy` 会在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，如果兼容客户端已通过管道提供 stdin、stdout，且当前控制台只属于 `jumpctl`，进程会脱离该私有控制台。PowerShell、CMD、Windows Terminal、OpenSSH 等共享或交互控制台保持附着；检查无法确认时也保持原状。macOS 不执行这项 Windows 专用处理。远端程序的 stdout 和 stderr 仍作为 SSH channel 数据正常显示在客户端中，不能与 ProxyCommand stdout 上的原始 SSH 传输流混用。
+Windows 上，`jumpctl proxy` 会在连接准备和本地 SSH façade 握手期间保留 stderr；握手成功后，如果兼容客户端已通过管道提供 stdin、stdout，且当前控制台只属于 `jumpctl`，进程会脱离该私有控制台。PowerShell、CMD、Windows Terminal、OpenSSH 等共享或交互控制台保持附着；检查无法确认时也保持原状。macOS 与 Linux 不执行这项 Windows 专用处理。远端程序的 stdout 和 stderr 仍作为 SSH channel 数据正常显示在客户端中，不能与 ProxyCommand stdout 上的原始 SSH 传输流混用。
 
 通用 OpenSSH 示例：
 
@@ -247,7 +248,7 @@ Host production-web
     ProxyCommand jumpctl proxy %h
 ```
 
-外部 SSH 客户端连接的是 JumpAccess façade，因此会看到一把由 JumpAccess 保存在操作系统凭据存储中的稳定 Ed25519 host key。JumpAccess 再通过自己的 `known_hosts` 验证上游 JumpServer gateway。这两层信任彼此独立。
+外部 SSH 客户端连接的是 JumpAccess façade，因此会看到一把稳定的 Ed25519 host key。其私钥在 Windows 使用 Credential Manager，在 macOS 使用 Keychain，在 Linux 使用应用根目录下的 `ssh/proxy_host_ed25519_key`（`ssh` 目录权限 `0700`，私钥文件权限 `0600`）。JumpAccess 再通过应用根目录下的 `known_hosts` 验证上游 JumpServer gateway。这两层信任彼此独立；本地代理私钥不参与 OAuth Token 存储。
 
 MVP 只转发 SSH session 能力，包括 env、PTY、shell/exec、窗口变化、信号、stdout、extended stderr 和退出状态；明确拒绝端口转发、agent、X11、SFTP/subsystem 及未知请求。
 

@@ -2,12 +2,12 @@
 
 ## 状态
 
-- 文档状态：Implemented；Ubuntu 24.04 LTS amd64 完整回归、平台 race、静态检查及 amd64/arm64 试打包已验证；GitHub 原生 CI 与真实环境验收待运行。本机使用 Go 1.27.1，CI 使用 `go.mod` 指定的 Go 1.25.x
+- 文档状态：Implemented；Ubuntu 24.04 LTS / WSL2 amd64 完整回归、平台 race、静态检查、真实 JumpServer CLI/MCP 验收及 amd64/arm64 试打包已验证；GitHub 原生 CI 与 Go 1.25.x 运行结果仍待确认。本机验证使用 Go 1.27.1，详见 [7.3 验收结果](#73-已完成的验收与待确认项)
 - 需求范围：已确认
 - 设计评审：已确认
 - 基线版本：`v0.2.0-pre.4`（`429affdafcf83498c2a6c444702fbcbe0e1175ed`）
 - 目标平台：Ubuntu 24.04 LTS 与运行相同发行版的 WSL2，`linux/amd64` 与 `linux/arm64`；Ubuntu 22.04 LTS 预期兼容
-- 更新时间：2026-10-30
+- 更新时间：2026-11-02
 
 ## 1. 背景
 
@@ -54,7 +54,7 @@ JumpAccess 当前面向 Windows 与 macOS 提供 CLI、GUI 和 MCP 能力。目�
 
 | 平台 | amd64 | arm64 | 支持级别 |
 | --- | --- | --- | --- |
-| Ubuntu 24.04 LTS 原生环境 | 支持 | 支持 | 正式支持；两个架构均由原生 CI 持续验证 |
+| Ubuntu 24.04 LTS 原生环境 | 支持 | 支持 | 正式支持范围；CI 已配置两个架构的原生 runner，本轮尚待确认运行结果 |
 | Ubuntu 24.04 LTS on WSL2 | 支持 | 支持 | 正式支持范围；Windows/WSL 特有边界通过手工 smoke test 验证 |
 | Ubuntu 22.04 LTS 原生环境或 WSL2 | 预期兼容 | 预期兼容 | 尚未纳入持续验证，不作为正式支持基线 |
 | Ubuntu 20.04 LTS 及更早版本 | 不承诺 | 不承诺 | 可能可以运行，但不提供正式支持或兼容承诺 |
@@ -214,6 +214,26 @@ CI 使用 `CGO_ENABLED=0` 验证共享 Go test graph 与 CLI，不构建或发�
 
 真实环境 smoke test 不纳入自动 CI，也不在仓库保存 endpoint、username 或 Token。
 
+### 7.3 已完成的验收与待确认项
+
+截至 2026-11-02，本轮实际环境为 Ubuntu 24.04 LTS / WSL2 amd64，使用 Go 1.27.1；测试目标和文件均经使用者指定。以下只记录范围和结果，不包含真实站点、资产、账号、回调、凭据或业务文件内容。
+
+| 范围 | 验收结果 |
+| --- | --- |
+| 本地自动化 | 完整 Go 回归、平台 race、`go vet`、CI/发布脚本测试和 Python 下载脚本测试通过；安装 `lrzsz` 后 SFTP → `sz` 回退集成测试通过 |
+| 双架构试打包 | amd64/arm64 静态 ELF 与 tar.gz 内容、权限和校验和验证通过；仅 amd64 在本机实际运行，arm64 交叉构建不等于原生运行 |
+| CLI 真实链路 | 手工 OAuth 登录、资源与账号查询、交互 SSH、重复连接、ProxyCommand 交互/exec 和 CLI ZMODEM 下载通过 |
+| MCP 认证和查询 | 无凭据请求返回 401，协议初始化、工具发现和只读查询通过；Access Token 过期后资源查询自动续期，无需交互登录 |
+| MCP 执行与控制 | Codex 原生工具调用的 stdout/stderr 分流、非零退出码、请求键去重、远端超时终止、主动取消及取消后连接复用通过 |
+| MCP 下载 | 经 Codex 原生工具调用，SFTP 本地交付完成且 `files_ready=true`；去重、准备中取消确认、取消已完成任务仍保留最终文件通过；未向模型输出文件正文 |
+| 服务生命周期 | 重复启动被拒绝；无活动任务时正常停止后端口与锁释放；重启后原生查询及新 SSH 执行成功，旧连接/执行/下载 ID 返回 `INSTANCE_CHANGED` |
+| Agent 客户端 | Codex 当前会话原生调用通过；Cursor CLI 的 7 项只读工具发现通过，Cursor WSL GUI 的原生组织查询由使用者操作并提供成功结果 |
+| 验收收尾 | 测试连接关闭，活动及未知任务计数为 0；临时开放执行/下载工具后恢复客户端的 7 项只读边界 |
+
+客户端接入使用部署侧 stdio → HTTP 适配器读取项目原生 Token；该适配器及工具白名单不属于 `jumpctl` 发布物。以上客户端结果不代表 Cursor GUI 的命令执行/下载、Wails 桌面宿主或其他平台已完成同等验收。通用接入步骤见 [Linux/WSL2 MCP 指南](../manual/agent-mcp.md#linuxwsl2-接入-codex-与-cursor)。
+
+仍需确认 Ubuntu 24.04 LTS amd64/arm64 GitHub 原生 CI、Windows/macOS 回归及正式 CI 工具链 Go 1.25.x 的结果；macOS 真实环境验收仍未覆盖。Ubuntu 22.04 LTS 维持预期兼容，未因本轮结果升级为正式支持。MCP 下载的链接交付、其他协议及更广边界继续以各自测试证据为准。
+
 ## 8. 发布与回滚
 
 采用独立 Linux artifact 增量发布，不修改已有平台安装路径。发布前保留上一版本 checksum 与 artifact。
@@ -245,4 +265,4 @@ WSL2 与 headless Linux 不保证存在 D-Bus 或 Keyring。严格私密文件�
 
 1. Linux 交付不重写 CLI 或 MCP 业务逻辑，由单一 `jumpctl` 二进制同时提供现有 CLI 与 MCP Server。
 2. Linux amd64/arm64 已纳入 Ubuntu 24.04 LTS 原生 CI 与 tag Release，分别生成对应架构的 `jumpctl` tar.gz，不发布 Linux GUI；Ubuntu 22.04 LTS 仅保持预期兼容，其他版本须验证后再更新支持矩阵。
-3. 自动测试和无真实凭据的 MCP smoke 属于本次交付；真实 JumpServer、Codex 与 Cursor 客户端验收需要另行提供低权限环境并明确授权，不在仓库保存 endpoint、username 或 Token。
+3. 本机自动测试及已授权的真实 JumpServer、Codex 原生调用和 Cursor 只读接入已完成，范围见 7.3；GitHub 原生 CI 结果与其他平台验收继续独立确认，不在仓库保存 endpoint、username 或 Token。

@@ -1,6 +1,6 @@
 # MCP 文件传输设计
 
-状态：共享核心与 CLI／GUI MCP 均已接入。CLI 复用既有下载、取消和文件领取实现；本轮 CLI 接入以本机自动化与集成测试为验证范围，macOS 原生及真实 Agent 客户端仍需验收。更新日期：2026-10-25。
+状态：共享核心与 CLI／GUI MCP 均已接入。CLI 复用既有下载、取消和文件领取实现；Linux CLI 宿主经 Codex 原生 MCP 完成真实环境 SFTP 本地下载、请求去重及取消验收，见 [Linux 验收结果](linux-support.md#73-已完成的验收与待确认项)。该结果不扩大既有临时样例范围，也不代替链接交付、其他协议、macOS 原生、Wails GUI 或 Cursor GUI 下载验收。更新日期：2026-11-02。
 
 本文说明文件传输的核心流程、交付方式与产品边界。通用服务、认证及任务规则见 [Agent MCP 接入设计](agent-mcp.md)，操作说明见 [MCP 用户指南](../manual/agent-mcp.md)。
 

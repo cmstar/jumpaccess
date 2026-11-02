@@ -21,9 +21,9 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
-| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | CLI 前台服务、配置与日志及 GUI 工作区均已接入共享核心；CLI 本机自动化与集成验证，macOS 原生及真实 Agent 客户端待验收；文件传输详见独立方案 |
-| Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | CLI／GUI 共用下载核心；维护核心流程与产品边界，既有 test207 临时样例验收范围不扩展为 CLI 客户端验收 |
-| Linux CLI 与 MCP 支持 | [Linux CLI 与 MCP 支持设计](linux-support.md) | 已实现；Ubuntu 24.04 LTS amd64 本机回归及双架构试打包已验证，GitHub 原生 CI 与真实环境验收待运行；Ubuntu 22.04 LTS 预期兼容，GUI 延后 |
+| Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | CLI／GUI 已接入共享核心；Linux CLI 真实环境和 Codex 原生调用通过，Cursor CLI 工具发现及 WSL GUI 只读查询通过；macOS 原生仍待验收 |
+| Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | CLI／GUI 共用下载核心；Linux CLI 宿主经 Codex 原生 MCP 的 SFTP 本地下载、去重与取消通过；其他交付模式及既有样例的验收边界保持独立 |
+| Linux CLI 与 MCP 支持 | [Linux CLI 与 MCP 支持设计](linux-support.md) | 已实现；Ubuntu 24.04 LTS / WSL2 amd64 本机回归和真实环境验收、双架构试打包已完成；GitHub 原生 CI 仍待确认，Ubuntu 22.04 LTS 预期兼容，Linux GUI 延后 |
 
 ## 历史版本索引
 
