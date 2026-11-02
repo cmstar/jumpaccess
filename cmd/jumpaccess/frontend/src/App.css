@@ -146,6 +146,11 @@
   text-align: left;
 }
 
+/* 快捷键切换用选中底色提示；普通键盘导航继续使用默认焦点框。 */
+.tab-activate[data-shortcut-focus]:focus {
+  outline: none;
+}
+
 .tab-activate > svg {
   width: 14px;
   height: 14px;

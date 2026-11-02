@@ -57,7 +57,7 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 | 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好、Tab 工作区和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
-| 配置 | `internal/config` 已读取、严格校验并原子保存 TOML，管理 Profile、Alias、行为配置以及 MCP 网络设置与访问 Token；OAuth 凭据独立保存 |
+| 配置 | `internal/config` 管理 Profile、Alias、行为配置以及 MCP 网络设置与访问 Token；校验已知字段并原子保存 TOML，与 `internal/guiconfig` 共用 `internal/configfile` 保留其他版本写入的未知字段和较高版本号；OAuth 凭据独立保存 |
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端、Tab 和 MCP 启动行为分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
@@ -101,6 +101,8 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 桌面 Asset DTO 同时保留类型、类别的稳定标识与显示名称；`AssetIcon` 只根据这些元数据选择图标，连接入口仍由授权协议决定。资产列表与详情复用 `AssetAliasItem` 和既有 Alias 应用操作，详情不维护独立的别名副本。详情加载失败在相应资产内显示并允许重试，与无授权协议状态区分。
 
 新 Tab 的插入位置由 Tab reducer 统一处理，桌面前端传入当前 GUI 偏好 `tabs.new_tab_position`：`end` 追加到末尾，`after_current` 插入当前 Tab 右侧。单例页和 SSH/SFTP 页共用该规则；已存在单例页的激活及工作区恢复不重排 Tab。
+
+桌面 Tab 导航使用 Windows/macOS 共用的 `Control+Tab` / `Control+Shift+Tab`，由前端捕获完整按键序列，Tab reducer 按当前排列循环激活；组合键不会进入 xterm 或发送给 SSH。模态弹窗期间不切换，全屏时复用窗口恢复流程，成功后才激活目标；切换后将目标标签滚动至可见范围，SSH 恢复终端焦点，其他页面聚焦对应 Tab 按钮。快捷键聚焦使用选中底色提示，不额外显示按钮焦点框；失焦或改用普通 Tab、方向键等键盘导航后恢复默认焦点提示。
 
 终端当前使用 xterm DOM 渲染器。产品光标值 `quarter_block` 在共用渲染参数中映射为原生 `underline`，预览和会话宿主通过限定 CSS 将其加粗为字符格高度的约 25%，沿用原生光标颜色与闪烁。此适配依赖 DOM 光标结构；将来切换 Canvas/WebGL 渲染器或升级 xterm 时，必须重新验证或补充对应实现，不能直接把产品自定义值传给 xterm。
 
@@ -195,6 +197,8 @@ ProxyCommand 有两层独立主机信任：
 2. JumpAccess 使用应用根目录的 `known_hosts` 验证上游 JumpServer gateway。Proxy 模式不接受未知密钥，用户需先通过直接 SSH 审阅指纹。
 
 ## 数据与平台边界
+
+`config.toml` 与 `gui.toml` 采用前向兼容读写：未知字段不阻止启动，较高版本号在已知结构仍可解析且校验通过时允许读取；现有旧版 GUI 迁移继续生效。保存前重新读取原文件，按当前模型更新已知字段，保留未知字段及较高版本号，不将已经删除的 Profile、Alias 或 Tab 恢复回来。Tab 扩展字段按 ID 对应，排序不改变归属；原文件无法解析时停止保存，避免丢失未知数据。保存保留字段值，不承诺保留 TOML 注释与排版；未知字段在当前版本中不生效。决策及兼容边界见 [配置前向兼容](decisions/20261029-config-forward-compatibility.md)。
 
 每个用户使用单一应用根目录：
 

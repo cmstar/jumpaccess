@@ -56,7 +56,7 @@ jumpctl ssh web
 | --- | --- |
 | `jumpctl config path` | 输出 `config.toml` 的绝对路径 |
 | `jumpctl config edit` | 不存在时创建默认配置，并用系统默认编辑器打开 |
-| `jumpctl config validate` | 严格解析 TOML，拒绝未知字段和非法值 |
+| `jumpctl config validate` | 校验 TOML 语法及已知字段的类型和取值；忽略未知字段，允许已知结构兼容的较高版本号 |
 | `jumpctl profile add <name> --url <site>` | 新增 JumpServer Profile；第一个 Profile 自动成为当前项 |
 | `jumpctl profile update <name> --url <site>` | 修改 Profile 的 Server URL；保留 Organization 和 Alias，URL 变化时清除旧 OAuth 凭据并要求重新登录 |
 | `jumpctl profile delete <name>` | 删除 Profile、Organization、Alias 和本地 OAuth 凭据；只有交互输入精确的 `yes` 后才执行，删除当前项后自动选择下一个 Profile |

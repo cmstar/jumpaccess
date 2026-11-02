@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BurntSushi/toml"
+	"github.com/cmstar/jumpaccess/internal/configfile"
 	"github.com/cmstar/jumpaccess/internal/filelock"
 )
 
@@ -51,6 +51,10 @@ func (s Store) Save(value Config) (err error) {
 	if err := value.Validate(); err != nil {
 		return err
 	}
+	original, err := configfile.Read(s.Path)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(s.Path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
@@ -71,7 +75,7 @@ func (s Store) Save(value Config) (err error) {
 	if err = temporary.Chmod(0o600); err != nil {
 		return fmt.Errorf("protect temporary config: %w", err)
 	}
-	if err = toml.NewEncoder(temporary).Encode(value); err != nil {
+	if err = configfile.Encode(temporary, value, original); err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
 	if err = temporary.Sync(); err != nil {

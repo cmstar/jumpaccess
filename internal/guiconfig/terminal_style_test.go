@@ -76,7 +76,7 @@ func TestTerminalScrollbarVisibilityValidation(t *testing.T) {
 			t.Fatalf("mode %q: expected validation error, got %v", mode, err)
 		}
 	}
-	if _, err := Decode([]byte("[terminal]\nshow_scrollbar = true\n")); err == nil {
-		t.Fatal("obsolete show_scrollbar field must be rejected")
+	if got, err := Decode([]byte("[terminal]\nshow_scrollbar = true\n")); err != nil || got.Terminal.ScrollbarVisibility != "active" {
+		t.Fatal("unrecognized show_scrollbar must not override current defaults")
 	}
 }

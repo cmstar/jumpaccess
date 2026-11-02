@@ -46,17 +46,19 @@ account = "root"
 	}
 }
 
-func TestDecodeRejectsUnknownCredentialField(t *testing.T) {
+func TestDecodeIgnoresUnknownFields(t *testing.T) {
 	raw := []byte(`
 version = 1
 
 [profiles.work]
 url = "https://jump.example.test"
-access_token = "must-not-be-stored-here"
+future_option = "from-another-version"
+[mcp]
+enabled = true
 `)
 
-	if _, err := Decode(raw); err == nil {
-		t.Fatal("Decode error = nil, want rejection of unknown credential field")
+	if _, err := Decode(raw); err != nil {
+		t.Fatalf("new fields prevented loading: %v", err)
 	}
 }
 
@@ -120,9 +122,15 @@ func TestDecodeAppliesBehaviorDefaults(t *testing.T) {
 	}
 }
 
-func TestDecodeRejectsUnsupportedVersion(t *testing.T) {
-	if _, err := Decode([]byte("version = 2\n")); err == nil {
-		t.Fatal("Decode error = nil, want unsupported version error")
+func TestDecodeAcceptsNewerVersionWithCompatibleKnownFields(t *testing.T) {
+	got, err := Decode([]byte("version = 2\n[mcp]\nenabled = true\n"))
+	if err != nil || got.Version != 2 {
+		t.Fatalf("version = %d, error = %v", got.Version, err)
+	}
+	for _, raw := range []string{"version = 0", "version = -1", "version = 2\n[behavior]\nconnect_timeout = 42"} {
+		if _, err := Decode([]byte(raw)); err == nil {
+			t.Fatal("accepted invalid known field")
+		}
 	}
 }
 

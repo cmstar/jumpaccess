@@ -13,6 +13,33 @@ const descriptor = {
 }
 
 describe('reduceTabs', () => {
+  it('按当前排列顺序双向循环所有类型的 Tab，切换不改变连接', () => {
+    let state = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'assets' })
+    state = reduceTabs(state, { type: 'open-ssh', id: 'ssh-1', descriptor })
+    state = reduceTabs(state, { type: 'attach-session', tabID: 'ssh-1', sessionID: 'live-1' })
+    state = reduceTabs(state, { type: 'open-sftp', id: 'sftp-1', descriptor })
+    state = reduceTabs(state, { type: 'open-singleton', kind: 'settings' })
+    state = reduceTabs(state, { type: 'move', id: 'sftp-1', toIndex: 0 })
+    const tabs = state.tabs
+    for (const id of ['sftp-1', 'system:assets', 'ssh-1', 'system:settings']) {
+      state = reduceTabs(state, { type: 'cycle', direction: 1 })
+      expect(state.activeTabID).toBe(id)
+      expect(state.tabs).toBe(tabs)
+    }
+    for (const id of ['ssh-1', 'system:assets', 'sftp-1', 'system:settings']) {
+      state = reduceTabs(state, { type: 'cycle', direction: -1 })
+      expect(state.activeTabID).toBe(id)
+    }
+  })
+
+  it('空工作区或单个 Tab 不循环', () => {
+    const single = reduceTabs(emptyTabWorkspace, { type: 'open-singleton', kind: 'assets' })
+    for (const state of [emptyTabWorkspace, single]) {
+      expect(reduceTabs(state, { type: 'cycle', direction: 1 })).toBe(state)
+      expect(reduceTabs(state, { type: 'cycle', direction: -1 })).toBe(state)
+    }
+  })
+
   const openingActions: TabAction[] = [
     { type: 'open-singleton', kind: 'profiles' },
     { type: 'open-ssh', id: 'ssh-new', descriptor },

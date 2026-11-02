@@ -78,9 +78,6 @@ func Decode(data []byte) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("decode TOML: %w", err)
 	}
-	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
-		return Config{}, fmt.Errorf("unknown TOML field %q", undecoded[0].String())
-	}
 	if !metadata.IsDefined("mcp") {
 		result.MCP = nil
 	}
@@ -94,7 +91,7 @@ func (c *Config) Validate() error {
 	if err := c.MCPSettings().Validate(); err != nil {
 		return err
 	}
-	if c.Version != CurrentVersion {
+	if c.Version < CurrentVersion {
 		return fmt.Errorf("unsupported config version %d", c.Version)
 	}
 	if c.Profiles == nil {
