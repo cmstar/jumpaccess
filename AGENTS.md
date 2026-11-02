@@ -10,6 +10,7 @@ JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `j
 - 系统边界、模块关系或技术选择：[架构说明](docs/architecture.md)；涉及重要取舍时通过[决策记录](docs/decisions/README.md)的当前有效索引核对状态、范围、实施状态和后续说明。考据历史原因时再读历史索引，历史正文不直接作为当前编码要求。
 - Profile、Organization、Asset、Account、Alias、Token 和 Session 规则：[业务说明](docs/domain.md)
 - 工程布局、测试、安全和跨平台约束：[开发说明](docs/development.md)；专项开发约束通过[项目规范](docs/standards/README.md)定位。
+- 准备版本、编写发布说明、创建或推送发布标签：[版本发布规范](docs/standards/release.md)；逐版本正文保存在 [docs/releases/](docs/releases/README.md)。
 - CLI 命令、参数和输出契约：[CLI 命令参考](docs/cli.md)
 - 具体需求、功能、重构或迁移：[需求与设计](docs/specs/README.md)，先查当前方案，再按需查历史版本。
 - 部署、回滚和排障：[操作手册](docs/runbooks/README.md)，执行前核对适用范围与验证状态。
@@ -30,5 +31,6 @@ JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `j
 - 生产行为变更采用 RED–GREEN–REFACTOR，并在结束前运行与修改最相关的检查。
 - 不把产品能力写成 Tabby 专用能力；`ProxyCommand` 面向所有兼容客户端。
 - 不提交密码、Token、Cookie、私钥、生产数据或含秘密的测试输出；真实账号只用于本机手工 smoke test。
+- 用户明确要求“在当前版本上创建并推送 `v...`”或同义发布指令时，已授权按[版本发布规范](docs/standards/release.md)刷新已发布版本信息、编写并预览发布说明、验证、提交本次范围、创建和推送目标标签，以及跟进发布工作流；不重复索要发布确认。仅要求准备或预览时不推送。保留无关未提交内容，范围确有歧义时才澄清；已有标签或 Release 冲突不得自动覆盖或强推。
 - 未经明确确认，不执行破坏性数据操作、迁移或发布。
 - 受保护内容：Wails bindings、前端构建产物和桌面二进制由生成流程维护；图标从 `appicon.svg` 更新并重新生成。具体路径和维护方式见[生成物与构建资源](docs/development.md#生成物与构建资源)；文档截图仍遵守上述人工触发规则。

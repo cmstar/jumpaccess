@@ -29,4 +29,7 @@ func TestBindingsAppCreationDoesNotReadUserData(t *testing.T) {
 	if !reflect.DeepEqual(app.initialPreferences, guiconfig.Default()) {
 		t.Fatalf("bindings preferences = %#v, want defaults", app.initialPreferences)
 	}
+	if app.mcp != nil {
+		t.Fatal("bindings 模式构造了 MCP 运行时")
+	}
 }

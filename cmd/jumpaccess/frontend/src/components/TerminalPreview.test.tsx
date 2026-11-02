@@ -27,6 +27,7 @@ const preferences: Preferences = {
   terminalShowStatusBar: true,
   terminalFullscreenHideToolbar: true,
   terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
+  mcpAutoStart: false,
 }
 
 beforeEach(() => { mock.options.length = 0; vi.clearAllMocks() })

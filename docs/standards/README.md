@@ -20,3 +20,4 @@
 | 文档链接 | 适用范围 | 来源参考 |
 | --- | --- | --- |
 | [贡献指南](../../CONTRIBUTING.md) | Issue、PR、审查与合并协作流程，以及中英文模板的使用方式 | [开发说明](../development.md)、[Agent 工作入口](../../AGENTS.md) |
+| [版本发布规范](release.md) | 版本分类、已发布基准选择、逐版本发布说明，以及 Agent 准备和推送发布的流程 | [自动发布](../development.md#自动发布)、[发布说明目录](../releases/README.md)、[Agent 工作入口](../../AGENTS.md) |

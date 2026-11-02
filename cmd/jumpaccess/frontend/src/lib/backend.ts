@@ -1,5 +1,6 @@
 import { defaultTerminalBackground, type TerminalBackground } from '../model/terminalBackground'
 import type { NewTabPosition } from '../model/tabs'
+import type { MCPBackend, MCPConfig, MCPStatus, MCPConnection, MCPLogPage } from './mcpTypes'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type TerminalRightClickAction = 'paste' | 'context_menu'
@@ -7,6 +8,7 @@ export type TerminalCursorStyle = 'block' | 'bar' | 'underline' | 'quarter_block
 export type TerminalScrollbarVisibility = 'always' | 'active' | 'hidden'
 
 export interface Preferences {
+  mcpAutoStart: boolean
   downloadMode: 'ask' | 'automatic' | 'remember' | 'custom'
   downloadDirectory: string
   terminalBackground: TerminalBackground
@@ -29,7 +31,7 @@ export interface Preferences {
   newTabPosition: NewTabPosition
 }
 
-export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'ssh' | 'sftp'
+export type WorkspaceTabType = 'assets' | 'profiles' | 'settings' | 'mcp' | 'ssh' | 'sftp'
 
 export interface WorkspaceTab {
   id: string
@@ -214,6 +216,7 @@ export interface LoginAttempt {
 }
 
 export interface Backend {
+  mcp?: MCPBackend
   acknowledgeSSHOutput?(id: string, sequence: number): Promise<void>
   zmodem?: import('./zmodemTypes').ZmodemBackend
   bootstrap(): Promise<BootstrapState>
@@ -281,6 +284,7 @@ export interface Backend {
 }
 
 type GoPreferences = {
+  MCP: { AutoStart: boolean }
   Downloads: { Mode: Preferences['downloadMode']; Directory: string }
   Version: number
   Appearance: { Theme: ThemeMode }
@@ -289,6 +293,16 @@ type GoPreferences = {
 }
 
 type DesktopBinding = {
+  GetMCPStatus(): Promise<MCPStatus>
+  ListMCPConnections(): Promise<MCPConnection[]>
+  ReadMCPLogs(cursor: number, limit: number): Promise<MCPLogPage>
+  CloseMCPConnection(id: string, mode: string): Promise<MCPConnection>
+  SaveMCPConfig(value: MCPConfig): Promise<MCPStatus>
+  StartMCP(): Promise<MCPStatus>
+  StopMCP(): Promise<MCPStatus>
+  RestartMCP(): Promise<MCPStatus>
+  GenerateMCPToken(): Promise<string>
+  ChooseMCPTLSFile(kind: 'certificate' | 'key', currentPath: string): Promise<string>
   AcknowledgeSSHOutput(id: string, sequence: number): Promise<void>
   ProbeSSHTransferCommands(id: string): Promise<import('./zmodemTypes').TransferCapabilities>
   WriteSSHBinary(id: string, data: string): Promise<void>
@@ -388,6 +402,7 @@ function subscribe<T>(eventName: string, handler: (event: T) => void): () => voi
 
 function toPreferences(value: GoPreferences): Preferences {
   return {
+    mcpAutoStart: value.MCP?.AutoStart ?? false,
     downloadMode: value.Downloads.Mode,
     downloadDirectory: value.Downloads.Directory,
     version: value.Version,
@@ -413,6 +428,7 @@ function toPreferences(value: GoPreferences): Preferences {
 
 function fromPreferences(value: Preferences): GoPreferences {
   return {
+    MCP: { AutoStart: value.mcpAutoStart },
     Downloads: { Mode: value.downloadMode, Directory: value.downloadDirectory },
     Version: value.version,
     Appearance: {
@@ -442,6 +458,18 @@ function fromPreferences(value: Preferences): GoPreferences {
 }
 
 export const wailsBackend: Backend = {
+  mcp: {
+    connections: () => binding().ListMCPConnections(),
+    logs: (cursor, limit) => binding().ReadMCPLogs(cursor, limit),
+    closeConnection: (id, mode) => binding().CloseMCPConnection(id, mode),
+    status: () => binding().GetMCPStatus(),
+    saveConfig: value => binding().SaveMCPConfig(value),
+    start: () => binding().StartMCP(),
+    stop: () => binding().StopMCP(),
+    restart: () => binding().RestartMCP(),
+    generateToken: () => binding().GenerateMCPToken(),
+    chooseTLSFile: (kind, currentPath) => binding().ChooseMCPTLSFile(kind, currentPath),
+  },
   acknowledgeSSHOutput: (id, sequence) => binding().AcknowledgeSSHOutput(id, sequence),
   zmodem: {
     probeSSHTransferCommands: id => binding().ProbeSSHTransferCommands(id),

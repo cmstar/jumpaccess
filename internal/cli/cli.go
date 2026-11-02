@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	authapp "github.com/cmstar/jumpaccess/internal/application/auth"
 	connectapp "github.com/cmstar/jumpaccess/internal/application/connect"
 	projectconfig "github.com/cmstar/jumpaccess/internal/config"
@@ -28,6 +29,8 @@ type Dependencies struct {
 	Auth          AuthService
 	Resources     ResourceService
 	Connect       ConnectionPreparer
+	MCP           *agentmcp.Runtime
+	MCPSettings   agentmcp.Settings
 	RunSSH        func(context.Context, connectapp.Prepared, SSHOptions) error
 	RunProxy      func(context.Context, connectapp.Prepared) error
 	SelectAccount func([]jumpserver.Account) (jumpserver.Account, error)
@@ -140,6 +143,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(newAuthCommand(deps))
 	root.AddCommand(newSSHCommand(deps))
 	root.AddCommand(newProxyCommand(deps))
+	root.AddCommand(newMCPCommand(deps))
 	for _, command := range newResourceCommands(deps) {
 		root.AddCommand(command)
 	}

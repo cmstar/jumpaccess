@@ -16,9 +16,19 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 - 以 SSH 客户端方式直接连接远程 Asset。
 - 作为通用 SSH `ProxyCommand` 被兼容的终端或 SSH 客户端调用，不与某个具体终端产品耦合。
 - 通过 TOML 管理多个 JumpServer Profile 以及 Asset 别名等非敏感配置。
-- 支持 Windows 和 macOS，并以仅当前用户可访问的 Profile 独立文件保存 OAuth Token。
+- `jumpctl` 支持 Windows、macOS，以及 Ubuntu 24.04 LTS 上的 Linux amd64/arm64；桌面 GUI 支持 Windows 和 macOS。Ubuntu 22.04 LTS 预期兼容但尚未纳入持续验证，Ubuntu 20.04 LTS 及更早版本不在正式支持范围。OAuth Token 以仅当前用户可访问的 Profile 独立文件保存。
 
 首个兼容性参考基线是 JumpServer Client `v4.1.6` 所使用的协议和接口。它是分析参考，不表示本项目依赖该桌面 Client 才能运行。
+
+## Agent 接入（开发中）
+
+当前源码中的 CLI 和 GUI 都可以承载同一套 Streamable HTTP MCP 服务。CLI 使用 `jumpctl mcp config` 查看配置，带 `--rotate-token` 等修改选项时保存并回显配置；使用 `jumpctl mcp serve` 前台运行并持续输出调用日志，`jumpctl mcp status` 查看状态。GUI 通过顶部“MCP”快捷入口打开独立工作区，提供日志、连接和配置页面，以及手动启动、停止和重启。Token 与监听设置统一保存至 `config.toml`，CLI 配置查看和保存后回显直接显示完整 Token；配置修改在下次启动或重启时生效。同一应用数据目录只运行一个实例，多个 Agent 可以共用服务；需要先完成相应 Profile 的 JumpServer 登录。操作步骤见 [MCP Server 指南](docs/manual/agent-mcp.md)。
+
+两个宿主共用资源查询、SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。
+
+Agent 也可异步下载远端文件或目录：服务优先使用 SFTP，不可用时尝试 `sz`，自动压缩，支持持续追加的日志。下载使用独立连接，根据监听配置直接保存到运行 MCP 的电脑，或提供限时下载链接。目标需提供 POSIX/Python 3.7+，通过 `download_files` 发起，再用 `get_download` 等待结果；详见 [MCP 文件下载](docs/manual/agent-mcp.md#让-agent-下载文件)。
+
+GUI 默认不自动启动 MCP 服务；可在 MCP 配置页开启“随应用启动 MCP”，关闭 MCP Tab 不停止服务，退出应用会停止服务。CLI 按 Ctrl+C 停止服务后保留终端已有日志和滚动历史，不清屏。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。本轮 CLI 接入验证以本机自动化和集成测试为限，macOS 原生及真实 Agent 客户端仍需验收。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
 
 ## 界面预览
 
@@ -35,8 +45,8 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/screenshots/profiles.png" width="420" alt="JumpAccess 多 Profile 管理"><br>
-      <sub><b>多 Profile 管理</b></sub>
+      <img src="docs/screenshots/mcp-02-logs.png" width="420" alt="JumpAccess MCP Server 运行状态与调用日志"><br>
+      <sub><b>MCP Server</b></sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/screenshots/ssh-terminal.png" width="420" alt="JumpAccess SSH 终端"><br>
@@ -73,7 +83,7 @@ go install github.com/cmstar/jumpaccess/cmd/jumpctl@latest
 go install ./cmd/jumpctl
 ```
 
-若没有 Go 环境，可以从发布页直接下载，参考下面的“下载 GUI 客户端”章节。下载后，若需要全局可用，需自行添加到 `PATH` 环境变量。
+若没有 Go 环境，可以从发布页直接下载对应平台的 CLI 归档；Linux 使用 `jumpctl-v版本号-linux-amd64.tar.gz` 或 `jumpctl-v版本号-linux-arm64.tar.gz`。Linux 正式支持 Ubuntu 24.04 LTS；Ubuntu 22.04 LTS 预期兼容，但在纳入持续集成验证前不作为正式支持基线。未列出的更新 LTS 版本也须验证后才进入支持范围。下载后，若需要全局可用，需自行添加到 `PATH` 环境变量。
 
 验证安装：
 
@@ -164,7 +174,7 @@ Host production-web
 
 `auth login` 默认使用手工回调：浏览器完成授权后，不要点击确认页的“确认”，而是复制页面中的 `jms://` 链接或浏览器地址栏的完整确认页 URL，粘贴到等待中的终端。`--manual` 可显式固定这一行为，供官方客户端仍占用协议或系统不允许注册协议时使用。
 
-本机没有可用浏览器时，运行 `jumpctl auth login --profile work --no-browser`。程序只打印授权地址并等待粘贴回调，可把地址复制到另一台能访问 JumpServer 的电脑上完成授权，再把回调粘贴回原终端。无需同时指定 `--manual`；保留原登录进程，Token 会保存在运行 CLI 的机器上。当前平台支持仍为 Windows 和 macOS，Linux 适配尚未完成。
+本机没有可用浏览器时，运行 `jumpctl auth login --profile work --no-browser`。程序只打印授权地址并等待粘贴回调，可把地址复制到另一台能访问 JumpServer 的电脑上完成授权，再把回调粘贴回原终端。无需同时指定 `--manual`；保留原登录进程，Token 会保存在运行 CLI 的机器上。该流程支持 Windows、macOS 和 Linux amd64/arm64。
 
 桌面 GUI 只要保持运行，就会按配置周期检查所有已保存 Refresh Token 的 Profile，并在 Access Token 临近过期时自动刷新；运行期间新增登录无需重启 GUI。Refresh Token 已过期或被撤销时仍需重新登录。
 
@@ -215,19 +225,19 @@ git push origin v0.1.0
 
 工作流执行成功会自动生成一个 Release，并根据当前版本与上一版本（tag）的差异，生成发布说明。
 
-产物包括 Windows 和 macOS（amd64+arm64）的 CLI/GUI 程序，每个都可以独立下载。
+产物包括 Windows CLI/GUI、macOS amd64/arm64 CLI 与 Universal GUI，以及内含 MCP Server 的 Linux amd64/arm64 CLI，每个都可以独立下载。
 
 ## 安全说明
 
 不要把账号密码、Access Token、Refresh Token、Cookie、私钥或其他真实凭据写入仓库。真实 JumpServer 账号只用于开发者本机的手工 smoke test；常规自动化测试应使用模拟服务和脱敏 fixture。
 
-OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
+OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 与 Linux 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
 
-Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand 代理的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
+Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand 代理的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；Linux 将该密钥保存在应用根目录下权限受限的 `ssh/proxy_host_ed25519_key`。包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
 
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 
-ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地代理的稳定 Ed25519 host key，该私钥保存在操作系统凭据存储；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
+ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地代理的稳定 Ed25519 host key，该私钥在 Windows/macOS 保存在操作系统凭据存储，在 Linux 保存在 `ssh/proxy_host_ed25519_key`；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
 
 ## 演示模式与截图生成工具
 
@@ -238,11 +248,12 @@ npm --prefix cmd/jumpaccess/frontend ci
 npm run demo
 ```
 
-打开终端提示的本地地址（默认 `http://127.0.0.1:3001`）。顶部可切换已配置环境、首次使用和登录过期场景，点击“重置演示”或刷新页面恢复初始数据。Profile、Alias、偏好和模拟文件操作仅保存在当前页面的内存中，不读取正式配置、Token 或本机文件，也不连接真实服务器。
+打开终端提示的本地地址（默认 `http://127.0.0.1:3001`）。顶部可切换已配置环境、首次使用、登录过期和 MCP 首次配置场景，点击“重置演示”或刷新页面恢复初始数据。Profile、Alias、偏好和模拟文件操作仅保存在当前页面的内存中，不读取正式配置、Token 或本机文件，也不连接真实服务器。
 
 - SSH 终端输入 `help` 查看示例命令，如 `ls`、`pwd`、`df -h`、`cat app.yaml`；只返回预设结果。
 - 模拟登录无需浏览器授权，在回调输入框填写 `demo` 即可。
 - SFTP 上传使用预置样例文件，支持目录操作、同名冲突、取消和重试；模拟下载不写入本机磁盘。
+- MCP 支持生成演示 Token、保存配置、启动／停止／重启、连接管理与分级日志；启动后载入 `web`、`builder`、`prod-db` 样例，不监听端口或发送 SSH 命令。顶部选择“MCP 首次配置”可从尚未保存 Token 的状态开始体验。
 - 原生窗口控制、打开配置文件、背景图文件选择和 ZMODEM 尚不提供演示。此入口为浏览器演示，发布的桌面程序暂不提供 `--demo` 参数。
 
 需要生成截图时，也在仓库根目录手动执行（首次使用需先安装上述前端依赖和截图浏览器）：
@@ -253,6 +264,15 @@ npm run screenshots
 ```
 
 脚本会自行启动并关闭本地演示服务和无界面浏览器。图片统一输出到仓库的 `docs/screenshots` 目录；不同系统的字体渲染可能略有差异。
+
+只更新 MCP 的三张指南截图，或仅检查场景而不写图片：
+
+```powershell
+npm run screenshots -- --only=mcp
+npm run screenshots -- --only=mcp --check
+```
+
+MCP 截图涵盖配置与自动启动、详细日志和连接管理，并嵌入 [MCP Server 指南](docs/manual/agent-mcp.md#在-gui-中使用)。脚本从首次配置场景出发，通过真实界面生成 Token、保存配置并开启“随应用启动 MCP”；第一张图完整展示页头及两张限宽卡片，服务仍处于停止状态。随后切换详细级别并手动启动服务，展示同排的级别提示、样例日志和连接。日志使用终端样式中的系统等宽字体、14px 字号和 1.4 倍行高。MCP 截图中的 Token 显式标为 `DEMO_ONLY`。
 
 截图包含[快速连接搜索结果](docs/screenshots/quick-connect.png)：打开快速连接，输入 `prod`，展示匹配的多个别名和资产、登录账号及 SSH/SFTP 入口。
 

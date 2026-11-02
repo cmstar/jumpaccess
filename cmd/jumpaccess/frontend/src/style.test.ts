@@ -21,8 +21,9 @@ test('顶部 Tab 保持放大前的视觉字号', () => {
 })
 
 test('Profile 认证状态点固定在图标右下角', () => {
-  expect(appStyles).toMatch(/\.profile-status-icon\s*{[^}]*position:\s*relative[^}]*width:\s*15px[^}]*height:\s*15px/s)
-  expect(appStyles).toMatch(/\.profile-status-icon \.auth-indicator\s*{[^}]*right:\s*-3px[^}]*bottom:\s*-3px/s)
+  // 状态图标可与其他模块共用同一组 CSS 选择器。
+  expect(appStyles).toMatch(/\.profile-status-icon(?:\s*,[^{}]+)?\s*{[^}]*position:\s*relative[^}]*width:\s*15px[^}]*height:\s*15px/s)
+  expect(appStyles).toMatch(/\.profile-status-icon \.auth-indicator(?:\s*,[^{}]+)?\s*{[^}]*right:\s*-3px[^}]*bottom:\s*-3px/s)
   expect(appStyles).not.toMatch(/\.auth-status(?:\s|\.|\{|:)/)
 })
 

@@ -1,4 +1,4 @@
-export type SingletonTabKind = 'assets' | 'profiles' | 'settings'
+export type SingletonTabKind = 'assets' | 'profiles' | 'settings' | 'mcp'
 export type NewTabPosition = 'end' | 'after_current'
 
 export interface SingletonTab {

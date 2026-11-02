@@ -31,7 +31,7 @@
 
 1. 外部贡献者先 fork 仓库；有仓库写权限的协作者可以直接使用仓库内的分支。
 2. 从本仓库最新的 `master` 创建工作分支，每个分支聚焦一项变更。fork 的 `master` 应先与本仓库同步。
-3. 按 [README](README.md) 和[开发说明](docs/development.md)准备工具链、依赖与运行环境。当前支持 Windows 和 macOS，具体构建矩阵以开发说明和工作流为准。
+3. 按 [README](README.md) 和[开发说明](docs/development.md)准备工具链、依赖与运行环境。CLI 正式支持 Windows、macOS 和 Ubuntu 24.04 LTS amd64/arm64，GUI 支持 Windows 和 macOS；Ubuntu 22.04 LTS 预期兼容但尚未纳入持续验证，其他 Linux 版本的支持级别见 [Linux 支持矩阵](docs/specs/linux-support.md#4-支持矩阵)。具体构建矩阵以开发说明和工作流为准。
 4. 修改过程中及时补充相关测试和文档；提交 PR 前检查 diff，去掉无关格式化、生成物和本机文件。
 
 ### 修改与验证
@@ -76,7 +76,7 @@ PR 的目标分支为本仓库 `master`。尚未完成或仍需讨论的改动�
 
 1. 检查问题、方案、代码和测试是否一致，范围是否合适，以及兼容性和 CLI/GUI 共同行为是否得到处理。
 2. 外部 fork 的 PR 可能出现 `workflow awaiting approval`。先检查 PR 的改动，尤其是工作流、构建脚本、依赖和将被执行的代码，确认可以运行后再点击 **Approve workflows to run**。这一步仅允许 Actions 执行，代码 Review 的 **Approve** 和最终 **Merge** 仍是独立操作。操作说明见 [GitHub 文档](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)。
-3. 合并前确认最新提交的 Windows amd64、macOS amd64 和 macOS arm64 原生检查通过，并检查与变更相关的本机测试和手工验证。当前 [Native Checks](.github/workflows/native.yml) 执行 Go 测试、静态检查与 CLI/GUI 构建，未单独运行前端单元测试；涉及前端行为时仍需提供前端测试结果。
+3. 合并前确认最新提交的 Windows amd64、macOS amd64、macOS arm64，以及 Ubuntu 24.04 LTS amd64/arm64 原生检查通过，并检查与变更相关的本机测试和手工验证。当前 [Native Checks](.github/workflows/native.yml) 执行 Go 测试、静态检查与 CLI/GUI 构建，Linux 仅构建 CLI；未单独运行前端单元测试，涉及前端行为时仍需提供前端测试结果。
 4. 必要时将 PR 拉到本地验证，尤其关注终端、平台原生能力和真实交互。无法验证的部分应明确保留，不能将未执行写成通过；处理完审查意见后再批准并合并。
 
 合并 PR 不会自动发布版本。发布由维护者按[现有发布流程](docs/development.md#自动发布)单独操作。

@@ -109,3 +109,18 @@ func TestServiceFindAssetReturnsExactDetailForAccountDiscovery(t *testing.T) {
 		t.Fatalf("asset = %#v", asset)
 	}
 }
+
+func TestGetAssetByIDNeverFallsBackToNameSearch(t *testing.T) {
+	configuration := projectconfig.Default()
+	configuration.Profiles["work"] = projectconfig.Profile{URL: "https://jump.example.test"}
+	query := jumpserver.AssetQuery{}
+	api := fakeAPI{detail: jumpserver.AssetDetail{Asset: jumpserver.Asset{ID: "asset-1"}}, assetQuery: &query}
+	service := Service{Config: staticConfig{value: configuration}, Tokens: staticTokens{}, NewAPI: func(string, string, string) (API, error) { return api, nil }}
+	asset, err := service.GetAssetByID(context.Background(), "work", "org", "asset-1")
+	if err != nil || asset.ID != "asset-1" || query != (jumpserver.AssetQuery{}) {
+		t.Fatal("按 ID 查询改变为名称搜索", err)
+	}
+	if _, err := service.GetAssetByID(context.Background(), "work", "org", "other"); err == nil {
+		t.Fatal("没有核对返回的资产 ID")
+	}
+}

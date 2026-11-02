@@ -103,6 +103,7 @@ const preferences: Preferences = {
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
   newTabPosition: 'end',
+  mcpAutoStart: false,
 }
 
 const disconnectedSession: SessionState = {

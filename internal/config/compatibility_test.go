@@ -16,7 +16,7 @@ func TestStorePreservesUnknownFieldsWithoutResurrectingDeletedSettings(t *testin
 current_profile = "work"
 [mcp]
 enabled = false
-port = 0
+port = 39287
 tags = ["one", "two"]
 created = 2026-10-29T12:00:00Z
 [[mcp.rules]]
@@ -47,6 +47,7 @@ future = true
 	}
 	if err := store.Update(context.Background(), func(value *Config) error {
 		value.Version = CurrentVersion // 旧客户端提交的版本不能降低文件版本。
+		value.MCP.Port = 39288
 		profile := value.Profiles["work"]
 		profile.Organization = ""
 		alias := profile.Aliases["web.prod"]
@@ -63,8 +64,15 @@ future = true
 	if _, err := toml.DecodeFile(store.Path, &after); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(before["mcp"], after["mcp"]) || after["version"] != int64(2) {
-		t.Fatal("future configuration was lost or downgraded")
+	beforeMCP := before["mcp"].(map[string]any)
+	afterMCP := after["mcp"].(map[string]any)
+	for _, key := range []string{"enabled", "tags", "created", "rules"} {
+		if !reflect.DeepEqual(beforeMCP[key], afterMCP[key]) {
+			t.Fatalf("unknown MCP field %s was lost", key)
+		}
+	}
+	if afterMCP["port"] != int64(39288) || after["version"] != int64(2) {
+		t.Fatal("known MCP field was not updated or future version was downgraded")
 	}
 	if after["behavior"].(map[string]any)["future_timeout"] != "3m" {
 		t.Fatal("unknown behavior field lost")

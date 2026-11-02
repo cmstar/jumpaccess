@@ -43,6 +43,7 @@ export function TerminalPreview({ preferences, label = '终端预览' }: { prefe
     fit.current = addon
     instance.loadAddon(addon)
     instance.open(host.current)
+    instance.textarea?.setAttribute('autocomplete', 'off')
     const resize = () => { try { addon.fit() } catch { /* 隐藏面板恢复尺寸后重试。 */ } }
     resize()
     instance.write(sample)

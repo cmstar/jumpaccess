@@ -1,5 +1,6 @@
 import { defaultTerminalBackground } from '../model/terminalBackground'
 import { DemoShell } from './demoShell'
+import { createMCPPreviewBackend } from './mcpPreviewBackend'
 import type {
   Alias,
   Asset,
@@ -17,7 +18,7 @@ import type {
   SFTPConflictChoice,
 } from './backend'
 
-export type DemoScenario = 'ready' | 'empty' | 'expired'
+export type DemoScenario = 'ready' | 'empty' | 'expired' | 'mcp-setup'
 
 // 每次创建均有独立的内存状态，不调用桌面绑定或正式服务。
 export function createPreviewBackend(options: { scenario?: DemoScenario } = {}): Backend {
@@ -54,7 +55,7 @@ export function createPreviewBackend(options: { scenario?: DemoScenario } = {}):
       { name: 'office', url: 'https://jump.example.com', organization: 'org-dev', aliasCount: 6, auth: { loggedIn: true, expired: false, refreshAvailable: true, expiresAt: new Date(Date.now() + 56 * 60_000).toISOString() } },
       { name: 'staging', url: 'https://staging-jump.example.com', organization: 'org-platform', aliasCount: 0, auth: { loggedIn: false, expired: false, refreshAvailable: false, expiresAt: '' } },
     ],
-    preferences: { terminalBackground: { ...defaultTerminalBackground }, version: 14, theme: 'light', terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true, terminalScrollbarVisibility: 'active', terminalShowStatusBar: true, terminalFullscreenHideToolbar: true, terminalColorScheme: 'nord', terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end' },
+    preferences: { mcpAutoStart: false, terminalBackground: { ...defaultTerminalBackground }, version: 15, theme: 'light', terminalFontFamily: 'monospace', terminalFontSize: 12, terminalLineHeight: 1, terminalCursorStyle: 'block', terminalCursorBlink: true, terminalScrollbarVisibility: 'active', terminalShowStatusBar: true, terminalFullscreenHideToolbar: true, terminalColorScheme: 'nord', terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end' },
     workspace: { activeTabId: 'system:assets', tabs: [{ id: 'system:assets', type: 'assets' }] },
   }
 
@@ -223,9 +224,13 @@ export function createPreviewBackend(options: { scenario?: DemoScenario } = {}):
   if (options.scenario === 'expired') {
     state.profiles[0].auth = { loggedIn: true, expired: true, refreshAvailable: false, expiresAt: new Date(Date.now() - 3600_000).toISOString() }
   }
+  if (options.scenario === 'mcp-setup') {
+    state.workspace = { activeTabId: 'system:mcp', tabs: [{ id: 'system:mcp', type: 'mcp' }] }
+  }
 
   return {
     bootstrap: () => delay(clone(state)),
+    mcp: createMCPPreviewBackend({ configured: options.scenario !== 'empty' && options.scenario !== 'mcp-setup' }),
     listOrganizations: () => delay([{ id: 'org-dev', name: '研发中心' }, { id: 'org-platform', name: '工程效能' }, { id: 'org-dr', name: '灾备中心' }]),
     async listAssets(request) {
       const query = request.search.toLowerCase()

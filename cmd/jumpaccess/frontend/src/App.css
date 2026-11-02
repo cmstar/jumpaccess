@@ -281,7 +281,8 @@
   flex: 0 0 auto;
 }
 
-.profile-status-icon {
+.profile-status-icon,
+.titlebar-status-icon {
   display: grid;
   position: relative;
   width: 15px;
@@ -289,7 +290,8 @@
   place-items: center;
 }
 
-.profile-status-icon .auth-indicator {
+.profile-status-icon .auth-indicator,
+.titlebar-status-icon .status-indicator {
   right: -3px;
   bottom: -3px;
 }
@@ -586,7 +588,8 @@
   height: 18px;
 }
 
-.auth-indicator {
+.auth-indicator,
+.status-indicator {
   position: absolute;
   right: 7px;
   bottom: 7px;
@@ -597,7 +600,8 @@
   box-shadow: 0 0 0 2px var(--surface);
 }
 
-.auth-indicator.offline {
+.auth-indicator.offline,
+.status-indicator.offline {
   background: #d85b64;
 }
 
@@ -2066,17 +2070,17 @@ details > summary::-webkit-details-marker {
   border-bottom: 0;
 }
 
-.download-directory-control {
+.settings-input-action {
   position: relative;
   min-width: 0;
 }
 
-.settings-card .download-directory-control input {
+.settings-card .settings-input-action input {
   margin-top: 0;
   padding-right: 42px;
 }
 
-.download-directory-control .icon-button {
+.settings-input-action .icon-button {
   position: absolute;
   top: 50%;
   right: 4px;
@@ -2085,12 +2089,12 @@ details > summary::-webkit-details-marker {
   transform: translateY(-50%);
 }
 
-.download-directory-control .icon-button svg {
+.settings-input-action .icon-button svg {
   width: 16px;
   height: 16px;
 }
 
-.download-directory-control .icon-button:focus-visible {
+.settings-input-action .icon-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }

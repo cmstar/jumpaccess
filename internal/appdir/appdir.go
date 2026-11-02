@@ -33,7 +33,7 @@ func RootFor(goos, localAppData, userConfigDir string) (string, error) {
 			return "", fmt.Errorf("LOCALAPPDATA is not set")
 		}
 		return filepath.Join(localAppData, directoryName), nil
-	case "darwin":
+	case "darwin", "linux":
 		if strings.TrimSpace(userConfigDir) == "" {
 			return "", fmt.Errorf("user config directory is empty")
 		}

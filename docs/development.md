@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、进程生命周期内自动续期、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口、多 xterm SSH 会话和独立 SFTP 文件传输。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、进程生命周期内自动续期、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口、多 xterm SSH 会话和独立 SFTP 文件传输。2026-11-02 已完成 Ubuntu 24.04 LTS / WSL2 amd64 的真实 JumpServer CLI 与 MCP 验收，以及 Codex 原生调用和 Cursor 客户端接入验证；范围见 [Linux 验收结果](specs/linux-support.md#73-已完成的验收与待确认项)。macOS 原生、Linux 双架构原生 CI 和 Go 1.25.x 结果仍待确认，实际状态以测试和当前命令帮助为准。
 
 ## 技术栈、版本与开发约束
 
@@ -13,10 +13,12 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 - GUI 使用 Wails 2.14，前端使用 React、TypeScript 和 Vite。Wails 项目根位于 `cmd/jumpaccess`，与根 Go module 共用依赖。
 - 前端开发和 CI 使用 Node.js 24；前端依赖和脚本以 `cmd/jumpaccess/frontend/package.json` 与 `package-lock.json` 为准。
 - 桌面应用图标的唯一设计源为 `cmd/jumpaccess/build/appicon.svg`；`appicon.png` 是由该 SVG 渲染的 1024×1024 构建输入，Windows 多尺寸图标为 `cmd/jumpaccess/build/windows/icon.ico`。三者使用同一“终端 chevron 穿过跳板网关”标记，不以生成式栅格图作为发布源。
-- Windows 和 macOS 都是目标平台。
+- CLI 目标平台为 Windows、macOS，以及 Ubuntu 24.04 LTS 上的 Linux amd64/arm64；Ubuntu 22.04 LTS 作为预期兼容平台，尚未纳入持续验证。Ubuntu 20.04 LTS 及更早版本和其他未验证的 Ubuntu LTS 不属于正式支持基线。Wails GUI 目标平台仍为 Windows 和 macOS。
 - JumpServer Client `v4.1.6` 是首个协议行为参考，不应成为运行时依赖。
 
 ## CLI 与 GUI 共同行为变更
+
+[Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。分阶段交付时应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 CLI 与 GUI 均已接入配置、Token、HTTP 服务及共享工具，CLI 提供前台日志，GUI 提供工作区与连接管理。Linux CLI 宿主已完成真实环境命令执行、下载和生命周期验收；Codex 与 Cursor 的验证范围见 [Linux 验收结果](specs/linux-support.md#73-已完成的验收与待确认项)，不据此宣称 Wails GUI 或 macOS 原生验收通过。
 
 以产品能力判断修改范围。CLI 和 GUI 都支持的功能，其业务规则、结果和通用终端输出属于共同契约；代码是否物理共享、用户示例来自哪一端、先定位到哪个文件，都不能据此缩小为单端修改。用户未明确限定入口时，默认要求两端同时生效。
 
@@ -105,6 +107,7 @@ docs/               # 长期项目知识
 | [development.md](development.md) | 工程布局、配置、安全、测试、构建和发布约束；工具链、命令或开发流程变化时更新 |
 | [cli.md](cli.md) | 当前 CLI 对外契约；命令、参数、输出或兼容性变化时同步更新，继续保留现有路径 |
 | [standards/README.md](standards/README.md) | 专项规范用途、维护约定及规范索引；新增或修改专项约束时维护 |
+| [releases/README.md](releases/README.md) | 按版本保存的用户可读发布说明；正文随对应版本提交，编写与发布规则见[版本发布规范](standards/release.md) |
 | [decisions/README.md](decisions/README.md) | 决策的历史依据与当前、历史两类索引；重要取舍或有效范围变化时维护状态与后续说明 |
 | [specs/README.md](specs/README.md) | 当前需求与设计、历史版本两类索引；具体方案确定、实施或替代时更新状态和引用 |
 | [runbooks/README.md](runbooks/README.md) | 操作手册与验证状态索引；流程需要独立交接，或命令、环境、权限变化时维护 |
@@ -124,20 +127,26 @@ docs/               # 长期项目知识
 
 ## 配置与凭据
 
-- 非敏感配置使用 TOML。
+- 非敏感配置使用 TOML；MCP 访问 Token 与网络设置统一保存于该文件，OAuth 凭据仍独立管理。相关边界见 [MCP 设计](specs/agent-mcp.md)。
 - `config.toml` 和 `gui.toml` 不因未知字段或较高版本号拒绝启动；已知字段仍执行类型及业务校验，破坏性结构变化不保证兼容。保存必须保留未知字段和原文件较高版本号，已清空字段及已删除实体不能被合并恢复，Tab 扩展字段按 ID 保留。原文件语法错误或不可读取时不得覆盖。详见[配置前向兼容决策](decisions/20261029-config-forward-compatibility.md)。
+- CLI MCP 配置入口将 Token 作为普通明文配置：`mcp config` 无修改选项时只读显示完整值，`mcp config --token <value>` 手动设置，`--rotate-token` 首次生成或替换，两者互斥，不设置独立 Token 命令组。`config` 带显式修改选项时，通过共享 `Settings.UpdateConfig` 在配置锁内读取最新值、合并指定字段、完整校验并原子保存，成功后按只读查看的相同格式回显全部配置；失败不保存部分字段或新 Token。根据修改选项是否显式传入判断读写，`--allow-lan=false` 属于修改，帮助等展示选项不写配置；不提供 `set`、`get` 子命令或兼容别名。GUI 仍使用整份保存接口，两者共用校验。完整契约见 [CLI 命令与配置](specs/agent-mcp.md#cli-命令与配置)，参数见 [CLI 参考](cli.md#mcp-server)。
+- MCP 网络设置与 Token 统一保存在共享配置的可选 `[mcp]` 节，由配置锁保护并原子替换；核心装配不启动监听。旧配置读取和普通保存不新增该节；旧开发版独立 MCP Token 仅在配置中尚无 Token 时兼容读取，读取不写文件，用户显式保存后以 TOML 为准。运行中的服务继续使用启动快照，所有变更均在重启后生效；实例描述只保存去除 Token 的配置和指纹，不保存明文 Token。端口、地址、访问范围、Token 和 TLS 配对由共享核心校验，显式保存时还验证证书与私钥可加载。回退到未采用前向兼容策略的旧版本时，严格解码仍可能拒绝 `[mcp]`；应先停止服务并备份配置，按目标版本要求处理该节，保留其他配置和 OAuth 凭据。
+- MCP 使用官方 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 的无协议会话 Streamable HTTP，保留业务状态在共享 Runtime 中。协议检查覆盖 `2025-11-25` 初始化与 `2026-07-28` 发现流程；SDK HTTP 集成测试不替代真实 Agent 客户端验收。HTTP 使用必填的预共享 Bearer Token、Host／Origin 检查、可选 TLS、请求大小和并发上限，不提供 OAuth 授权服务器或跨域浏览器入口。显式允许 LAN 后可以使用 HTTP + Token；TLS 两项须同时留空或同时填写。
+- MCP 命令控制的回归须覆盖 SSH 网关不转发信号、停止控制输入丢失、取消早于执行应答、取消确认超时和旧取消不影响新任务。POSIX/Python 3 封装测试在 Windows 上通过 `JUMPACCESS_TEST_WSL` 显式选择 WSL 发行版；未启用时会跳过，不能以跳过结果代替远端控制验证。共享核心与 HTTP 集成检查使用 `go test -race ./internal/application/agentmcp ./internal/mcpserver`。
+- MCP 连接与日志的业务数据保留在 `internal/application/agentmcp`，GUI 只负责独立 Tab、过滤与文本投影，CLI 从同一共享 History 读取并输出前台日志。共享操作仓库与每个 Engine 使用同一把锁，不能在锁内调用订阅者、Wails 或终端 I/O。日志不包含 stdout/stderr、环境变量、Token 或上游原始错误；命令输入仅在详细投影中显示。工具查询的标准摘要与详细条件属于同一操作，条件按类型白名单提取并限制长度，不序列化完整请求或响应；新增工具须核对正常、失败、重复请求和无状态变更路径的日志覆盖。覆盖混合日志挤出结果后不重放、活动保护、2500 条去重总容量、跨重启输出总额度与旧 Engine 释放，以及日志级别切换、暂停、清空、迟到响应和关闭 Tab 不停止服务。CLI 与共享核心回归入口为 `go test -race ./internal/cli ./internal/application/agentmcp ./internal/mcpserver`；GUI 回归入口为 `npm --prefix cmd/jumpaccess/frontend test -- src/components/MCPWorkspace.test.tsx src/components/MCPSettings.test.tsx src/App.test.tsx`，宿主适配另运行 `go test ./cmd/jumpaccess`。新增 Go 绑定必须由 Wails 构建生成。
 - Windows 应用数据根目录为 `%LOCALAPPDATA%\JumpAccess`。
 - macOS 应用数据根目录为 `~/Library/Application Support/JumpAccess`。
-- OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
+- Linux 应用数据根目录在设置 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/JumpAccess`，否则为 `~/.config/JumpAccess`。
+- OAuth Token 以每个 Profile 一个 JSON 文件保存在应用根目录的 `credentials` 子目录，不能写入 TOML、测试 fixture、日志或命令输出。Windows 使用受保护 DACL，macOS 与 Linux 使用 `0700` 目录和 `0600` 文件，并在读取时校验路径类型、所有者和权限。
 - Profile 名不按文件名规则清洗或规范化；配置拒绝空名称、首尾空白、控制字符以及 `.`、`..`，凭据后端使用 `SHA-256("oauth/" + profile)` 生成固定长度文件名。这样允许 Unicode 和文件系统保留字符，并避免字符替换规则造成确定性碰撞。
-- Windows Credential Manager 与 macOS Keychain 只用于 ProxyCommand host key，不参与 OAuth Token 读写。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
+- Windows Credential Manager、macOS Keychain 与 Linux `ssh/proxy_host_ed25519_key` 只用于 ProxyCommand host key，不参与 OAuth Token 读写。Linux `ssh` 目录权限为 `0700`，私钥权限为 `0600`。macOS Keychain 后端使用 CGO 直接链接系统 Security framework；关闭 CGO 的 macOS 交叉构建仍可读写 OAuth 文件，但不能加载或创建 ProxyCommand façade host key。
 - macOS 使用 `SecItemCopyMatching`、`SecItemAdd`、`SecItemUpdate`、`SecItemDelete`，保持文件型 Keychain、`JumpAccess:` service 前缀和空 account，兼容旧版本条目，不切换到 Data Protection Keychain。原生回归在 macOS 上运行 `JUMPACCESS_TEST_KEYCHAIN=1 CGO_ENABLED=1 CGO_CFLAGS='-Werror=deprecated-declarations' go test ./internal/credential -run TestNativeKeychainLegacyCompatibility -count=1`；该测试会在默认 Keychain 创建并清理唯一命名的合成条目，可能触发系统授权提示，默认不运行。它覆盖传统条目读取、更新、二进制与空值、新增、删除和未找到语义。
 - Profile 范围内保存 Alias。修改配置时应支持用户直接批量编辑，并提供打开配置文件的快捷命令。
 - 读取配置与构造外部客户端应显式发生在应用启动流程中，避免包初始化因缺少本机配置而失败。
 - Wails 生成 bindings 时会编译并执行带 `bindings` build tag 的临时程序；该模式只构造用于类型反射的桌面适配器，不得解析应用目录、读取用户配置或凭据、创建外部客户端。严格配置校验只属于真实应用启动流程，构建结果不能依赖构建机上的 JumpAccess 用户数据。
 - 桌面程序在 Wails 窗口初始化前发生启动错误时，必须同时写入 `stderr` 并通过 Windows/macOS 原生错误对话框告知用户；bindings 临时程序不得显示该业务对话框。
 
-共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `14`：`[appearance]` 只保存应用主题，`[terminal]` 保存终端配色 ID（`color_scheme`，默认 `nord`）、字体、字号、行高（`line_height`）、光标样式（`cursor_style`）、闪烁（`cursor_blink`）、滚动条显示方式（`scrollbar_visibility`，默认 `active`）、SSH 状态栏可见性（`show_status_bar`，默认 `true`）、全屏工具栏隐藏（`fullscreen_hide_toolbar`，默认 `true`）、右键行为、多行粘贴警告和回车复制选区（`copy_on_enter`，默认 `true`），`[downloads]` 保存桌面 SSH 下载行为（`mode`：`ask` / `automatic` / `remember` / `custom`，默认 `ask`）、指定目录（`directory`）及后端维护的上次选择目录（`last_directory`）；旧配置缺少该分组时采用默认值。`[tabs]` 保存新 Tab 打开位置（`new_tab_position`，仅接受 `end` / `after_current`，默认 `end`）、Tab 关闭按钮显示和关闭活动会话确认，此外还包含窗口最大化/普通边界、Tab 顺序、活动项和 SSH/SFTP 重连描述符；CLI 不读取该文件。读取 schema v1/v2 时保留原有主题、终端字体、字号、Tab 偏好、工作区和窗口位置，读取 schema v3–v13 时保留原有分组偏好，均在内存中补全为 v14；缺少配色时使用 Nord，缺少行高、光标样式和闪烁时分别使用 1.0、`block` 和 `true`。行高必须是 1.0–2.0 之间的有限数值，光标样式只接受 `block`、`bar`、`underline`、`quarter_block`；显式 `cursor_blink = false` 必须保留。v1–v3 缺少多行粘贴警告时默认开启，v4 及以后已有的关闭值必须保留。读取本身不重写文件；较旧配置下次保存采用 v14，较新配置保留其原版本号。v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标，读取时仍保留原值，由窗口恢复逻辑按平台解释。终端输出、SFTP 当前目录、传输队列、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。 “终端样式”中的“显示滚动条”下拉框依次提供“始终显示”（`always`）、“仅活跃时显示”（`active`，默认）和“隐藏”（`hidden`）。废弃未发布的布尔字段 `show_scrollbar`，将其作为未知字段保留但不应用；需要沿用其行为时手工改用 `scrollbar_visibility`，旧值 `true` 对应 `active`，`false` 对应 `hidden`。新字段只接受这三种值，选择即时作用于预览和已有 SSH 终端，隐藏自绘滚动条的完整槽位（遗留原生滚动条始终移除），保留历史缓冲区、滚轮操作与会话，不增加事件监听。`TerminalFitAddon` 按样式中的实际滚动条宽度计算列数，隐藏时回收全部预留宽度；模式变化会重新计算会话和两个设置预览的尺寸，不重建终端。 “显示 SSH 状态栏”开关位于“终端样式”中“显示滚动条”之后，关闭时立即隐藏所有 SSH Tab 的底部状态栏并回收 25px 空间，复用现有 ResizeObserver 调整终端网格；不重建终端、不影响顶部传输区域或 SFTP 状态栏。缺少该字段的旧配置默认开启，显式 false 必须在保存和重启后保留；保存失败沿用偏好队列恢复最近成功值。
+共享配置文件名为 `config.toml`。当前 schema 版本为 `1`；Profile 保存在 `[profiles.<name>]`，Alias 保存在 `[profiles.<name>.aliases.<alias>]`。GUI 独有偏好保存在同目录的 `gui.toml`，当前 schema 版本为 `15`：`[appearance]` 只保存应用主题，`[terminal]` 保存终端配色 ID（`color_scheme`，默认 `nord`）、字体、字号、行高（`line_height`）、光标样式（`cursor_style`）、闪烁（`cursor_blink`）、滚动条显示方式（`scrollbar_visibility`，默认 `active`）、SSH 状态栏可见性（`show_status_bar`，默认 `true`）、全屏工具栏隐藏（`fullscreen_hide_toolbar`，默认 `true`）、右键行为、多行粘贴警告和回车复制选区（`copy_on_enter`，默认 `true`），`[downloads]` 保存桌面 SSH 下载行为（`mode`：`ask` / `automatic` / `remember` / `custom`，默认 `ask`）、指定目录（`directory`）及后端维护的上次选择目录（`last_directory`）；旧配置缺少该分组时采用默认值。`[mcp]` 只保存 GUI 的 `auto_start`（默认 `false`），连接参数和 Token 仍保存在共享 `config.toml`；缺少该字段的旧配置默认关闭，显式开关值须在保存和重启后保留。MCP 配置页顶部的启动开关复用 GUI 偏好串行保存与失败回滚，下次应用启动时才生效。桌面启动回调异步尝试一次；手动管理和退出须取消待启动任务，失败写入共享日志并供前端提示。`[tabs]` 保存新 Tab 打开位置（`new_tab_position`，仅接受 `end` / `after_current`，默认 `end`）、Tab 关闭按钮显示和关闭活动会话确认，此外还包含窗口最大化/普通边界、Tab 顺序、活动项和 SSH/SFTP 重连描述符；CLI 不读取该文件。读取 schema v1/v2 时保留原有主题、终端字体、字号、Tab 偏好、工作区和窗口位置，读取 schema v3–v14 时保留原有分组偏好，均在内存中补全为 v15；缺少配色时使用 Nord，缺少行高、光标样式和闪烁时分别使用 1.0、`block` 和 `true`。行高必须是 1.0–2.0 之间的有限数值，光标样式只接受 `block`、`bar`、`underline`、`quarter_block`；显式 `cursor_blink = false` 必须保留。v1–v3 缺少多行粘贴警告时默认开启，v4 及以后已有的关闭值必须保留。读取本身不重写文件；较旧配置下次保存采用 v15，较新配置保留其原版本号。v1 在 Windows 保存的是虚拟桌面绝对坐标，在 macOS 保存的是当前显示器相对坐标，读取时仍保留原值，由窗口恢复逻辑按平台解释。终端输出、SFTP 当前目录、传输队列、live session ID 与运行状态不得写入 `gui.toml`。最大化或最小化退出时不得用临时窗口边界覆盖已保存的普通窗口边界。GUI 偏好和工作区写入也必须串行化 read-modify-write，防止并发保存互相覆盖。 “终端样式”中的“显示滚动条”下拉框依次提供“始终显示”（`always`）、“仅活跃时显示”（`active`，默认）和“隐藏”（`hidden`）。废弃未发布的布尔字段 `show_scrollbar`，将其作为未知字段保留但不应用；需要沿用其行为时手工改用 `scrollbar_visibility`，旧值 `true` 对应 `active`，`false` 对应 `hidden`。新字段只接受这三种值，选择即时作用于预览和已有 SSH 终端，隐藏自绘滚动条的完整槽位（遗留原生滚动条始终移除），保留历史缓冲区、滚轮操作与会话，不增加事件监听。`TerminalFitAddon` 按样式中的实际滚动条宽度计算列数，隐藏时回收全部预留宽度；模式变化会重新计算会话和两个设置预览的尺寸，不重建终端。 “显示 SSH 状态栏”开关位于“终端样式”中“显示滚动条”之后，关闭时立即隐藏所有 SSH Tab 的底部状态栏并回收 25px 空间，复用现有 ResizeObserver 调整终端网格；不重建终端、不影响顶部传输区域或 SFTP 状态栏。缺少该字段的旧配置默认开启，显式 false 必须在保存和重启后保留；保存失败沿用偏好队列恢复最近成功值。
 
 终端滚动条统一使用 xterm 自绘控件，移除遗留原生滚动条的槽位和上下箭头。宽度由宿主的 `--terminal-scrollbar-width` 定义为 7px（原自绘控件宽度的一半），槽底使用当前方案的不透明背景色，滑块在普通、悬停和拖拽状态下均使用普通文字色与约 50% 透明度。背景图不改变槽底和滑块的配色；会话、终端样式预览和背景图预览共用这些规则，不增加事件监听或修改历史缓冲区。 两个设置预览保留最多 100 行历史，并重复三组配色示例形成可滚动范围；预览禁用输入且不抢焦点。`always` 模式固定显示滚动条，`active` 模式沿用 xterm 的交互显示、闲置隐藏行为，`hidden` 模式隐藏整个槽位；所有模式均可使用滚轮，不重建终端。
 
@@ -151,6 +160,7 @@ docs/               # 长期项目知识
 
 - CLI 使用 Cobra 的唯一前缀匹配，进程级开关只初始化一次。`internal/cli/prefix.go` 为命令组统一校验未匹配的子命令，并校验 `help` 的目标路径；内置 `help`、`completion` 在构建命令树时初始化。新增命令需考虑同层级名称和别名的前缀冲突，测试完整名称优先、唯一缩写、歧义不执行及位置参数和选项值保持原样。
 - 普通交互命令可以使用 stdout/stderr 与用户沟通。
+- `jumpctl mcp serve` 前台阻塞并按共享日志游标串行输出，`DEBUG`／`INFO` 写 stdout，`WARN`／`ERROR` 和宿主诊断写 stderr；不根据远端命令退出码或 stderr 重新划分日志级别，不重复打印已记录的同一错误。显示详细程度复用 GUI 三档；ANSI 语义覆盖级别、时间、连接 ID 和命令输入，两个流分别判断终端能力，支持自动、强制和关闭颜色。终端 I/O 不持有 History 锁，停止时的资源释放与日志输出均有界；日志普通追加，不使用备用屏幕，Ctrl+C 退出保留已输出文本及终端滚动历史，不清屏。回归分别验证 GUI 日志与 CLI 分流、颜色、重定向及停止行为，具体约定见 [CLI 前台日志与输出](specs/agent-mcp.md#cli-前台日志与输出)。
 - CLI 直接 SSH 会话在建连后立即复查本地 PTY 尺寸，并每 200ms 检查窗口、分屏或字号变化；只在有效尺寸变化时发送 SSH `window-change`，会话退出后停止。macOS 回归测试使用本地真实 PTY 和模拟 SSH 服务端覆盖放大、缩小和正常退出，不连接真实服务器。
 - `jumpctl proxy` 的 stdout 专用于 SSH 协议数据；日志、诊断和可操作错误只写 stderr。
 - Proxy 模式不得启动浏览器或请求交互选择。认证或目标解析失败时返回明确的非零退出码。
@@ -159,6 +169,8 @@ docs/               # 长期项目知识
 - 错误信息和日志不得包含 Token、密码、Cookie、私钥或完整敏感响应。
 
 ## GUI 公共提示
+
+GUI 表单、输入框、文本区和选择框显式设置 `autoComplete="off"`，关闭 WebView 的自动填充与输入历史建议。已有配置仍由应用自己的加载、保存和重置流程维护；字体候选、资产查询等应用内选择能力保持独立，不通过清空用户配置或 WebView 数据目录实现这一规则。
 
 开发调试分组位于 `cmd/jumpaccess/frontend/src/components/DeveloperSettings.tsx`，后续界面演示可在该组件内按功能添加 `settings-group`。`SettingsView` 仅在后端 Bootstrap 版本精确为 `dev` 时渲染该分组，并使用同一判断过滤导航和滚动定位列表。源码默认 `main.version = "dev"`，本地默认 `wails build` 保留此值；tag 发布工作流通过 `-ldflags "-X main.version=<version>"` 注入版本后隐藏入口，无需运行时访问 Git，也不根据 Vite 开发服务器状态判断。此开关只控制入口，不作为安全边界或编译期代码剔除机制。
 
@@ -225,7 +237,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 
 GUI 构建脚本保持兼容 macOS 系统 Bash：启用 `set -u` 时，参数数组需包含基础构建参数，避免展开空数组。`node --test scripts/*.test.mjs` 会用 Wails 替身验证三个目标平台的实参；Windows 默认查找 Git 安装目录中的 Bash，也可通过 `JUMPACCESS_TEST_BASH` 指定路径。
 
-`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
+`.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；Linux 使用当前明确的 Ubuntu 24.04 LTS amd64/arm64 原生 runner，关闭 CGO，安装 `lrzsz` 后执行全量 Go 测试、平台 race、`go vet`、POSIX 下载脚本、`jumpctl` 构建及 CLI/MCP help smoke。Ubuntu 24.04 LTS 是唯一持续验证和正式支持的 Linux 基线；Ubuntu 22.04 LTS 仅为预期兼容平台。新增或更新正式支持的 Ubuntu LTS 时，须先在两个架构上完成同等验证并更新支持矩阵，不能由“LTS”名称自动扩大产品承诺。无需等到打版本标签才发现平台编译问题。macOS runner 通过 Homebrew 安装 `lrzsz`，运行 POSIX 下载脚本测试，并在 Go 测试中覆盖模拟 SSH 网关的 SFTP 与真实 `sz` 回退。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
 
 Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。
 
@@ -240,27 +252,36 @@ $env:CGO_LDFLAGS = '-O2 -g -Wl,--fatal-warnings'
 
 默认没有警告豁免。确实无法立即修复的诊断必须在改动中写明具体文件或依赖版本、诊断名称、保留理由和移除条件；自有 C/Objective-C 代码仅在最小调用范围内用 diagnostic push/pop 将指定诊断降为 warning，保留日志。禁止全局 `-w`、`-Wno-error`、`continue-on-error` 或忽略构建退出码；第三方依赖警告优先升级或修复依赖，不预设整类豁免。
 
-失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64 和 macOS arm64 三项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
+失败会显示为 Actions 红色检查，并在原生检查摘要中标记；发布必须等待全部平台检查通过。若要阻止失败的 PR 合并，还需在 GitHub 分支 ruleset 中将 Windows amd64、macOS amd64、macOS arm64、Linux amd64 和 Linux arm64 五项检查设为 required status checks。主动通知由 GitHub 个人通知设置控制：在 Actions 通知中选择“Only notify for failed workflows”，并按需关注仓库；仓库内 YAML 不会更改个人通知偏好。处理时打开失败步骤，根据诊断修复后推送，由新一轮检查确认，不自动改代码或发布。
 
 macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scripts/darwin-link.sh` 调用 clang。Go 1.25 会为本项目和 Wails 2.14.0 中各个含 Objective-C 的 CGO 包追加 `-lobjc`，触发 [Go #67799](https://github.com/golang/go/issues/67799) 所述的重复库警告。脚本只保留首个 `-lobjc`，其他参数、严格警告与链接失败退出码均保持原样；不关闭重复库警告。上游修复后可移除脚本与两处 GUI 构建的 `-extld` 参数。本机 macOS 严格构建也应向 Wails 的 `-ldflags` 传入该脚本的绝对路径。
 
 ## 自动发布
 
-`.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步拒绝不符合 `vX.Y.Z` 或 `vX.Y.Z-prerelease` 的标签。标签指向的提交必须已经包含该工作流。发布顺序为：
+`.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步校验版本格式。`vX.Y.Z` 为正式版；带合法非正式尾缀的 `vX.Y.Z-...` 均为非正式版，不限于 `pre`，也包括 `alpha`、`beta`、`rc`、`nightly` 和自定义尾缀；当前不支持 `+build` 元数据。标签指向的提交必须已经包含该工作流。版本排序、发布说明和 Agent 发布操作的完整规则见[版本发布规范](standards/release.md)。发布顺序为：
 
-1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64 和 macOS arm64 的原生测试和严格构建。
+1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64、macOS arm64、Linux amd64 和 Linux arm64 的原生测试和严格构建。
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
-5. 汇总五个归档、生成 `checksums.txt`，根据上一个版本标签到当前标签之间的 Conventional Commits 生成分类 Release Notes，最后创建 GitHub Release。Release 标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和预发布后缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
+5. 在 Ubuntu 24.04 LTS amd64/arm64 原生 runner 上分别以 `CGO_ENABLED=0` 构建内含 MCP Server 的 `jumpctl`，连同许可证文件压缩为对应架构的 tar.gz。
+6. 汇总七个归档、生成 `checksums.txt`，读取标签对应提交中的 `docs/releases/<tag>.md` 作为 Release Notes 正文，再附加下载说明和完整变更链接；文件不存在时给出警告，并回退到 Conventional Commits 分类说明，文件存在但为空白时失败。最后创建 GitHub Release；标题直接使用完整标签（如 `v0.2.0-pre.1`），保留前导 `v` 和非正式尾缀，不添加产品名称前缀。任一前置 Job 失败都不会发布 Release。
 
 源码中的 CLI/GUI `version` 保持为 `dev`，`wails.json` 的 `info.productVersion` 只作为开发占位值。发布工作流从标签移除前导 `v`，通过 `-ldflags "-X main.version=<version>"` 注入程序版本，并调用 `scripts/set-wails-version.mjs` 在 runner 临时工作副本中写入仅含 `X.Y.Z` 的平台元数据版本。该临时改动不会提交或推回仓库。
 
-Release Notes 由 `scripts/release-notes.mjs` 生成，识别 `feat`、`fix`、`perf`、`refactor`、`docs`、`build`、`ci`、`test`、`chore` 以及 `!`/`BREAKING CHANGE`。提交说明应继续使用清晰的 Conventional Commit 格式；首个版本链接到完整提交历史，后续版本链接到 GitHub 标签比较页。
+Release Notes 由 `scripts/release-notes.mjs` 统一生成。本机预览与工作流使用相同基准规则：候选版本来自成功发布、非草稿的 GitHub Releases，且对应标签必须在目标提交的历史中可达、语义版本低于目标。正式版选最高的较低正式版；非正式版先选相同 `X.Y.Z` 中最高的较低非正式版，没有时选最高的较低正式版；无基准时使用完整历史。不能仅按 Git 标签距离或发布时间选择基准，也不能把发布失败留下的标签当作已发布版本。
+
+逐版本正文由维护者或 Agent 根据真实差异归纳用户可见的最终变化，不逐条复制开发提交；详见[发布说明目录](releases/README.md)。Conventional Commits 仅作缺少正文时的回退，仍识别 `feat`、`fix`、`perf`、`refactor`、`docs`、`build`、`ci`、`test`、`chore` 以及 `!`/`BREAKING CHANGE`，提交说明继续沿用现有格式。当前机制不在 Actions 中调用模型；Agent 在推送标签前完成正文并纳入标签对应提交，Actions 负责验证、构建和发布。
 
 GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装 GitHub CLI。工作流只给最终 `publish` Job 配置 `contents: write`，并使用 GitHub 自动生成的短期 `GITHUB_TOKEN`。通常不需要保存额外 Secret；如果仓库或 Organization 策略禁止 Actions 写入内容，需要在 GitHub 的 `Settings → Actions → General → Workflow permissions` 中允许工作流写入。代码签名与 macOS notarization 尚未配置，后续启用时应通过 GitHub Actions Secrets 提供证书和凭据，不能提交到仓库。
 
 ## 当前验证入口
+
+MCP 下载的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 下载集成测试在 macOS/Linux 上直接运行，需预先安装 Python 3 与 `lrzsz`；Windows 需显式设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志；测试临时目录先解析为真实路径，避免 macOS 的系统目录链接触发远端拒绝链接的校验。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 验证有限读取的追加、轮转、截断与链接处理；完整覆盖需在 POSIX 环境执行。ZMODEM 独立互操作测试见上文 CLI 传输约定，未启用所需环境时的跳过不代表真实网关验收通过。
+
+HTTP 下载测试应在服务端 handler 返回后检查领取名额是否释放，客户端收到完整 `Content-Length` 不代表服务端清理已经结束。默认写超时覆盖使用小正文和服务端延迟验证，空闲／总超时仍通过阻塞的大正文验证，避免将 CI 的 TCP 吞吐速度当作功能要求。
+
+下载复用 Go SFTP 客户端与 ZMODEM 接收协议时，同时回归 `internal/sftpclient`、`internal/clitransfer`、`internal/sshclient`，以及 GUI 的 `zmodem.test.ts`、`zmodemProgress.test.ts`。MCP 状态与停止提示另回归 `MCPSettings.test.tsx`、`MCPWorkspace.test.tsx`。不要通过截图脚本代替行为验证。
 
 以下命令从仓库根目录开始执行；前端 npm 脚本通过 `--prefix` 定位到前端目录，Wails 命令在桌面入口目录执行：
 

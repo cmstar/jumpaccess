@@ -40,6 +40,8 @@ test('renderReleaseNotes 按类别输出提交和版本比较链接', () => {
   assert.match(notes, /## 问题修复/)
   assert.match(notes, /## 文档更新/)
   assert.match(notes, /jumpctl-v0\.2\.0-windows-amd64\.zip/)
+  assert.match(notes, /jumpctl-v0\.2\.0-linux-amd64\.tar\.gz/)
+  assert.match(notes, /jumpctl-v0\.2\.0-linux-arm64\.tar\.gz/)
   assert.match(notes, /可执行文件没有进行 Windows\/macOS 签名，新下载的文件首次运行时操作系统可能显示安全提醒，放行后可正常使用，后续不会再次提示。/)
   assert.doesNotMatch(notes, /商业代码签名证书/)
   assert.match(notes, /compare\/v0\.1\.0\.\.\.v0\.2\.0/)

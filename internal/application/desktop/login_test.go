@@ -125,6 +125,9 @@ func TestLoginCoordinatorCompletesPastedNativeCallback(t *testing.T) {
 	if !status.LoggedIn || tokens.profile != "work" || tokens.token.AccessToken != "access" || !tokens.token.ExpiresAt.Equal(now.Add(time.Hour)) {
 		t.Fatalf("status = %#v, token = %#v", status, tokens.token)
 	}
+	if tokens.token.LoginID == "" {
+		t.Fatal("GUI 登录未保存登录代际")
+	}
 }
 
 func TestLoginCoordinatorKeepsAttemptAfterInvalidCallback(t *testing.T) {

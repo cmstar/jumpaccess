@@ -192,6 +192,18 @@ func TestDecodeIgnoresUnknownFieldsAcrossVersions(t *testing.T) {
 	}
 }
 
+func TestMCPWorkspaceSingleton(t *testing.T) {
+	cfg := Default()
+	cfg.Workspace = Workspace{ActiveTabID: "system:mcp", Tabs: []WorkspaceTab{{ID: "system:mcp", Type: "mcp"}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Workspace.Tabs = append(cfg.Workspace.Tabs, WorkspaceTab{ID: "other", Type: "mcp"})
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("MCP 必须为单例 Tab")
+	}
+}
+
 func TestDecodeAcceptsNewerVersionWithCompatibleKnownFields(t *testing.T) {
 	got, err := Decode([]byte("" +
 		fmt.Sprintf("version = %d\n", CurrentVersion+1) +

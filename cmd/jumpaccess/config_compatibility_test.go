@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ import (
 func TestDesktopStartsAndSavesWithMCPBranchConfiguration(t *testing.T) {
 	root := t.TempDir()
 	shared := []byte("version = 1\n[mcp]\nenabled = true\nport = 19876\n")
-	gui := []byte("version = 15\n[mcp]\nauto_start = true\n")
+	gui := []byte(fmt.Sprintf("version = %d\n[mcp]\nauto_start = true\nfuture_preference = true\n", guiconfig.CurrentVersion+1))
 	for name, data := range map[string][]byte{"config.toml": shared, "gui.toml": gui} {
 		if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
 			t.Fatal(err)
@@ -28,7 +29,10 @@ func TestDesktopStartsAndSavesWithMCPBranchConfiguration(t *testing.T) {
 			t.Fatal("startup rewrote configuration")
 		}
 	}
-	preferences := guiconfig.Default()
+	preferences, err := (guiconfig.Store{Path: filepath.Join(root, "gui.toml")}).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	preferences.Terminal.FontSize = 18
 	if err := app.SavePreferences(preferences); err != nil {
 		t.Fatal(err)
@@ -39,13 +43,14 @@ func TestDesktopStartsAndSavesWithMCPBranchConfiguration(t *testing.T) {
 	var got struct {
 		Version int
 		MCP     struct {
-			AutoStart bool `toml:"auto_start"`
+			AutoStart        bool `toml:"auto_start"`
+			FuturePreference bool `toml:"future_preference"`
 		}
 	}
 	if _, err := toml.DecodeFile(filepath.Join(root, "gui.toml"), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != 15 || !got.MCP.AutoStart {
+	if got.Version != guiconfig.CurrentVersion+1 || !got.MCP.AutoStart || !got.MCP.FuturePreference {
 		t.Fatal("desktop save lost newer version or MCP preferences")
 	}
 }

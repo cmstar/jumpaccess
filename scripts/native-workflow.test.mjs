@@ -30,3 +30,17 @@ for (const [os, target] of [['macOS', 'darwin/amd64'], ['macOS', 'darwin/arm64']
     ])
   })
 }
+
+test('Linux 原生检查只构建同时包含 CLI 与 MCP 的 jumpctl', () => {
+  assert.match(workflow, /linux-cli:/u)
+  assert.match(workflow, /arch: amd64[\s\S]*runner: ubuntu-24\.04/u)
+  assert.match(workflow, /arch: arm64[\s\S]*runner: ubuntu-24\.04-arm/u)
+  assert.match(workflow, /runs-on: \$\{\{ matrix\.runner \}\}/u)
+  assert.match(workflow, /CGO_ENABLED: "0"/u)
+  assert.match(workflow, /sudo apt-get install --yes lrzsz/u)
+  assert.match(workflow, /go test -count=1 \.\/\.\.\./u)
+  assert.match(workflow, /go test -race -count=1 \.\/internal\/credential \.\/internal\/filelock \.\/internal\/appdir \.\/internal\/systemopen/u)
+  assert.match(workflow, /python3 -B internal\/application\/agentmcp\/download_remote_test\.py/u)
+  assert.match(workflow, /go build -trimpath -o "\$RUNNER_TEMP\/jumpctl" \.\/cmd\/jumpctl/u)
+  assert.match(workflow, /"\$RUNNER_TEMP\/jumpctl" mcp --help/u)
+})

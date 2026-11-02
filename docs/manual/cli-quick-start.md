@@ -48,10 +48,14 @@ go install github.com/cmstar/jumpaccess/cmd/jumpctl@latest
 | Windows x64 | `jumpctl-v版本号-windows-amd64.zip` |
 | macOS，Apple 芯片，ARM64 架构 | `jumpctl-v版本号-darwin-arm64.tar.gz` |
 | macOS，Intel 芯片，x86-64 架构 | `jumpctl-v版本号-darwin-amd64.tar.gz` |
+| Linux，x86-64 架构（含 WSL2） | `jumpctl-v版本号-linux-amd64.tar.gz` |
+| Linux，ARM64 架构（含对应架构的 WSL2） | `jumpctl-v版本号-linux-arm64.tar.gz` |
 
 下载后，如需要任意位置可用，需自行添加到 `PATH` 环境变量。若通过 Go 命令安装，则通常已在 `PATH` 里。
 
-> 直接下载的可执行文件没有进行 Windows/macOS 签名，新下载的文件首次运行时操作系统可能显示安全提醒，放行后可正常使用，后续不会再次提示。
+Linux 正式支持 Ubuntu 24.04 LTS 的 amd64、arm64 以及运行相同发行版的 WSL2。Ubuntu 22.04 LTS 原生环境与 WSL2 预期兼容，但尚未纳入持续验证；Ubuntu 20.04 LTS 及更早版本不在正式支持范围。未列出的更新 Ubuntu LTS 版本也需要验证后才进入支持范围。
+
+> 直接下载的可执行文件没有进行代码签名，新下载的文件首次运行时操作系统可能显示安全提醒。
 
 验证安装：
 
@@ -114,7 +118,7 @@ OAuth callback URL:
 jumpctl auth login --no-browser
 ```
 
-程序会打印授权地址并等待回调，不打开本机浏览器。复制该地址到能访问 JumpServer 的浏览器中，继续下面的步骤。无需同时指定 `--manual`；保持原终端进程运行，在默认 5 分钟的登录超时内把回调粘贴回来，Token 会保存在运行 CLI 的机器上。当前平台支持仍为 Windows 和 macOS，Linux 适配尚未完成。
+程序会打印授权地址并等待回调，不打开本机浏览器。复制该地址到能访问 JumpServer 的浏览器中，继续下面的步骤。无需同时指定 `--manual`；保持原终端进程运行，在默认 5 分钟的登录超时内把回调粘贴回来，Token 会保存在运行 CLI 的机器上。该流程支持 Windows、macOS 和 Linux amd64/arm64。
 
 ### 4.2 在浏览器中完成登录和授权
 

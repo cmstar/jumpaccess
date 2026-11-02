@@ -2,7 +2,29 @@
 
 本文维护当前系统组成、依赖和架构边界，未实施设计单独标注。模块职责、数据流或技术选择变化时同步更新；重要取舍的历史依据通过[决策记录](decisions/README.md)查阅，具体功能或迁移方案通过[需求与设计](specs/README.md)定位。
 
+[Agent MCP 接入](specs/agent-mcp.md)由 CLI 或 GUI 启动共享的 HTTP MCP 核心，同一应用数据目录只运行一个实例。共享核心负责单 Token 鉴权、资源查询、请求去重、固定身份的 SSH 连接池、命令任务、输出、超时、取消和有界回收。逻辑连接与任务由服务实例持有，独立于 Agent 的 HTTP 会话和人类终端；自动重连保持同一实例内的逻辑 ID，已可能发送的命令不重放。GUI 通过独立 MCP Tab 提供配置、启停、连接管理与文本日志，关闭或切换 Tab 不停止服务，GUI 独有的自动启动偏好保存于 `gui.toml`，默认关闭；开启后在桌面启动回调中异步尝试一次，不依赖前端页面，失败保留到共享日志供前端提示。手动管理或退出取消未完成的自动启动，退出宿主使用有限时间清理；无法确认的远端结果仍按未知处理。
+
+CLI 宿主通过 `mcp serve` 前台运行，`mcp status` 查看实例，配置和 Token 统一由 `mcp config` 管理：没有修改选项时只读显示，带修改选项时通过 `Settings.UpdateConfig` 在配置锁内读取最新值、合并显式字段并一次保存，成功后完整回显含明文 Token 的配置；`--rotate-token` 负责首次生成或替换。`config` 不设查看、修改子命令或兼容别名，帮助等展示选项不触发写入。GUI 仍通过 `SaveConfig` 提交表单中的完整配置，两者共用校验。具体用法见 [CLI 命令与配置](specs/agent-mcp.md#cli-命令与配置)。
+
+CLI 前台日志持续消费同一共享 History，按游标串行输出：`DEBUG`／`INFO` 写 stdout，`WARN`／`ERROR` 及宿主诊断写 stderr，不转发远端命令输出正文。共享格式化器按 GUI 的 ANSI 语义处理级别、时间、连接 ID 与命令输入，实际色值由外部终端决定。默认标准详细程度和自动颜色模式；Ctrl+C 停止服务后保留终端已有日志与滚动历史，不清屏。完整约定见 [CLI 前台日志与输出](specs/agent-mcp.md#cli-前台日志与输出)。
+
+`agentmcp.History` 是宿主内共享的 3000 条操作仓库，各 Engine 使用同一把锁保护记录、输入和输出引用；按 ID 的 Map 负责业务索引，FIFO 只负责回收。2500 条去重索引不复制命令输入或结果。原始输入限额 16 MiB，输出仍按单任务 8 MiB、宿主 64 MiB 和最多 32 KiB 的共享字节块回收。GUI 通过 Wails 调用 `Runtime.Connections`、`CloseConnection` 和 `History.Read`，不拥有独立业务状态；后者提供有序游标、缺口和分页，CLI 也从同一接口读取并用 `FormatLogLine` 输出纯文本／ANSI 日志。服务重启保留日志游标与有界历史，同时解除旧 Engine 引用；旧实例 ID 不恢复。完整规则见 [MCP 方案](specs/agent-mcp.md#重试与自动清理)。
+
+GUI 只保留有界显示投影，日志内容不含 stdout/stderr；颜色直接引用现有终端色板，字体、字号和行高也共用终端偏好。无需对 SSH 终端输入、控制序列、PTY 或 ZMODEM 做改动。输出级别在接收新日志时决定是否显示，暂停与清空仅操作显示缓存，切换 Tab 后继续采集。MCP 适配器提取工具调用的安全摘要和查询条件，由共享 History 保存：标准显示完成摘要，详细再显示条件，两者关联同一操作记录；不序列化或持有完整请求／响应。重复调用仅增加有界摘要，不复制原任务数据；SDK 提前拒绝的工具调用由接收中间件补记安全错误摘要。
+
 ## 当前状态
+
+MCP 下载与普通命令共用 `agentmcp.Engine` 的去重、生命周期和 `History`，但每个下载预留两条专用连接名额：SSH 用于准备、压缩、清理及 ZMODEM，SFTP 使用其自身的协议授权。已有 connection ID 只绑定目标身份，不借用活动命令通道。传输分别复用 `internal/sftpclient` 与 `internal/zmodem.Receive`，没有修改 CLI／GUI 交互式传输协议实现。
+
+下载使用通过 SSH 临时执行的 POSIX/Python 3.7+ 程序完成有限长度读取和流式 gzip／tar.gz，不安装远端服务。下载不计算文件内容 SHA-256，也不为哈希额外扫描暂存包；传输检查准确长度，直接保存的还原阶段另检查归档清单、文件长度及格式自带校验，MCP 可选 `sha256` 字段不填充。链接交付原样发送准备包，不为校验而预先完整解压。监督进程将二进制输入送往 `sz`，以 SSH 写方向 EOF 请求停止，以独立 stderr 控制结果确认子进程已结束；确认失败返回未知。SFTP 暂存位置通过随机文件跨协议比对，候选配置不能替代验证。能力缓存为实例内最多 256 项、10 分钟。单项清单最多 1000 项，宿主下载元数据及活动预留共用 64 MiB 上限。设计理由见 [MCP 下载隔离与有限捕获](decisions/20261021-mcp-download-isolation.md)、[下载内容校验与扫描开销](decisions/20261021-mcp-download-validation.md)。
+
+直接保存与限时链接交付共用下载工具，依据任务受理时的运行监听配置选择；只有直接保存的写入权限失败可以回退为链接，复用同一份准备包。直接保存通过目录句柄约束写入，完成还原后发布一个顶层对象或包含多个对象的结果目录；链接通过独立 HTTP 文件接口交付 `.gz`、`.tar.gz` 或原样文件。传输体积统一不超过 1 GiB，原始及还原体积受任务时限与磁盘空间约束，不另设固定上限。
+
+领取缓存由 `internal/application/downloadcache` 管理，位于应用根目录下的 `cache/mcp-downloads`，与操作历史独立。完整文件就绪后在受控文件名中记录 30 分钟的 UTC 到期时间；不保存链接表、过期元数据文件或数据库。服务级内存密钥保护文件标识与建议保存名，HTTP 请求只检查凭据及文件状态，不读取正文计算内容哈希。每次启动生成新密钥，旧链接不恢复；已就绪链接不依赖远端登录状态。
+
+缓存通过文件锁独占管理，总额度 8 GiB、最多 50 个文件，接收前预留完整体积；未删除的残留及活动领取仍占额度。启动清理可识别旧残留，每分钟清理空闲过期文件，停止时清理可释放内容；未知名称、符号链接及用户最终文件不自动删除。HTTP 正文领取单独限制为全局 4 路、同一文件 2 路，60 秒无进展或单次 15 分钟终止请求，避免受 MCP 查询窗口截断。完整规则见 [MCP 文件传输设计](specs/agent-mcp-file-transfer.md)。
+
+MCP 默认远端时限模式的非交互命令在各自的执行通道内携带停止控制，业务命令的标准输入保持关闭。共享核心先验证控制能经实际 SSH 路径送达目标，再开放该模式；取消、确认期限和清理均归属于具体任务，不依赖网关转发 SSH 信号，也不影响后续复用连接的任务。
 
 JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
 
@@ -35,8 +57,8 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 | 桌面应用层 | `internal/application/desktop` 把启动状态、Profile 认证摘要、Organization、分页 Asset、Account、Alias、快速搜索、GUI 偏好、Tab 工作区和许可证整理为 Wails 可绑定的类型化 API，并协调异步主机密钥确认；本地 Alias 搜索结果与远端 Asset 按 ID 去重 |
 | 依赖装配 | `internal/bootstrap` 统一构造 CLI 与 GUI 共用的配置、HTTP、Token、认证、资源和连接服务；终端 I/O 与 ProxyCommand 仍由 CLI 适配层负责 |
 | OAuth | `internal/oauth` 已实现 Discovery、Authorization Code + PKCE、严格 state 校验、浏览器启动、`jms://auth/callback` 手工回调、Token 获取、刷新与撤销；GUI 通过内存中的登录尝试完成“打开浏览器—粘贴回调—交换 Token”，发布版私有协议注册与进程间回调转交尚未实现 |
-| 配置 | `internal/config` 管理 Profile、Alias 和非敏感行为配置；校验已知字段并原子保存 TOML，与 `internal/guiconfig` 共用 `internal/configfile` 保留其他版本写入的未知字段和较高版本号 |
-| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端和 Tab 分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
+| 配置 | `internal/config` 管理 Profile、Alias、行为配置以及 MCP 网络设置与访问 Token；校验已知字段并原子保存 TOML，与 `internal/guiconfig` 共用 `internal/configfile` 保留未知字段和较高版本号；OAuth 凭据独立保存 |
+| GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端、Tab 和 MCP 启动行为分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
 | 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责资产首个匹配解析、账号选择与连接准备 |
@@ -72,7 +94,7 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 
 快速搜索按 effect 生命周期隔离已经发出的请求；旧查询、旧 Profile 和已经关闭的搜索窗口不再接收其迟到结果或错误。SFTP 修改弹窗绑定发起时的 Session ID，断连和重连清理旧目录、选择与弹窗；操作代际用于隔离旧修改、原生文件选择和冲突决定的异步完成。代际隔离只防止旧结果更新新界面，已经发到远端的操作仍由原 Session 的后端生命周期负责。
 
-浏览器演示通过独立的 Vite `demo` 模式加载真实 React 界面与 `createPreviewBackend` 内存实例，提供已配置、首次使用、登录过期场景；刷新页面重置数据。模拟 SSH 仅解释预设命令，SFTP 仅操作内存目录。演示模块不进入正常生产前端构建，也不装配 Go 服务或访问正式配置和凭据。桌面程序尚无演示启动参数。文档截图由独立 Playwright 脚本在人工触发时生成，输出到 `docs/screenshots`，不属于构建、测试或发布流程。
+浏览器演示通过独立的 Vite `demo` 模式加载真实 React 界面与 `createPreviewBackend` 内存实例，提供已配置、首次使用、登录过期和 MCP 首次配置场景；刷新页面重置数据。模拟 SSH 仅解释预设命令，SFTP 仅操作内存目录。MCP 通过独立内存后端模拟服务生命周期、连接管理和分级日志，使用显式标识的演示 Token，不监听端口、不执行远端命令。演示模块不进入正常生产前端构建，也不装配 Go 服务或访问正式配置和凭据。桌面程序尚无演示启动参数。文档截图由独立 Playwright 脚本在人工触发时生成，输出到 `docs/screenshots`，支持只运行 MCP 场景，不属于构建、测试或发布流程。
 
 资产页和设置页的组件生命周期跟随对应 Tab 是否存在；切换时通过 `hidden` 隐藏页面并保留 DOM、滚动位置及设置导航状态，关闭 Tab 才卸载。不活跃页面不占布局或参与键盘焦点导航，临时视图状态不写入 `gui.toml`。
 
@@ -182,19 +204,20 @@ ProxyCommand 有两层独立主机信任：
 
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
+- Linux：设置 `XDG_CONFIG_HOME` 时使用 `$XDG_CONFIG_HOME/JumpAccess`，否则使用 `~/.config/JumpAccess`
 
-共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH/SFTP Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
+共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、MCP 自动启动偏好、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH/SFTP Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
 
-`credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
+`credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 与 Linux 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 
-OAuth Token 不读取或写入原生凭据存储。ProxyCommand façade 的稳定 Ed25519 host key 单独保存在原生凭据存储中，与 OAuth Token 文件分离。
+OAuth Token 不读取或写入 ProxyCommand 凭据存储。ProxyCommand façade 的稳定 Ed25519 host key 在 Windows/macOS 使用原生凭据存储，在 Linux 使用应用根目录下的 `ssh/proxy_host_ed25519_key`，与 OAuth Token 文件分离。
 
 ## 外部集成
 
 - JumpServer：提供 OAuth、资源查询和连接准备接口；首个参考基线为 Client `v4.1.6` 对应行为。
 - 系统浏览器：承载用户授权和可能存在的 MFA 流程。
 - 文件系统与平台 ACL：保存并保护 OAuth Token。
-- Windows Credential Manager / macOS Keychain：仅保存 ProxyCommand host key。
+- Windows Credential Manager / macOS Keychain / Linux `ssh/proxy_host_ed25519_key`：仅保存 ProxyCommand host key。
 - 支持 SSH `ProxyCommand` 的客户端：通过标准输入输出调用通用代理模式。
 
 ## 需要实现验证的边界

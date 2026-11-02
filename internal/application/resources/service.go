@@ -72,6 +72,29 @@ func (s Service) FindAsset(ctx context.Context, requestedProfile, organization, 
 	return connectapp.ResolveAsset(ctx, api, reference)
 }
 
+// GetAssetByID 只按明确 ID 查询，不使用人用入口的名称首次匹配逻辑。
+func (s Service) GetAssetByID(ctx context.Context, requestedProfile, organization, id string) (jumpserver.AssetDetail, error) {
+	if id == "" {
+		return jumpserver.AssetDetail{}, fmt.Errorf("asset ID is required")
+	}
+	profile, configured, err := s.resolveProfile(requestedProfile)
+	if err != nil {
+		return jumpserver.AssetDetail{}, err
+	}
+	api, err := s.client(ctx, profile, configured.URL, organization)
+	if err != nil {
+		return jumpserver.AssetDetail{}, err
+	}
+	asset, err := api.GetAsset(ctx, id)
+	if err != nil {
+		return jumpserver.AssetDetail{}, err
+	}
+	if asset.ID != id {
+		return jumpserver.AssetDetail{}, fmt.Errorf("asset response ID does not match request")
+	}
+	return asset, nil
+}
+
 func (s Service) resolveProfile(requested string) (string, projectconfig.Profile, error) {
 	configuration, err := s.Config.Load()
 	if err != nil {

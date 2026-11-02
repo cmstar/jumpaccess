@@ -43,7 +43,11 @@ func run() int {
 		return 1
 	}
 	configuration := core.Configuration
-	nativeCredentials := credential.NewNativeBackend()
+	nativeCredentials, err := credential.NewNativeBackendForRoot(rootDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	manager := core.AuthManager
 	authService := core.Auth
 	authService.ManualLoginFlow = func(ctx context.Context, site string, options authapp.LoginOptions) (credential.Token, error) {
@@ -69,6 +73,8 @@ func run() int {
 		Auth:        authService,
 		Connect:     core.Connect,
 		Resources:   core.Resources,
+		MCP:         core.NewMCP("cli"),
+		MCPSettings: core.MCPSettings,
 		SelectAccount: func(accounts []jumpserver.Account) (jumpserver.Account, error) {
 			return terminalprompt.SelectAccount(os.Stdin, os.Stderr, accounts)
 		},
@@ -126,7 +132,9 @@ func run() int {
 		},
 	})
 	if err := command.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if !cli.ErrorReported(err) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return 1
 	}
 	return 0
