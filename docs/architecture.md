@@ -24,6 +24,8 @@ MCP 下载与普通命令共用 `agentmcp.Engine` 的去重、生命周期和 `H
 
 缓存通过文件锁独占管理，总额度 8 GiB、最多 50 个文件，接收前预留完整体积；未删除的残留及活动领取仍占额度。启动清理可识别旧残留，每分钟清理空闲过期文件，停止时清理可释放内容；未知名称、符号链接及用户最终文件不自动删除。HTTP 正文领取单独限制为全局 4 路、同一文件 2 路，60 秒无进展或单次 15 分钟终止请求，避免受 MCP 查询窗口截断。完整规则见 [MCP 文件传输设计](specs/agent-mcp-file-transfer.md)。
 
+MCP 上传尚未实现。设计先支持本机源文件直读、自动压缩和远端暂存还原，再补充 HTTP 接收与暂存；两个宿主共用远端上传流程。压缩包接收位置需验证传输协议与 SSH 均可访问，还原在目标附近的任务临时位置完成，最终发布后才报告成功。本机准备包、HTTP 缓存及远端半成品分别管理生命周期，具体边界见[上传设计](specs/agent-mcp-file-transfer.md#上传)。
+
 MCP 默认远端时限模式的非交互命令在各自的执行通道内携带停止控制，业务命令的标准输入保持关闭。共享核心先验证控制能经实际 SSH 路径送达目标，再开放该模式；取消、确认期限和清理均归属于具体任务，不依赖网关转发 SSH 信号，也不影响后续复用连接的任务。
 
 JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
