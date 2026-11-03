@@ -37,6 +37,12 @@ func linuxDownloadPath(t *testing.T, name string) string {
 	if runtime.GOOS != "windows" {
 		return name
 	}
+	if strings.HasPrefix(name, `\\wsl.localhost\`) {
+		parts := strings.SplitN(strings.TrimPrefix(name, `\\wsl.localhost\`), `\`, 2)
+		if len(parts) == 2 {
+			return "/" + filepath.ToSlash(parts[1])
+		}
+	}
 	drive := strings.ToLower(filepath.VolumeName(name))
 	if len(drive) != 2 {
 		t.Fatal("test requires drive path")
@@ -54,6 +60,12 @@ func downloadLinuxFixture(t *testing.T) (EngineOptions, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return downloadLinuxFixtureAt(t, directory)
+}
+
+func downloadLinuxFixtureAt(t *testing.T, directory string) (EngineOptions, string, string) {
+	t.Helper()
+	distro := os.Getenv("JUMPACCESS_TEST_WSL")
 	stage := filepath.Join(directory, "stage")
 	os.Mkdir(stage, 0700)
 	opts := poolOptions(t)
@@ -81,7 +93,8 @@ func downloadLinuxFixture(t *testing.T) (EngineOptions, string, string) {
 				cmd = exec.CommandContext(ctx, "sh", "-c", command)
 			}
 			cmd.Stdout = ch
-			cmd.Stderr = ch.Stderr()
+			var diagnostics bytes.Buffer
+			cmd.Stderr = io.MultiWriter(ch.Stderr(), &diagnostics)
 			stdin, err := cmd.StdinPipe()
 			if err != nil {
 				t.Error(err)
@@ -92,6 +105,7 @@ func downloadLinuxFixture(t *testing.T) (EngineOptions, string, string) {
 			err = cmd.Run()
 			code := uint32(0)
 			if err != nil {
+				t.Logf("模拟 SSH 执行失败：%v %s", err, diagnostics.String())
 				code = 1
 			}
 			exitSSH(ch, code)
