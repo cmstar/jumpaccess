@@ -84,6 +84,23 @@ func TestGUIMCPStartsExplicitlyAndStopsWithApplication(t *testing.T) {
 	if err != nil || len(queryLogs.Lines) != 2 || queryLogs.Lines[0].Detail != 2 || queryLogs.Lines[1].Detail != 3 || !strings.Contains(queryLogs.Lines[0].Text, "list_profiles") {
 		t.Fatalf("GUI 未提供标准查询摘要和详细条件: %+v %v", queryLogs, err)
 	}
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range tools.Tools {
+		names[tool.Name] = true
+	}
+	for _, want := range []string{"upload_files", "get_upload", "list_uploads", "cancel_upload"} {
+		if !names[want] {
+			t.Fatalf("GUI 缺少共享工具 %s", want)
+		}
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "list_uploads"})
+	if err != nil || result.IsError {
+		t.Fatal("GUI 无法查询上传任务", err)
+	}
 	restarted, err := app.RestartMCP()
 	if err != nil || restarted.RestartRequired || restarted.Instance.ID == started.Instance.ID {
 		t.Fatal("GUI 重启未应用已保存的配置", err)

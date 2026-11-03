@@ -105,12 +105,12 @@ func TestCLIMCPHostProvidesSharedToolsAndPreservesRunningToken(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"list_profiles", "open_connection", "execute_command", "cancel_execution", "download_files", "get_download", "cancel_download"} {
+	for _, want := range []string{"list_profiles", "open_connection", "execute_command", "cancel_execution", "download_files", "get_download", "cancel_download", "upload_files", "get_upload", "list_uploads", "cancel_upload"} {
 		if !names[want] {
 			t.Fatalf("CLI 缺少共享工具 %s", want)
 		}
 	}
-	for _, name := range []string{"list_profiles", "list_connections", "list_executions", "list_downloads"} {
+	for _, name := range []string{"list_profiles", "list_connections", "list_executions", "list_downloads", "list_uploads"} {
 		result, err := session.CallTool(clientContext, &mcp.CallToolParams{Name: name})
 		if err != nil || result.IsError {
 			t.Fatalf("CLI 工具 %s 调用失败: %v %+v", name, err, result)

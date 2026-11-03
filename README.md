@@ -28,6 +28,8 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 Agent 也可异步下载远端文件或目录：服务优先使用 SFTP，不可用时尝试 `sz`，自动压缩，支持持续追加的日志。下载使用独立连接，根据监听配置直接保存到运行 MCP 的电脑，或提供限时下载链接。目标需提供 POSIX/Python 3.7+，通过 `download_files` 发起，再用 `get_download` 等待结果；详见 [MCP 文件下载](docs/manual/agent-mcp.md#让-agent-下载文件)。
 
+Agent 可通过 `upload_files` 上传运行 MCP 的电脑上的文件或目录，使用 `get_upload` 等待结果。服务自动压缩，优先 SFTP、必要时回退 `rz`，在远端隔离还原后发布，不覆盖已有文件或目录。CLI 与 GUI 使用同一能力；HTTP 上传中转尚未提供，详见 [MCP 本机上传](docs/manual/agent-mcp.md#让-agent-上传本机文件)。
+
 GUI 默认不自动启动 MCP 服务；可在 MCP 配置页开启“随应用启动 MCP”，关闭 MCP Tab 不停止服务，退出应用会停止服务。CLI 按 Ctrl+C 停止服务后保留终端已有日志和滚动历史，不清屏。服务重启后旧连接与执行 ID 失效；任务结果未知时不能自动换请求键重跑。本轮 CLI 接入验证以本机自动化和集成测试为限，macOS 原生及真实 Agent 客户端仍需验收。完整目标与能力边界见 [MCP 设计](docs/specs/agent-mcp.md)。
 
 ## 界面预览

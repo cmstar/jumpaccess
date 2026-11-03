@@ -104,6 +104,9 @@ func uploadSourceError(err error) error {
 	if errors.Is(err, os.ErrPermission) {
 		return fault("LOCAL_SOURCE_PERMISSION_DENIED", "MCP 服务没有源文件读取权限；本阶段仅支持本机直读，尚不提供 HTTP 中转")
 	}
+	if errors.Is(err, os.ErrNotExist) {
+		return fault("LOCAL_SOURCE_NOT_FOUND", "MCP 服务电脑上的上传源文件或目录不存在")
+	}
 	return err
 }
 
@@ -197,9 +200,13 @@ func prepareUpload(ctx context.Context, paths []string, limit int64) (_ *prepare
 		p.sources = append(p.sources, uploadSource{entry, info})
 		p.Entries = append(p.Entries, entry)
 		if info.IsDir() {
-			children, err := f.ReadDir(-1)
-			if err != nil {
+			// 多读一项即可判定超限，不先把任意大的目录读入内存。
+			children, err := f.ReadDir(1001 - len(p.sources))
+			if err != nil && err != io.EOF {
 				return err
+			}
+			if len(children)+len(p.sources) > 1000 {
+				return fault("TOO_MANY_FILES", "上传最多包含 1000 个文件或目录条目")
 			}
 			sort.Slice(children, func(i, j int) bool { return children[i].Name() < children[j].Name() })
 			for _, child := range children {
@@ -229,6 +236,10 @@ func prepareUpload(ctx context.Context, paths []string, limit int64) (_ *prepare
 		p.File, err = openUploadSource(p.sources[0].Source)
 		if err != nil {
 			return nil, err
+		}
+		opened, statErr := p.File.Stat()
+		if statErr != nil || !sameUploadSource(p.sources[0].info, opened) {
+			return nil, fault("SOURCE_CHANGED", "上传源内容在打开时已变化")
 		}
 		p.Size = p.sources[0].Size
 		if p.Size > limit {

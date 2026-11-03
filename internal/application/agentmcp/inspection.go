@@ -10,6 +10,9 @@ type EngineStats struct {
 	Downloads              int  `json:"downloads"`
 	UnknownDownloads       int  `json:"unknown_downloads"`
 	DownloadTransportSlots int  `json:"download_transport_slots"`
+	Uploads                int  `json:"uploads"`
+	UnknownUploads         int  `json:"unknown_uploads"`
+	UploadTransportSlots   int  `json:"upload_transport_slots"`
 	UnknownExecutions      int  `json:"unknown_executions"`
 	Draining               bool `json:"draining"`
 }
@@ -19,6 +22,15 @@ func (e *Engine) Stats() EngineStats {
 	defer e.mu.Unlock()
 	s := EngineStats{Draining: e.closing}
 	s.DownloadTransportSlots = e.downloadTransports
+	s.UploadTransportSlots = e.uploadTransports
+	for _, job := range e.uploads {
+		if !terminal(job.view.Status) {
+			s.Uploads++
+		}
+		if job.view.Status == "unknown" {
+			s.UnknownUploads++
+		}
+	}
 	for _, job := range e.downloads {
 		if !terminal(job.view.Status) {
 			s.Downloads++
@@ -53,6 +65,7 @@ func (e *Engine) Limits() map[string]int64 {
 	defer e.mu.Unlock()
 	l := e.opts.Limits
 	return map[string]int64{
+		"active_uploads": 4, "upload_paths": 100, "upload_entries": 1000, "upload_metadata_bytes": 64 << 20, "upload_transport_max_bytes": 1 << 30, "upload_default_timeout_ms": 1800000, "upload_max_timeout_ms": 3600000, "upload_start_max_wait_ms": 5000, "upload_query_default_wait_ms": 20000, "upload_query_max_wait_ms": 30000,
 		"connections": int64(l.Connections), "ssh_connections": int64(l.Transports), "operation_records": int64(e.history.limit), "execution_records": int64(l.Executions), "request_history": int64(l.Requests), "active_requests": int64(l.ActiveRequests), "input_bytes": 16 << 20, "output_bytes": int64(l.OutputBytes), "total_output_bytes": int64(l.TotalOutputBytes), "ssh_idle_ms": l.IdleTimeout.Milliseconds(), "history_ttl_ms": l.HistoryTTL.Milliseconds(), "default_timeout_ms": 300000, "max_timeout_ms": 3600000, "max_wait_ms": 5000,
 		"active_downloads": 4, "download_paths": 100, "download_entries": 1000, "download_metadata_bytes": 64 << 20, "download_default_timeout_ms": 1800000, "download_max_timeout_ms": 3600000, "download_start_max_wait_ms": 5000, "download_query_default_wait_ms": 20000, "download_query_max_wait_ms": 30000, "download_capability_cache_entries": 256, "download_capability_cache_ttl_ms": 600000,
 		"download_transport_max_bytes": 1 << 30, "download_cache_bytes": 8 << 30, "download_cache_files": 50, "download_link_ttl_ms": 1800000, "download_http_concurrency": 4, "download_http_per_file": 2, "download_http_idle_timeout_ms": 60000, "download_http_total_timeout_ms": 900000,

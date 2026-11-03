@@ -127,3 +127,11 @@ func TestPrepareUploadLimitsConflictsAndCancellation(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareUploadMissingSourceHasDistinctError(t *testing.T) {
+	_, err := prepareUpload(context.Background(), []string{filepath.Join(t.TempDir(), "missing")}, 1<<30)
+	var f *Fault
+	if !errors.As(err, &f) || f.Code != "LOCAL_SOURCE_NOT_FOUND" {
+		t.Fatalf("missing source: %v", err)
+	}
+}

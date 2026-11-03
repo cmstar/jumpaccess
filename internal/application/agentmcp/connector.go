@@ -12,6 +12,7 @@ import (
 	"github.com/cmstar/jumpaccess/internal/application/connect"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
+	"github.com/cmstar/jumpaccess/internal/jumpserver"
 	"github.com/cmstar/jumpaccess/internal/sftpclient"
 	"github.com/cmstar/jumpaccess/internal/sshhostkey"
 	"github.com/cmstar/jumpaccess/internal/sshupstream"
@@ -126,9 +127,34 @@ func (b boundTokens) EnsureFresh(ctx context.Context, profile string) (credentia
 }
 
 func (c Connector) Dial(ctx context.Context, r ResolvedTarget) (*ssh.Client, error) {
+	return c.dial(ctx, r, false)
+}
+
+func (c Connector) DialUpload(ctx context.Context, r ResolvedTarget) (*ssh.Client, error) {
+	return c.dial(ctx, r, true)
+}
+
+func requireUploadPermission(actions []jumpserver.LabelValue) error {
+	if actions == nil {
+		return nil
+	}
+	for _, action := range actions {
+		if action.Value == "upload" {
+			return nil
+		}
+	}
+	return fault("UPLOAD_NOT_PERMITTED", "目标账号未授权文件上传")
+}
+
+func (c Connector) dial(ctx context.Context, r ResolvedTarget, upload bool) (*ssh.Client, error) {
 	prepared, err := c.prepareProtocol(ctx, r, "ssh")
 	if err != nil {
 		return nil, err
+	}
+	if upload {
+		if err = requireUploadPermission(prepared.Account.Actions); err != nil {
+			return nil, err
+		}
 	}
 	callback, err := (sshhostkey.Store{Path: c.KnownHosts}).Callback(ctx, false)
 	if err != nil {
@@ -171,9 +197,31 @@ func (c Connector) prepareProtocol(ctx context.Context, r ResolvedTarget, protoc
 }
 
 func (c Connector) OpenDownloadSFTP(ctx context.Context, r ResolvedTarget) (DownloadSFTP, error) {
+	return c.openFileSFTP(ctx, r, false)
+}
+
+func (c Connector) OpenUploadSFTP(ctx context.Context, r ResolvedTarget) (UploadSFTP, error) {
+	opened, err := c.openFileSFTP(ctx, r, true)
+	if err != nil {
+		return UploadSFTP{}, err
+	}
+	client, ok := opened.Client.(UploadRemote)
+	if !ok {
+		opened.Client.Close()
+		return UploadSFTP{}, fault("SFTP_UNAVAILABLE", "SFTP 上传能力不可用")
+	}
+	return UploadSFTP{Client: client, Root: opened.Root, Account: opened.Account}, nil
+}
+
+func (c Connector) openFileSFTP(ctx context.Context, r ResolvedTarget, upload bool) (DownloadSFTP, error) {
 	prepared, err := c.prepareProtocol(ctx, r, "sftp")
 	if err != nil {
 		return DownloadSFTP{}, err
+	}
+	if upload {
+		if err = requireUploadPermission(prepared.Account.Actions); err != nil {
+			return DownloadSFTP{}, err
+		}
 	}
 	callback, err := (sshhostkey.Store{Path: c.KnownHosts}).Callback(ctx, false)
 	if err != nil {

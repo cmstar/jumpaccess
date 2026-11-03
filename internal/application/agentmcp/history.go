@@ -22,6 +22,7 @@ type History struct {
 	sequence, evictedThrough  uint64
 	inputBytes, outputBytes   int
 	downloadBytes             int
+	uploadBytes               int
 }
 
 type operationRecord struct {
@@ -31,10 +32,12 @@ type operationRecord struct {
 	job           *execution
 	open          *openOperation
 	download      *download
+	upload        *upload
 	node          *list.Element
 	events        []*list.Element
 	inputBytes    int
 	downloadBytes int
+	uploadBytes   int
 }
 
 type LogLine struct {
@@ -113,8 +116,12 @@ func (h *History) removeLocked(r *operationRecord) {
 	if r.download != nil && r.owner != nil {
 		delete(r.owner.downloads, r.id)
 	}
+	if r.upload != nil && r.owner != nil {
+		delete(r.owner.uploads, r.id)
+	}
 	h.inputBytes -= r.inputBytes
 	h.downloadBytes -= r.downloadBytes
+	h.uploadBytes -= r.uploadBytes
 	h.fifo.Remove(r.node)
 	delete(h.records, r.id)
 	r.events = nil

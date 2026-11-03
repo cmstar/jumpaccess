@@ -202,8 +202,11 @@ def remove_tree(fd):
         st = os.stat(name, dir_fd=fd, follow_symlinks=False)
         if stat.S_ISDIR(st.st_mode):
             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-            try: remove_tree(child)
+            try:
+                if identity(os.fstat(child)) != identity(st): raise Problem('TEMPORARY_FILE_CHANGED')
+                remove_tree(child)
             finally: os.close(child)
+            if identity(os.stat(name, dir_fd=fd, follow_symlinks=False)) != identity(st): raise Problem('TEMPORARY_FILE_CHANGED')
             os.rmdir(name, dir_fd=fd)
         else:
             os.unlink(name, dir_fd=fd)

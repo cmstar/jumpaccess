@@ -85,6 +85,9 @@ type EngineOptions struct {
 	Dial                func(context.Context, ResolvedTarget) (*ssh.Client, error)
 	OpenSFTP            func(context.Context, ResolvedTarget) (DownloadSFTP, error)
 	Download            func(context.Context, ResolvedTarget, DownloadInput, func(DownloadProgress)) (DownloadResult, error)
+	DialUpload          func(context.Context, ResolvedTarget) (*ssh.Client, error)
+	OpenUploadSFTP      func(context.Context, ResolvedTarget) (UploadSFTP, error)
+	Upload              func(context.Context, ResolvedTarget, UploadInput, func(UploadProgress)) (UploadResult, error)
 	DeliveryMode        string
 	DownloadCache       *downloadcache.Store
 	Limits              Limits
@@ -112,6 +115,8 @@ type Engine struct {
 	downloads            map[string]*download
 	downloadTransports   int
 	downloadCapabilities map[ResolvedTarget]downloadCapability
+	uploads              map[string]*upload
+	uploadTransports     int
 }
 
 type ConnectionView struct {
@@ -192,6 +197,7 @@ func NewEngine(opts EngineOptions) *Engine {
 	e := &Engine{mu: &opts.History.mu, history: opts.History, opts: opts, ctx: ctx, cancel: cancel, requests: newRequests(opts.Instance, opts.Limits.Requests, opts.Limits.ActiveRequests), connections: make(map[string]*connection), opens: make(map[string]*openOperation), executions: make(map[string]*execution)}
 	e.pages = NewQueries(opts.Instance, nil, nil, nil)
 	e.downloads = make(map[string]*download)
+	e.uploads = make(map[string]*upload)
 	e.downloadCapabilities = make(map[ResolvedTarget]downloadCapability)
 	go func() {
 		timer := time.NewTicker(opts.MaintenanceInterval)
@@ -570,7 +576,7 @@ func (e *Engine) liveCount() int {
 	return n
 }
 func (e *Engine) transportCount() int {
-	n := e.downloadTransports
+	n := e.downloadTransports + e.uploadTransports
 	for _, c := range e.connections {
 		if c.client != nil || c.dial != nil {
 			n++
@@ -617,6 +623,7 @@ func (e *Engine) closeLocked(c *connection, reason string) {
 func (e *Engine) pruneLocked() {
 	e.pruneExecutionsLocked()
 	e.pruneDownloadsLocked()
+	e.pruneUploadsLocked()
 	now := e.opts.Now()
 	for len(e.closed) > 0 && (len(e.closed) > e.opts.Limits.Closed || now.Sub(*e.closed[0].view.ClosedAt) >= e.opts.Limits.HistoryTTL) {
 		c := e.closed[0]

@@ -72,7 +72,7 @@ func NewHandler(options Options) http.Handler {
 			data.Counts = &counts
 			data.Limits = options.Engine.Limits()
 			data.RequestEpoch = options.Engine.RequestEpoch()
-			data.Capabilities = append(data.Capabilities, "ssh_connections", "command_execution", "remote_deadline", "execution_control", "file_downloads")
+			data.Capabilities = append(data.Capabilities, "ssh_connections", "command_execution", "remote_deadline", "execution_control", "file_downloads", "local_file_uploads")
 			if options.Cache != nil {
 				data.Capabilities = append(data.Capabilities, "download_links")
 			}

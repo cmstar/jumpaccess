@@ -78,6 +78,12 @@ func queryConditions(input any) string {
 		return "download_id=" + logQuote(in.DownloadID)
 	case agentmcp.DownloadsPageInput:
 		return "status=" + logQuote(in.Status) + "  " + page(in.PageInput)
+	case agentmcp.GetUploadInput:
+		return "upload_id=" + logQuote(in.UploadID)
+	case agentmcp.UploadIDInput:
+		return "upload_id=" + logQuote(in.UploadID)
+	case agentmcp.UploadsPageInput:
+		return "status=" + logQuote(in.Status) + "  " + page(in.PageInput)
 	}
 	return ""
 }
@@ -129,6 +135,10 @@ func callDetails(input, output any, started time.Time) agentmcp.CallDetails {
 		d.Summary = pageSummary(out)
 	case agentmcp.Page[agentmcp.DownloadView]:
 		d.Summary = pageSummary(out)
+	case agentmcp.Page[agentmcp.UploadView]:
+		d.Summary = pageSummary(out)
+	case agentmcp.UploadView:
+		d.Summary = "upload_id=" + logQuote(out.ID) + "  status=" + logQuote(out.Status) + "  phase=" + logQuote(out.Phase)
 	case agentmcp.DownloadView:
 		d.Summary = "download_id=" + logQuote(out.ID) + "  status=" + logQuote(out.Status) + "  phase=" + logQuote(out.Phase)
 	case agentmcp.AssetResult:

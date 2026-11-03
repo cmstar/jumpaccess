@@ -46,6 +46,23 @@ class UploadRemoteTests(unittest.TestCase):
             upload.restore(request)
         with open(filename, 'rb') as f: self.assertEqual(f.read(), b'old')
 
+    def test_cleanup_rejects_replaced_child_directory(self):
+        child = os.path.join(self.stage['path'], 'child')
+        os.mkdir(child)
+        foreign = os.path.join(self.base, 'foreign')
+        os.mkdir(foreign)
+        with open(os.path.join(foreign, 'keep'), 'wb') as f: f.write(b'other task')
+        original_open = os.open
+        def replace_on_open(name, flags, *args, **kwargs):
+            if name == 'child':
+                os.rename(child, os.path.join(self.base, 'original'))
+                os.rename(foreign, child)
+            return original_open(name, flags, *args, **kwargs)
+        with mock.patch.object(upload.os, 'open', side_effect=replace_on_open):
+            with self.assertRaisesRegex(upload.Problem, 'TEMPORARY_FILE_CHANGED'):
+                upload.cleanup(dict(files=[self.stage]))
+        with open(os.path.join(child, 'keep'), 'rb') as f: self.assertEqual(f.read(), b'other task')
+
     def test_tar_empty_directory_and_original_archive(self):
         stream = io.BytesIO()
         entries = [dict(name='config', directory=True, size=0), dict(name='config/empty', directory=True, size=0), dict(name='config/archive.zip', directory=False, size=4)]

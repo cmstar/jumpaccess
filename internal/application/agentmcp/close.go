@@ -64,6 +64,14 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	e.closing = true
 	jobs := make([]*execution, 0)
 	downloadJobs := make([]*download, 0)
+	uploadJobs := make([]*upload, 0)
+	for _, job := range e.uploads {
+		if !terminal(job.view.Status) {
+			job.view.Status = "cancelling"
+			job.cancel()
+			uploadJobs = append(uploadJobs, job)
+		}
+	}
 	for _, job := range e.downloads {
 		if !terminal(job.view.Status) {
 			job.view.Status = "cancelling"
@@ -79,6 +87,16 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	}
 	e.mu.Unlock()
 	var err error
+	for _, job := range uploadJobs {
+		select {
+		case <-job.done:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		if err != nil {
+			break
+		}
+	}
 	for _, job := range downloadJobs {
 		select {
 		case <-job.done:
@@ -100,6 +118,18 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 		}
 	}
 	e.mu.Lock()
+	for _, job := range uploadJobs {
+		if !terminal(job.view.Status) {
+			if uploadFilesReady(job.view.Files) {
+				job.view.Warnings = append(job.view.Warnings, "文件已发布；服务停止前未能确认临时内容清理结果")
+				e.finishUploadLocked(job, "completed")
+			} else {
+				job.view.Error = fault("REMOTE_STATE_UNKNOWN", "服务停止，未能确认远端上传及发布状态")
+				job.view.RemoteMayContinue = true
+				e.finishUploadLocked(job, "unknown")
+			}
+		}
+	}
 	for _, job := range downloadJobs {
 		if !terminal(job.view.Status) {
 			if job.view.Directory != "" || job.view.Link != nil {
