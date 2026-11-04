@@ -12,6 +12,8 @@ func CommandFor(goos, path string) (string, []string, error) {
 		return "rundll32.exe", []string{"url.dll,FileProtocolHandler", path}, nil
 	case "darwin":
 		return "open", []string{path}, nil
+	case "linux":
+		return "xdg-open", []string{path}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported operating system %q", goos)
 	}

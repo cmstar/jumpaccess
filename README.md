@@ -16,7 +16,7 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 - 以 SSH 客户端方式直接连接远程 Asset。
 - 作为通用 SSH `ProxyCommand` 被兼容的终端或 SSH 客户端调用，不与某个具体终端产品耦合。
 - 通过 TOML 管理多个 JumpServer Profile 以及 Asset 别名等非敏感配置。
-- 支持 Windows 和 macOS，并以仅当前用户可访问的 Profile 独立文件保存 OAuth Token。
+- `jumpctl` 支持 Windows、macOS，以及 Ubuntu 24.04 LTS 上的 Linux amd64/arm64；桌面 GUI 支持 Windows 和 macOS。Ubuntu 22.04 LTS 预期兼容但尚未纳入持续验证，Ubuntu 20.04 LTS 及更早版本不在正式支持范围。OAuth Token 以仅当前用户可访问的 Profile 独立文件保存。
 
 首个兼容性参考基线是 JumpServer Client `v4.1.6` 所使用的协议和接口。它是分析参考，不表示本项目依赖该桌面 Client 才能运行。
 
@@ -73,7 +73,7 @@ go install github.com/cmstar/jumpaccess/cmd/jumpctl@latest
 go install ./cmd/jumpctl
 ```
 
-若没有 Go 环境，可以从发布页直接下载，参考下面的“下载 GUI 客户端”章节。下载后，若需要全局可用，需自行添加到 `PATH` 环境变量。
+若没有 Go 环境，可以从发布页直接下载对应平台的 CLI 归档；Linux 使用 `jumpctl-v版本号-linux-amd64.tar.gz` 或 `jumpctl-v版本号-linux-arm64.tar.gz`。Linux 正式支持 Ubuntu 24.04 LTS；Ubuntu 22.04 LTS 预期兼容，但在纳入持续集成验证前不作为正式支持基线。未列出的更新 LTS 版本也须验证后才进入支持范围。下载后，若需要全局可用，需自行添加到 `PATH` 环境变量。
 
 验证安装：
 
@@ -164,7 +164,7 @@ Host production-web
 
 `auth login` 默认使用手工回调：浏览器完成授权后，不要点击确认页的“确认”，而是复制页面中的 `jms://` 链接或浏览器地址栏的完整确认页 URL，粘贴到等待中的终端。`--manual` 可显式固定这一行为，供官方客户端仍占用协议或系统不允许注册协议时使用。
 
-本机没有可用浏览器时，运行 `jumpctl auth login --profile work --no-browser`。程序只打印授权地址并等待粘贴回调，可把地址复制到另一台能访问 JumpServer 的电脑上完成授权，再把回调粘贴回原终端。无需同时指定 `--manual`；保留原登录进程，Token 会保存在运行 CLI 的机器上。当前平台支持仍为 Windows 和 macOS，Linux 适配尚未完成。
+本机没有可用浏览器时，运行 `jumpctl auth login --profile work --no-browser`。程序只打印授权地址并等待粘贴回调，可把地址复制到另一台能访问 JumpServer 的电脑上完成授权，再把回调粘贴回原终端。无需同时指定 `--manual`；保留原登录进程，Token 会保存在运行 CLI 的机器上。该流程支持 Windows、macOS 和 Linux amd64/arm64。
 
 桌面 GUI 只要保持运行，就会按配置周期检查所有已保存 Refresh Token 的 Profile，并在 Access Token 临近过期时自动刷新；运行期间新增登录无需重启 GUI。Refresh Token 已过期或被撤销时仍需重新登录。
 
@@ -215,19 +215,19 @@ git push origin v0.1.0
 
 工作流执行成功会自动生成一个 Release，并根据当前版本与上一版本（tag）的差异，生成发布说明。
 
-产物包括 Windows 和 macOS（amd64+arm64）的 CLI/GUI 程序，每个都可以独立下载。
+产物包括 Windows CLI/GUI、macOS amd64/arm64 CLI 与 Universal GUI，以及 Linux amd64/arm64 CLI，每个都可以独立下载。
 
 ## 安全说明
 
 不要把账号密码、Access Token、Refresh Token、Cookie、私钥或其他真实凭据写入仓库。真实 JumpServer 账号只用于开发者本机的手工 smoke test；常规自动化测试应使用模拟服务和脱敏 fixture。
 
-OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
+OAuth 凭据以每个 Profile 一个 JSON 文件的方式保存在应用目录的 `credentials` 子目录。文件名由 Profile 标识稳定派生，不直接使用或改写 Profile 名；Windows 使用仅当前用户和 `SYSTEM` 可访问的受保护 DACL，macOS 与 Linux 使用当前用户所有的 `0700` 目录和 `0600` 文件。文件内容包含 Access Token 和 Refresh Token，应像 SSH 私钥一样保护，不能复制、同步或提交到仓库。
 
-Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand 代理的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
+Windows Credential Manager 或 macOS Keychain 仅用于保存 ProxyCommand 代理的稳定 Ed25519 host key，不参与 OAuth Token 的读取或写入；Linux 将该密钥保存在应用根目录下权限受限的 `ssh/proxy_host_ed25519_key`。包含 macOS Keychain 后端的正式构建需要启用 CGO 并链接系统 Security framework。
 
 首次直接连接某个 JumpServer SSH gateway 时，`jumpctl ssh` 会显示 SHA-256 主机密钥指纹并要求明确确认；信任记录保存在同一 JumpAccess 应用目录的 `known_hosts`。主机密钥变化不会自动接受。
 
-ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地代理的稳定 Ed25519 host key，该私钥保存在操作系统凭据存储；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
+ProxyCommand 存在两层独立的主机信任：外部 SSH 客户端看到的是 JumpAccess 本地代理的稳定 Ed25519 host key，该私钥在 Windows/macOS 保存在操作系统凭据存储，在 Linux 保存在 `ssh/proxy_host_ed25519_key`；JumpAccess 自己仍使用上述 `known_hosts` 严格验证上游 JumpServer gateway。
 
 ## 演示模式与截图生成工具
 

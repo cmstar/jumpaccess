@@ -103,3 +103,51 @@ jobs:
         run: |
           echo "::error title=原生检查失败 (${{ matrix.target }})::测试、静态检查或构建失败；编译及链接警告按错误处理，请查看上方失败步骤。"
           echo '原生检查失败。请查看失败步骤中的文件、行号和诊断；禁止通过全局关闭警告或忽略退出码放行。' >> "$GITHUB_STEP_SUMMARY"
+
+  linux-cli:
+    name: Linux CLI 检查 (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - target: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 运行 Linux Go 测试
+        run: go test -count=1 ./...
+
+      - name: 运行 Linux 平台 race 测试
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen
+
+      - name: 运行 Linux Go 静态检查
+        run: go vet ./...
+
+      - name: 构建并检查 Linux CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "${{ matrix.arch }}"
+          go build -trimpath -o "$RUNNER_TEMP/jumpctl" ./cmd/jumpctl
+          test -x "$RUNNER_TEMP/jumpctl"
+          XDG_CONFIG_HOME="$RUNNER_TEMP/config" "$RUNNER_TEMP/jumpctl" --help >/dev/null
