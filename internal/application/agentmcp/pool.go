@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
+	"github.com/cmstar/jumpaccess/internal/application/uploadcache"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -88,6 +89,7 @@ type EngineOptions struct {
 	DialUpload          func(context.Context, ResolvedTarget) (*ssh.Client, error)
 	OpenUploadSFTP      func(context.Context, ResolvedTarget) (UploadSFTP, error)
 	Upload              func(context.Context, ResolvedTarget, UploadInput, func(UploadProgress)) (UploadResult, error)
+	UploadCache         *uploadcache.Store
 	DeliveryMode        string
 	DownloadCache       *downloadcache.Store
 	Limits              Limits

@@ -51,7 +51,7 @@ func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine,
 	addOperation(server, instance, "get_download", "长等待查询同一下载任务，默认 20 秒，wait_ms 可选 0–30000；窗口结束不取消或延长任务。ok 仅表示查询成功，检查 status、delivery、files_ready、link.available、error 和清理告警。delivery=local 且 files_ready=true 的文件已就绪，直接使用，无需再解压、哈希或校验。delivery=link 时领取 link.url 到调用方设备，仅按 requires_extraction 解开新增外层，成功后清理本次自动压缩包；失败保留包并报告。无需独立压缩包测试、哈希或远端 rsync。链接过期或调用方无法领取时如实报告未下载，不自动重做远端传输。", true, decorateDownloadCall(cache, e.GetDownload), e)
 	addOperation(server, instance, "list_downloads", "分页找回当前实例仍保留的下载任务。delivery=local 的 files_ready 只指服务电脑；delivery=link 需继续领取和必要解压，不能把准备完成说成已保存到调用方。历史回收不撤销未过期的既有链接；服务重启后旧链接失效，找不到记录不代表未执行。", true, decorateDownloadPageCall(cache, e.DownloadsPage), e)
 	addOperation(server, instance, "cancel_download", "请求取消指定 download_id，需继续 get_download 等待确认。只影响本下载；cancelling 是请求已发出，unknown 表示无法确认远端结束。已完成任务不撤销链接或删除最终文件；中断 HTTP 领取只终止该次请求。", false, decorateDownloadCall(cache, e.CancelDownload), e)
-	addOperation(server, instance, "upload_files", "异步上传服务电脑可读取的文件或目录到明确目标。source 必须为 local，local_paths 为服务电脑绝对路径；须先确认调用方与服务共享文件系统。提供 target 或 connection_id、remote_directory 和 request_key。自动压缩普通文件和目录，保留用户压缩包，优先 SFTP、失败回退 rz；需远端 POSIX/Python 3，传输内容最多 1 GiB。在隔离目录完整还原后发布，不覆盖已有顶层文件或目录。默认等待 5 秒，取得 upload_id 后持续 get_upload 至终态；只有 files_ready=true 才表示全部最终文件已就绪。当前不提供 HTTP 上传中转。本机权限错误不得改读其他路径；重试保留原键，未知或过期不得自动换键重跑。", false, e.UploadFiles, e)
+	addOperation(server, instance, "upload_files", "异步上传服务电脑可读取的文件或目录到明确目标。source 必须为 local，local_paths 为服务电脑绝对路径；须先确认调用方与服务共享文件系统。提供 target 或 connection_id、remote_directory 和 request_key。自动压缩普通文件和目录，保留用户压缩包，优先 SFTP、失败回退 rz；需远端 POSIX/Python 3，传输内容最多 1 GiB。在隔离目录完整还原后发布，不覆盖已有顶层文件或目录。默认等待 5 秒，取得 upload_id 后持续 get_upload 至终态；只有 files_ready=true 才表示全部最终文件已就绪。异机或本机读取权限不足时使用 prepare_upload，经 HTTP 接收后 commit_upload；本机权限错误不得改读其他路径；重试保留原键，未知或过期不得自动换键重跑。", false, e.UploadFiles, e)
 	addOperation(server, instance, "get_upload", "查询同一上传任务，默认等待 20 秒，wait_ms 可选 0–30000；查询不取消或延长任务。检查 status、files_ready、逐项 files、error 和清理告警。unknown 须核对最终路径，不能推断远端未写入；部分发布成功的文件保留，失败后不自动重传。", true, e.GetUpload, e)
 	addOperation(server, instance, "list_uploads", "分页找回当前实例仍保留的上传任务；记录回收或服务重启不撤销已发布文件，找不到记录不代表没有上传。", true, e.UploadsPage, e)
 	addOperation(server, instance, "cancel_upload", "请求取消指定 upload_id，需继续 get_upload 等待确认。只影响本次上传；已发布文件保留。remote_may_continue 表示远端停止未确认，不能删除任务报告的必要临时内容；已确认停止但发布结果未知时仍须核对最终路径。", false, e.CancelUpload, e)
@@ -63,7 +63,7 @@ func addOperation[In, Out any](server *mcp.Server, instance, name, description s
 		started := time.Now()
 		data, err := call(ctx, input)
 		// 执行/打开的首次受理和结果归属于各自操作记录，避免另存一份命令或输出。
-		if readOnly || err != nil || name == "close_connection" || name == "cancel_execution" || name == "cancel_download" || name == "cancel_upload" {
+		if readOnly || err != nil || name == "close_connection" || name == "cancel_execution" || name == "cancel_download" || name == "cancel_upload" || name == "prepare_upload" || name == "cancel_upload_source" {
 			engine.RecordCall(name, err, callDetails(input, data, started))
 		}
 		result := Result[Out]{SchemaVersion: 1, ServerInstanceID: instance, OK: err == nil}
@@ -89,10 +89,10 @@ func addOperation[In, Out any](server *mcp.Server, instance, name, description s
 			problem.Details["download_id"] = nil
 			problem.Details["prior_download_unknown"] = problem.Code == "DOWNLOAD_EXPIRED" || problem.Code == "REQUEST_EXPIRED" || problem.Code == "INSTANCE_CHANGED" || problem.Code == "IDEMPOTENCY_CONFLICT"
 		}
-		if name == "upload_files" {
+		if name == "upload_files" || name == "commit_upload" {
 			problem.Details["accepted_this_call"] = false
 			problem.Details["upload_id"] = nil
-			problem.Details["prior_upload_unknown"] = problem.Code == "UPLOAD_EXPIRED" || problem.Code == "REQUEST_EXPIRED" || problem.Code == "INSTANCE_CHANGED" || problem.Code == "IDEMPOTENCY_CONFLICT"
+			problem.Details["prior_upload_unknown"] = problem.Code == "UPLOAD_EXPIRED" || problem.Code == "REQUEST_EXPIRED" || problem.Code == "INSTANCE_CHANGED" || problem.Code == "IDEMPOTENCY_CONFLICT" || problem.Code == "UPLOAD_SOURCE_USED" || problem.Code == "UPLOAD_SOURCE_EXPIRED"
 		}
 		if name == "execute_command" {
 			problem.Details["accepted"] = false

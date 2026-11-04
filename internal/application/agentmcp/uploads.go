@@ -22,6 +22,8 @@ type UploadInput struct {
 	RemoteDirectory string   `json:"remote_directory"`
 	TimeoutMS       int      `json:"timeout_ms,omitempty"`
 	WaitMS          *int     `json:"wait_ms,omitempty"`
+	sourceID        string
+	prepared        *preparedUpload
 }
 type UploadIDInput struct {
 	UploadID string `json:"upload_id"`
@@ -57,9 +59,12 @@ type UploadResult struct {
 	RemoteArtifacts []string       `json:"remote_artifacts,omitempty"`
 }
 type UploadView struct {
-	ID     string         `json:"upload_id"`
-	Target ResolvedTarget `json:"target"`
-	Status string         `json:"status"`
+	ID                 string         `json:"upload_id"`
+	Target             ResolvedTarget `json:"target"`
+	Status             string         `json:"status"`
+	Source             string         `json:"source"`
+	SourceID           string         `json:"source_id,omitempty"`
+	HTTPSourceRequired bool           `json:"http_source_required,omitempty"`
 	UploadProgress
 	UploadResult
 	FilesReady        bool       `json:"files_ready"`
@@ -99,7 +104,7 @@ func normalizeUpload(in UploadInput) (UploadInput, int, error) {
 		in.TimeoutMS = 1800000
 	}
 	if in.Source != "local" {
-		return in, wait, fault("LOCAL_SOURCE_REQUIRED", "本阶段仅支持 source=local，源路径必须明确属于 MCP 服务电脑；HTTP 中转尚未提供")
+		return in, wait, fault("LOCAL_SOURCE_REQUIRED", "upload_files 要求 source=local；异机或读取权限不足时使用 prepare_upload，经 HTTP 接收后 commit_upload")
 	}
 	if wait < 0 || wait > 5000 || in.TimeoutMS < 1 || in.TimeoutMS > 3600000 || len(in.LocalPaths) == 0 || len(in.LocalPaths) > 100 {
 		return in, wait, fault("INVALID_ARGUMENT", "上传需提供 1–100 个本机绝对路径，等待不超过 5 秒，任务时限不超过 1 小时")
@@ -130,13 +135,17 @@ func (e *Engine) UploadFiles(ctx context.Context, in UploadInput) (UploadView, e
 	if err != nil {
 		return UploadView{}, err
 	}
-	if err = ctx.Err(); err != nil {
+	return e.startUpload(ctx, normalized, "upload", in.RequestKey, normalized, wait)
+}
+
+func (e *Engine) startUpload(ctx context.Context, normalized UploadInput, tool, key string, digest any, wait int) (UploadView, error) {
+	if err := ctx.Err(); err != nil {
 		return UploadView{}, err
 	}
 	e.mu.Lock()
 	var job *upload
 	var bound *ResolvedTarget
-	rec, fresh, err := e.requests.begin("upload", in.RequestKey, normalized, func() (string, error) {
+	rec, fresh, err := e.requests.begin(tool, key, digest, func() (string, error) {
 		if e.closing {
 			return "", fault("SERVICE_DRAINING", "服务正在停止")
 		}
@@ -149,8 +158,8 @@ func (e *Engine) UploadFiles(ctx context.Context, in UploadInput) (UploadView, e
 		if active >= 4 {
 			return "", fault("LIMIT_EXCEEDED", "最多同时执行 4 个上传任务")
 		}
-		if in.ConnectionID != "" {
-			c, err := e.findConnection(in.ConnectionID)
+		if normalized.ConnectionID != "" {
+			c, err := e.findConnection(normalized.ConnectionID)
 			if err != nil {
 				return "", err
 			}
@@ -188,8 +197,22 @@ func (e *Engine) UploadFiles(ctx context.Context, in UploadInput) (UploadView, e
 		if op == nil {
 			return "", fault("LIMIT_EXCEEDED", "操作记录全部活跃")
 		}
+		if normalized.Source == "http" {
+			prepared, meta, err := e.claimUploadSource(normalized.sourceID, id)
+			if err != nil {
+				op.active = false
+				e.history.removeLocked(op)
+				return "", err
+			}
+			normalized.prepared = prepared
+			normalized.RemoteDirectory = meta.RemoteDirectory
+			v := meta.Target
+			bound = &v
+		}
 		now := e.opts.Now()
 		job = &upload{view: UploadView{ID: id, Status: "accepted", UploadProgress: UploadProgress{Phase: "preparing"}, AcceptedAt: now, DeadlineAt: now.Add(time.Duration(normalized.TimeoutMS) * time.Millisecond)}, done: make(chan struct{})}
+		job.view.Source = normalized.Source
+		job.view.SourceID = normalized.sourceID
 		if bound != nil {
 			job.view.Target = *bound
 		}
@@ -219,7 +242,11 @@ func (e *Engine) UploadFiles(ctx context.Context, in UploadInput) (UploadView, e
 		return UploadView{}, fault("UPLOAD_EXPIRED", "上传详细结果已回收，不会重新上传")
 	}
 	if !fresh {
-		e.RecordCall("upload_files", nil, CallDetails{Summary: "重复请求，返回原上传任务  upload_id=" + job.view.ID})
+		name := tool
+		if name == "upload" {
+			name = "upload_files"
+		}
+		e.RecordCall(name, nil, CallDetails{Summary: "重复请求，返回原上传任务  upload_id=" + job.view.ID})
 	}
 	return e.waitUpload(ctx, job, wait)
 }
@@ -267,6 +294,12 @@ func (e *Engine) runUpload(ctx context.Context, job *upload, in UploadInput, bou
 			}
 		})
 	}
+	// 身份复核失败或测试替代的传输器未打开准备包时，也必须释放已接管内容。
+	if in.prepared != nil {
+		if closeErr := in.prepared.Close(); closeErr != nil {
+			result.Warnings = append(result.Warnings, "上传缓存清理失败，残留仍占用额度")
+		}
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if terminal(job.view.Status) {
@@ -276,6 +309,7 @@ func (e *Engine) runUpload(ctx context.Context, job *upload, in UploadInput, bou
 	status := "completed"
 	if err != nil {
 		job.view.Error = asFault(err, "UPLOAD_FAILED", "上传失败，请检查本机源文件、网络和远端目标目录")
+		job.view.HTTPSourceRequired = job.view.Error.Code == "LOCAL_SOURCE_PERMISSION_DENIED"
 		status = "failed"
 		if errors.Is(err, context.Canceled) {
 			status = "cancelled"

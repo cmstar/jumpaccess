@@ -139,13 +139,17 @@ func TestHTTPUploadScopedCredentialAndHostProtection(t *testing.T) {
 }
 
 func TestHTTPUploadIdleTimeoutAndCancellation(t *testing.T) {
-	for _, cancelled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "idle", true: "cancel"}[cancelled], func(t *testing.T) {
+	for _, mode := range []string{"idle", "cancel", "stop", "total"} {
+		t.Run(mode, func(t *testing.T) {
 			cache, _ := uploadcache.New(uploadcache.Options{Directory: t.TempDir()})
 			defer cache.Close()
 			source, _ := cache.Reserve(4, nil)
 			sig, _ := cache.Signature(source.ID)
-			server := httptest.NewServer(uploadHandler(cache, downloadHTTPTimeouts{Idle: 100 * time.Millisecond, Total: time.Second}))
+			limits := downloadHTTPTimeouts{Idle: 100 * time.Millisecond, Total: time.Second}
+			if mode == "total" {
+				limits = downloadHTTPTimeouts{Idle: time.Second, Total: 100 * time.Millisecond}
+			}
+			server := httptest.NewServer(uploadHandler(cache, limits))
 			defer server.Close()
 			reader, writer := io.Pipe()
 			defer writer.Close()
@@ -163,7 +167,7 @@ func TestHTTPUploadIdleTimeoutAndCancellation(t *testing.T) {
 				done <- res.StatusCode
 			}()
 			writer.Write([]byte("a"))
-			if cancelled {
+			if mode == "cancel" || mode == "stop" {
 				deadline := time.Now().Add(time.Second)
 				for {
 					v, err := cache.Get(source.ID)
@@ -178,7 +182,11 @@ func TestHTTPUploadIdleTimeoutAndCancellation(t *testing.T) {
 					}
 					time.Sleep(time.Millisecond)
 				}
-				cache.Cancel(source.ID)
+				if mode == "cancel" {
+					cache.Cancel(source.ID)
+				} else {
+					cache.Close()
+				}
 			}
 			select {
 			case status := <-done:
@@ -188,7 +196,7 @@ func TestHTTPUploadIdleTimeoutAndCancellation(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("HTTP upload did not stop")
 			}
-			if !cancelled {
+			if mode == "idle" || mode == "total" {
 				view, err := cache.Get(source.ID)
 				if err != nil || view.State != "waiting" {
 					t.Fatalf("partial content was retained: %+v %v", view, err)

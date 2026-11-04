@@ -206,3 +206,31 @@ func TestCleanupFailureRetainsQuotaAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCleanupWarningDoesNotBlockAdmission(t *testing.T) {
+	now := time.Now()
+	release := make(chan struct{})
+	defer close(release)
+	s, err := New(Options{Directory: t.TempDir(), Now: func() time.Time { return now }, MaxBytes: 4, OnCleanupError: func(error) { <-release }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a, _ := s.Reserve(4, nil)
+	sig, _ := s.Signature(a.ID)
+	w, _ := s.BeginReceive(a.ID, sig)
+	w.Write([]byte("data"))
+	w.Complete()
+	s.remove = func(string) error { return os.ErrPermission }
+	now = now.Add(time.Hour)
+	done := make(chan error, 1)
+	go func() { _, err := s.Reserve(1, nil); done <- err }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrCapacity) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cleanup logger blocked task admission")
+	}
+}

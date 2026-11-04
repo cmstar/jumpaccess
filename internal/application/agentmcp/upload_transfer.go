@@ -28,13 +28,16 @@ type UploadSFTP struct {
 func (e *Engine) performUpload(ctx context.Context, target ResolvedTarget, in UploadInput, update func(UploadProgress)) (result UploadResult, err error) {
 	result.Directory = in.RemoteDirectory
 	update(UploadProgress{Phase: "preparing"})
-	p, err := prepareUpload(ctx, in.LocalPaths, 1<<30)
-	if err != nil {
-		return result, err
+	p := in.prepared
+	if p == nil {
+		p, err = prepareUpload(ctx, in.LocalPaths, 1<<30)
+		if err != nil {
+			return result, err
+		}
 	}
 	defer func() {
 		if closeErr := p.Close(); closeErr != nil {
-			result.Warnings = append(result.Warnings, "本机上传准备包关闭或清理失败，请检查服务电脑临时目录")
+			result.Warnings = append(result.Warnings, "上传准备内容关闭或清理失败，请检查服务电脑临时目录或上传缓存")
 		}
 	}()
 	entries := make([]remoteEntry, len(p.Entries))

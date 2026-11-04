@@ -71,6 +71,7 @@ type Store struct {
 	transfers, leases int
 	closed            bool
 	done              chan struct{}
+	warnings          chan error
 	unlock            func() error
 	remove            func(string) error
 	closeErr          error
@@ -136,7 +137,7 @@ func New(o Options) (*Store, error) {
 		unlock()
 		return nil, err
 	}
-	s := &Store{options: o, root: root, entries: map[string]*entry{}, done: make(chan struct{}), unlock: unlock, remove: root.Remove}
+	s := &Store{options: o, root: root, entries: map[string]*entry{}, done: make(chan struct{}), warnings: make(chan error, 1), unlock: unlock, remove: root.Remove}
 	if _, err = rand.Read(s.secret[:]); err != nil {
 		root.Close()
 		unlock()
@@ -179,6 +180,8 @@ func New(o Options) (*Store, error) {
 			select {
 			case <-s.done:
 				return
+			case err := <-s.warnings:
+				s.options.OnCleanupError(err)
 			case <-ticker.C:
 				s.warn(s.Sweep())
 			}
@@ -188,7 +191,12 @@ func New(o Options) (*Store, error) {
 }
 func (s *Store) warn(err error) {
 	if err != nil && !errors.Is(err, ErrClosed) && s.options.OnCleanupError != nil {
-		s.options.OnCleanupError(err)
+		// 回调可能写入调用方的共享历史；不能在任务受理锁内同步调用。
+		// 相同残留会在后续扫描重报，告警积压只保留一项。
+		select {
+		case s.warnings <- err:
+		default:
+		}
 	}
 }
 func (s *Store) Done() <-chan struct{} { return s.done }
@@ -314,6 +322,38 @@ func (s *Store) Get(id string) (View, error) {
 	}
 	return clone(e.view), nil
 }
+
+// SetMetadata 只在准备阶段写入一次目标和清单，不能改写已经提供接收地址的对象。
+func (s *Store) SetMetadata(id string, metadata []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, err := s.getLocked(id)
+	if err != nil {
+		return err
+	}
+	if e.view.State != "waiting" || len(e.view.Metadata) != 0 {
+		return ErrUsed
+	}
+	if len(metadata) == 0 || len(metadata) > MaxMetadata {
+		return ErrTooLarge
+	}
+	e.view.Metadata = slices.Clone(metadata)
+	return nil
+}
+
+func (s *Store) Counts() (sources, receiving int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if !e.claimed && !e.discard && !s.expired(e) {
+			sources++
+			if e.receiving {
+				receiving++
+			}
+		}
+	}
+	return
+}
 func (s *Store) signature(id string) string {
 	h := hmac.New(sha256.New, s.secret[:])
 	h.Write([]byte("upload:" + id))
@@ -432,10 +472,10 @@ func (r *Receiver) Complete() error {
 	s.leases--
 	return nil
 }
-func (r *Receiver) Abort() error {
+func (r *Receiver) Abort() (result error) {
 	s := r.store
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() { s.mu.Unlock(); s.warn(result) }()
 	if r.finished {
 		return nil
 	}

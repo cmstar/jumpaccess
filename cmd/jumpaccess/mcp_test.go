@@ -92,7 +92,7 @@ func TestGUIMCPStartsExplicitlyAndStopsWithApplication(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"upload_files", "get_upload", "list_uploads", "cancel_upload"} {
+	for _, want := range []string{"upload_files", "get_upload", "list_uploads", "cancel_upload", "prepare_upload", "get_upload_source", "cancel_upload_source", "commit_upload"} {
 		if !names[want] {
 			t.Fatalf("GUI 缺少共享工具 %s", want)
 		}

@@ -14,6 +14,19 @@ function backend(overrides: Partial<MCPBackend> = {}): MCPBackend {
 }
 function view(value: MCPBackend, active = true) { return <NotificationProvider><MCPSettings backend={value} active={active} /></NotificationProvider> }
 
+test('HTTP 接收对象尚未提交时停止也提示内容将失效', async () => {
+  const api = backend({ status: vi.fn().mockResolvedValue({ ...running, counts: { connections: 0, ssh_connections: 0, connecting: 0, executions: 0, unknown_executions: 0, upload_sources: 2, upload_receiving: 1, draining: false } }) })
+  render(<NotificationProvider><MCPSettings backend={api} active confirmServiceActions /></NotificationProvider>)
+  expect(await screen.findByLabelText('MCP 共享状态')).toHaveTextContent('待提交上传 2')
+  expect(screen.getByLabelText('MCP 共享状态')).toHaveTextContent('HTTP 接收中 1')
+  await userEvent.click(screen.getByRole('button', { name: '停止' }))
+  expect(api.stop).not.toHaveBeenCalled()
+  expect(screen.getByRole('dialog')).toHaveTextContent('2 个上传接收对象尚未提交')
+  expect(screen.getByRole('dialog')).toHaveTextContent('未提交的上传内容会失效')
+  await userEvent.click(screen.getByRole('button', { name: '停止服务' }))
+  await waitFor(() => expect(api.stop).toHaveBeenCalledOnce())
+})
+
 test('只有上传任务时统计并在重启前确认', async () => {
   const api = backend({ status: vi.fn().mockResolvedValue({ ...running, counts: { connections: 0, ssh_connections: 0, connecting: 0, executions: 0, uploads: 2, unknown_uploads: 1, upload_transport_slots: 4, unknown_executions: 0, draining: false } }) })
   render(<NotificationProvider><MCPSettings backend={api} active confirmServiceActions /></NotificationProvider>)

@@ -277,6 +277,8 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 MCP 文件传输的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 文件传输集成测试在 macOS 上直接运行，需预先安装 Python 3 与 `lrzsz`；Windows 需显式设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志；测试临时目录先解析为真实路径，避免 macOS 的系统目录链接触发远端拒绝链接的校验。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 和 `python3 -B internal/application/agentmcp/upload_remote_test.py`，分别验证下载有限读取、上传隔离还原、冲突及部分发布、清理时的目录身份；完整覆盖需在 POSIX 环境执行。上传集成测试还覆盖本机准备、受限 SFTP 映射、真实 `rz` 回退、取消清理及大清单输入，Windows 通过 WSL 原生文件系统验证排他发布，不以挂载盘上的文件系统兼容结果代替。ZMODEM 独立互操作测试见上文 CLI 传输约定，未启用所需环境时的跳过不代表真实网关验收通过。
 
+HTTP 上传回归覆盖准备与提交的独立去重、未收齐禁止提交、接收失败后重试、单对象写入、就绪禁止覆盖、身份复核和任务结束清理；运行 `go test -race ./internal/application/uploadcache ./internal/application/agentmcp ./internal/mcpserver`。以真实 HTTP 请求验证空闲／总时限、取消和服务停止，缓存用可控时钟验证到期；清理告警不得在持有任务受理锁时同步回调共享历史。
+
 HTTP 下载测试应在服务端 handler 返回后检查领取名额是否释放，客户端收到完整 `Content-Length` 不代表服务端清理已经结束。默认写超时覆盖使用小正文和服务端延迟验证，空闲／总超时仍通过阻塞的大正文验证，避免将 CI 的 TCP 吞吐速度当作功能要求。
 
 下载复用 Go SFTP 客户端与 ZMODEM 接收协议时，同时回归 `internal/sftpclient`、`internal/clitransfer`、`internal/sshclient`，以及 GUI 的 `zmodem.test.ts`、`zmodemProgress.test.ts`。MCP 状态与停止提示另回归 `MCPSettings.test.tsx`、`MCPWorkspace.test.tsx`。不要通过截图脚本代替行为验证。

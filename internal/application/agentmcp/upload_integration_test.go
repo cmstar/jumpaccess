@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cmstar/jumpaccess/internal/application/uploadcache"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
 )
 
@@ -21,6 +22,95 @@ type uploadTestSFTP struct {
 	payload func(io.WriteCloser) io.WriteCloser
 	closed  chan struct{}
 	once    sync.Once
+}
+
+func TestStagedUploadThroughRemoteRestoreAndFallback(t *testing.T) {
+	for _, mode := range []string{"sftp", "fallback", "invalid_gzip"} {
+		t.Run(mode, func(t *testing.T) {
+			opts, directory, stage := uploadLinuxFixture(t)
+			cache, err := uploadcache.New(uploadcache.Options{Directory: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cache.Close()
+			opts.UploadCache = cache
+			local := t.TempDir()
+			source := filepath.Join(local, "config.txt")
+			content := []byte("HTTP staged config\n")
+			os.WriteFile(source, content, 0600)
+			prepared, err := prepareUpload(context.Background(), []string{source}, 1<<30)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer prepared.Close()
+			data, err := io.ReadAll(prepared.File)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "invalid_gzip" {
+				data = []byte("not a gzip")
+			}
+			root := "${HOME}"
+			opts.OpenUploadSFTP = func(context.Context, ResolvedTarget) (UploadSFTP, error) {
+				s := &uploadTestSFTP{root: stage}
+				if mode == "fallback" {
+					s.payload = func(f io.WriteCloser) io.WriteCloser { return uploadFailWriter{f, func() {}} }
+				}
+				return UploadSFTP{Root: &root, Client: s}, nil
+			}
+			destination := filepath.Join(directory, "destination")
+			os.Mkdir(destination, 0700)
+			e := NewEngine(opts)
+			defer e.Shutdown(context.Background())
+			receipt, err := e.PrepareUpload(context.Background(), PrepareUploadInput{Target: Target{Profile: "p", Alias: "test"}, RemoteDirectory: linuxDownloadPath(t, destination), Format: "gzip", Size: int64(len(data)), Entries: []UploadEntry{{Name: "config.txt", Size: int64(len(content))}}, RequestKey: requestKey(1, 830)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			signature, _ := cache.Signature(receipt.ID)
+			receiver, _ := cache.BeginReceive(receipt.ID, signature)
+			if _, err = receiver.Write(data); err != nil {
+				t.Fatal(err)
+			}
+			if err = receiver.Complete(); err != nil {
+				t.Fatal(err)
+			}
+			os.Remove(source) // 中转完成后远端流程只依赖缓存，不再读取调用方路径。
+			job, err := e.CommitUpload(context.Background(), CommitUploadInput{SourceID: receipt.ID, RequestKey: requestKey(1, 831), TimeoutMS: 25000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wait := 25000
+			job, err = e.GetUpload(context.Background(), GetUploadInput{UploadID: job.ID, WaitMS: &wait})
+			if err != nil {
+				t.Fatal(err)
+			}
+			final := filepath.Join(destination, "config.txt")
+			if mode == "invalid_gzip" {
+				if job.Status != "failed" || job.FilesReady {
+					t.Fatalf("invalid package published %+v", job)
+				}
+				if _, err = os.Stat(final); !os.IsNotExist(err) {
+					t.Fatal("invalid package changed target")
+				}
+			} else {
+				if job.Status != "completed" || !job.FilesReady {
+					t.Fatalf("staged upload %+v", job)
+				}
+				if actual, _ := os.ReadFile(final); !bytes.Equal(actual, content) {
+					t.Fatal("wrong final content")
+				}
+				if mode == "fallback" && job.Protocol != "zmodem" {
+					t.Fatal("fallback not used")
+				}
+			}
+			if _, err = cache.Get(receipt.ID); err == nil {
+				t.Fatal("consumed staged file retained")
+			}
+			if left, _ := os.ReadDir(stage); len(left) != 0 || len(job.RemoteArtifacts) != 0 {
+				t.Fatalf("remote residue %+v %+v", left, job.RemoteArtifacts)
+			}
+		})
+	}
 }
 
 func (s *uploadTestSFTP) OpenFile(name string, flags int) (io.WriteCloser, error) {

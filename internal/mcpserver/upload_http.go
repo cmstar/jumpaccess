@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,10 @@ func uploadHandler(cache *uploadcache.Store, limits downloadHTTPTimeouts) http.H
 			receiver.Abort()
 			status, message := 400, "上传内容未完整接收，请检查文件后重试同一接收对象"
 			var timeout interface{ Timeout() bool }
+			var disk *os.PathError
+			if errors.As(err, &disk) {
+				status, message = 500, "上传缓存写入失败，请检查服务电脑存储空间和权限"
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, uploadcache.ErrClosed) || errors.As(err, &timeout) && timeout.Timeout() {
 				status, message = 408, "上传接收已取消或超时"
 			}

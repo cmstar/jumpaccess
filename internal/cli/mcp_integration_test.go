@@ -105,7 +105,7 @@ func TestCLIMCPHostProvidesSharedToolsAndPreservesRunningToken(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"list_profiles", "open_connection", "execute_command", "cancel_execution", "download_files", "get_download", "cancel_download", "upload_files", "get_upload", "list_uploads", "cancel_upload"} {
+	for _, want := range []string{"list_profiles", "open_connection", "execute_command", "cancel_execution", "download_files", "get_download", "cancel_download", "upload_files", "get_upload", "list_uploads", "cancel_upload", "prepare_upload", "get_upload_source", "cancel_upload_source", "commit_upload"} {
 		if !names[want] {
 			t.Fatalf("CLI 缺少共享工具 %s", want)
 		}

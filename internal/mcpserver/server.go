@@ -78,6 +78,9 @@ func NewHandler(options Options) http.Handler {
 			if options.Cache != nil {
 				data.Capabilities = append(data.Capabilities, "download_links")
 			}
+			if options.UploadCache != nil {
+				data.Capabilities = append(data.Capabilities, "http_file_uploads")
+			}
 			if counts.Draining {
 				data.State = "draining"
 			}
@@ -90,6 +93,9 @@ func NewHandler(options Options) http.Handler {
 	}
 	if options.Engine != nil {
 		registerOperations(server, options.Instance.ID, options.Engine, options.Cache)
+		if options.UploadCache != nil {
+			registerUploadSources(server, options.Instance.ID, options.Engine, options.UploadCache)
+		}
 	}
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20})
 	protected := protect(handler, options)

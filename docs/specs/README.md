@@ -22,7 +22,7 @@
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
 | Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | CLI 前台服务、配置与日志及 GUI 工作区均已接入共享核心；CLI 本机自动化与集成验证，macOS 原生及真实 Agent 客户端待验收；文件传输详见独立方案 |
-| Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | CLI／GUI 共用下载与本机上传核心；本机上传含压缩、远端暂存还原及排他发布，等待人工验收；HTTP 上传中转待下一阶段 |
+| Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | CLI／GUI 共用下载、本机上传及 HTTP 中转；接收与提交分别去重，远端共用暂存还原和排他发布；HTTP 中转等待人工验收 |
 
 ## 历史版本索引
 

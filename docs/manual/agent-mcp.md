@@ -1,6 +1,6 @@
 # 使用 MCP Server
 
-GUI 和 CLI 都可以启动同一套 Streamable HTTP MCP 服务，让 Agent 查询资源、复用 SSH 连接、执行命令、下载文件及上传本机文件。默认服务地址为 `http://127.0.0.1:39287/mcp`，配置与访问 Token 共用 `config.toml`，同一应用数据目录只运行一个实例。先通过任一入口完成所需 Profile 的 JumpServer 登录，再选择 GUI 或 CLI 承载服务。
+GUI 和 CLI 都可以启动同一套 Streamable HTTP MCP 服务，让 Agent 查询资源、复用 SSH 连接、执行命令、下载文件、上传本机文件及使用 HTTP 中转。默认服务地址为 `http://127.0.0.1:39287/mcp`，配置与访问 Token 共用 `config.toml`，同一应用数据目录只运行一个实例。先通过任一入口完成所需 Profile 的 JumpServer 登录，再选择 GUI 或 CLI 承载服务。
 
 ## 在 GUI 中使用
 
@@ -141,4 +141,25 @@ jumpctl mcp serve --color never > mcp.log 2>&1
 
 只有 `files_ready=true` 表示全部最终文件已发布。部分失败时按 `files` 查看各项状态，已成功发布的文件保留；`unknown` 时先核对最终路径，不能直接换请求键重传。临时内容正常结束后清理，清理告警单独报告；异常退出可能留下本机准备包或远端 `.jumpaccess-upload-` 目录，重启不会按名称前缀批量清扫。源文件和已发布文件不受清理影响。
 
-当前只支持本机直读。调用方与服务不共享文件系统，或服务无读取权限时，本阶段无法继续上传；HTTP 接收与暂存将在人工验收后另行实现。
+调用方与服务不共享文件系统，或服务无读取权限时，按下节使用 HTTP 中转。源文件不存在或准备失败仍明确报错，不自动换读其他路径。
+
+## 通过 HTTP 中转上传
+
+源文件在另一台电脑上，或 JumpAccess 没有读取权限时，由能读取文件的调用方发送内容。Agent 须能在源文件所在环境打包并发送 HTTP 请求；只能调用 MCP 工具、不能发送文件正文的客户端无法完成此流程。CLI 和 GUI 宿主使用相同接口，服务监听地址、局域网开关、Host／Origin 和 TLS 限制仍然适用。
+
+1. 在源文件所在环境准备传输包：单个普通文件使用 gzip，目录或多个来源使用 tar.gz；已经是压缩文件的单个来源使用 raw，保留原内容。格式声明只代表本次新增的外层，服务不会按扩展名继续解压内部文件。
+2. 调用 `prepare_upload`，提供明确的 `target` 或 `connection_id`、远端绝对目录 `remote_directory`、准备包实际字节数 `size`、`format` 和 `entries`，以及新的 `request_key`。清单按归档顺序列出每项相对名称 `name`、原始字节数 `size` 和布尔值 `directory`；父目录先于子项，目录大小为零，不包含链接、绝对路径、越界或重复名称。raw 和 gzip 只能声明一个普通文件，tar.gz 包含全部目录与文件。
+3. 取得 `source_id` 后，若状态为 `preparing`，使用 `get_upload_source` 等待目标解析完成；`waiting` 时按返回的 `url` 和 `method=PUT` 发送准备包的原始字节。不能使用 multipart、HTTP 内容编码转换或分段续传，也不要把正文填入 MCP 参数。接收地址携带限时凭据，应按敏感信息保管。
+4. `get_upload_source` 返回 `ready` 后，以 `source_id` 和另一枚新的 `request_key` 调用 `commit_upload`。服务重新检查目标身份和授权，然后创建远端上传任务；可通过 `wait_ms` 短等结果，或使用返回的 `upload_id` 调用 `get_upload` 持续等待。
+
+例如在 PowerShell 中，将已准备好的包发送到工具返回的完整地址：
+
+```powershell
+curl.exe --fail-with-body --request PUT --upload-file 'D:\work\bundle.tar.gz' '<prepare_upload 返回的 url>'
+```
+
+HTTP 成功只表示准备包已到达 JumpAccess。只有上传任务的 `files_ready=true` 才表示全部内容已在目标服务器还原并发布；冲突、部分发布、取消和未知结果的处理与本机上传相同。准备和提交分别去重，同一步重试保留原请求键。HTTP 响应丢失时先查 `get_upload_source`：`receiving` 等待接收结束，`waiting` 才可在原接收有效期内整包重试，`ready` 直接提交，`submitted` 查询其 `upload_id`；同一对象不能创建第二项上传。提交结果不明时用原提交请求键核对，不能重新准备内容后换键重传。
+
+每个准备包最多 1 GiB，清单最多 1000 项、100 个顶层对象。接收资格自申请起有效 30 分钟，收齐后另有 30 分钟的待提交时间；查询和重复请求不续期。上传缓存独立限制为 8 GiB、50 个对象，包含预留、任务持有和未删除残留。HTTP 同时最多接收 4 路，每个对象只允许一路写入；60 秒无进展或单次达到 15 分钟时停止接收。
+
+不再需要的未提交内容可通过 `cancel_upload_source` 取消；已经提交的任务使用 `cancel_upload`。到期未提交的内容自动清理，任务接管后保护至任务结束。停止或重启 MCP 会使旧接收地址和未提交内容失效；GUI 有待提交对象时会提示，CLI 停止服务遵循相同规则。清理不会删除源文件或远端已发布文件。

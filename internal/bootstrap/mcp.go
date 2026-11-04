@@ -7,6 +7,7 @@ import (
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
+	"github.com/cmstar/jumpaccess/internal/application/uploadcache"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/mcpserver"
 )
@@ -21,10 +22,17 @@ func (r Runtime) NewMCP(host string) *agentmcp.Runtime {
 		if err != nil {
 			return mcpStartupFailure{err: fmt.Errorf("无法初始化 MCP 下载领取缓存: %w", err)}
 		}
+		uploads, err := uploadcache.New(uploadcache.Options{Directory: filepath.Join(r.RootDir, "cache", "mcp-uploads"), OnCleanupError: func(error) {
+			runtime.History().Record(info.ID, "upload_cache_cleanup", "WARN", 1, "上传缓存清理失败，残留仍占用额度，将继续尝试清理")
+		}})
+		if err != nil {
+			_ = cache.Close()
+			return mcpStartupFailure{err: fmt.Errorf("无法初始化 MCP 上传接收缓存: %w", err)}
+		}
 		queries := agentmcp.NewQueries(info.ID, r.Store, r.Auth, r.Resources)
 		connector := agentmcp.Connector{Config: r.Store, Auth: r.AuthManager, Queries: queries, Connect: r.Connect, KnownHosts: filepath.Join(r.RootDir, "known_hosts"), Timeout: r.Configuration.Behavior.ConnectTimeout.Duration}
-		engine := agentmcp.NewEngine(agentmcp.EngineOptions{Instance: info.ID, History: runtime.History(), Resolve: connector.Resolve, Validate: connector.Validate, Dial: connector.Dial, OpenSFTP: connector.OpenDownloadSFTP, DialUpload: connector.DialUpload, OpenUploadSFTP: connector.OpenUploadSFTP, DeliveryMode: agentmcp.DownloadDeliveryMode(cfg), DownloadCache: cache})
-		return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Queries: queries, Engine: engine, Cache: cache})
+		engine := agentmcp.NewEngine(agentmcp.EngineOptions{Instance: info.ID, History: runtime.History(), Resolve: connector.Resolve, Validate: connector.Validate, Dial: connector.Dial, OpenSFTP: connector.OpenDownloadSFTP, DialUpload: connector.DialUpload, OpenUploadSFTP: connector.OpenUploadSFTP, DeliveryMode: agentmcp.DownloadDeliveryMode(cfg), DownloadCache: cache, UploadCache: uploads})
+		return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Queries: queries, Engine: engine, Cache: cache, UploadCache: uploads})
 	})
 	return runtime
 }

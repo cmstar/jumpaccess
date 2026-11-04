@@ -27,9 +27,16 @@ type preparedUpload struct {
 	sources   []uploadSource
 	temporary bool
 	identity  os.FileInfo
+	release   func() error
 }
 
 func (p *preparedUpload) Close() error {
+	if p.release != nil {
+		release := p.release
+		p.release = nil
+		p.File = nil
+		return release()
+	}
 	if p.File == nil {
 		return nil
 	}
@@ -102,7 +109,7 @@ func openUploadSource(filename string) (_ *os.File, err error) {
 
 func uploadSourceError(err error) error {
 	if errors.Is(err, os.ErrPermission) {
-		return fault("LOCAL_SOURCE_PERMISSION_DENIED", "MCP 服务没有源文件读取权限；本阶段仅支持本机直读，尚不提供 HTTP 中转")
+		return fault("LOCAL_SOURCE_PERMISSION_DENIED", "MCP 服务没有源文件读取权限；请由可读取源文件的调用方通过 prepare_upload 申请 HTTP 接收，收齐后 commit_upload")
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		return fault("LOCAL_SOURCE_NOT_FOUND", "MCP 服务电脑上的上传源文件或目录不存在")
