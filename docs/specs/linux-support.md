@@ -4,7 +4,7 @@
 
 - 范围：基于上游 `master`，仅增加 Linux CLI 平台适配、验证与发布归档。
 - 基线提交：`8dff7b0e02298aba1cd47b02324de32cfe5294da`。
-- 实施：平台适配已完成；新分支的原生 CI 与真实环境验收待确认，旧分支的验收不替代本分支验证。
+- 实施：平台适配已完成；实现提交 `864ab62` 的五项原生 CI、本机自动化及本轮约定的 WSL2 amd64 真实环境 CLI 验收通过，包括全新授权及 ZMODEM 上传回传。旧分支的验收不替代本分支验证。
 
 ## 1. 背景与目标
 
@@ -47,6 +47,23 @@ CI 在 `ubuntu-24.04` 和 `ubuntu-24.04-arm` 分别运行全量 Go 测试、平�
 Release 新增 `jumpctl-v<version>-linux-amd64.tar.gz` 和 `jumpctl-v<version>-linux-arm64.tar.gz`，使用关闭 CGO 的原生构建。每个归档包含可执行的 `jumpctl`、`LICENSE`、`THIRD-PARTY-NOTICES.txt`，进入现有 SHA-256 校验及发布门禁。
 
 真实 JumpServer 验收需在经批准的测试目标上确认：手工 OAuth 登录和刷新、资源查询、交互 SSH、窗口调整、ProxyCommand 交互与 exec、重启后主机指纹稳定、ZMODEM 上传与下载。不得把真实凭据、站点、账号或业务文件写入测试和 PR。
+
+### 本地验收进度（2026-11-04）
+
+本轮使用实现提交 `864ab62` 构建的独立测试二进制，环境为 Ubuntu 24.04.3 LTS / WSL2 amd64、Go 1.27.1，未覆盖当前部署的 CLI/MCP 二进制。结果不扩展为 Ubuntu 22.04 LTS 或 Linux GUI 验收。
+
+| 项目 | 结果 |
+| --- | --- |
+| 自动化与打包 | 全量 Go 回归、静态检查、平台 race、发布脚本及双架构试打包通过；本轮补充 SSH、ProxyCommand、主机信任、ZMODEM、OAuth 生命周期 race 回归通过 |
+| 原生 CI | [五项检查通过](https://github.com/bingeger/jumpaccess/actions/runs/41778915255)，包括 Linux amd64/arm64 原生运行及 Windows/macOS CLI、GUI 构建；CI 使用 Go 1.25 工具链 |
+| OAuth 续期与查询 | 既有 Access Token 过期后，新二进制查询成功并保存续期结果；新进程读取认证状态正常 |
+| ProxyCommand 交互与 exec | 严格主机信任下只读命令成功；交互 Shell 的 stdin/stdout 均为终端；独立进程重复连接保持主机密钥稳定，stdout/stderr 分流及退出码 7 透传通过 |
+| 交互 SSH 与窗口尺寸 | 本地真实 PTY 连接成功；80×24 调整到 132×42 后远端尺寸同步通过 |
+| ZMODEM 下载 | 公开系统文件下载显示 Complete；本地权限 0600，与远端 SHA-256 一致；下载后 Shell 可用，正常退出 |
+| 全新 OAuth 登录 | 使用者在独立配置目录完成 `--no-browser` 授权并提供 authenticated 结果；新二进制组织查询成功，未复制既有凭据 |
+| ZMODEM 上传回传 | 使用者将 40 字节合成文件上传到远端临时目录并下载，两方向均显示 Complete；远端与本地 SHA-256 一致，本机再次执行 cmp 通过，下载权限 0600；使用者清理本次远端文件及临时目录 |
+
+自动化 PTY 脚本的两次下载探测分别因等待进度文本超时、在文件创建但未写完时过早断言而未完成，均未计为通过；随后通过直接终端观察 Complete、核对 SHA-256 与退出状态完成下载验收。未将脚本未完成的尝试记为产品成功。
 
 ## 6. 回滚
 
