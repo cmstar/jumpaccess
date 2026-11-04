@@ -14,17 +14,19 @@ import (
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
+	"github.com/cmstar/jumpaccess/internal/application/uploadcache"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type Options struct {
-	Instance agentmcp.Instance
-	Config   config.MCP
-	Token    string
-	Queries  *agentmcp.Queries
-	Engine   *agentmcp.Engine
-	Cache    *downloadcache.Store
+	Instance    agentmcp.Instance
+	Config      config.MCP
+	Token       string
+	Queries     *agentmcp.Queries
+	Engine      *agentmcp.Engine
+	Cache       *downloadcache.Store
+	UploadCache *uploadcache.Store
 }
 
 type ToolError struct {
@@ -92,7 +94,7 @@ func NewHandler(options Options) http.Handler {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20})
 	protected := protect(handler, options)
 	if options.Engine != nil {
-		return &managedHandler{Handler: protected, engine: options.Engine, cache: options.Cache}
+		return &managedHandler{Handler: protected, engine: options.Engine, cache: options.Cache, uploadCache: options.UploadCache}
 	}
 	return protected
 }
@@ -101,10 +103,12 @@ func protect(next http.Handler, options Options) http.Handler {
 	expected := sha256.Sum256([]byte(options.Token))
 	slots := make(chan struct{}, 64)
 	files := downloadHandler(options.Cache, downloadHTTPTimeouts{Idle: 60 * time.Second, Total: 15 * time.Minute})
+	uploads := uploadHandler(options.UploadCache, downloadHTTPTimeouts{Idle: 60 * time.Second, Total: 15 * time.Minute})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		isDownload := strings.HasPrefix(r.URL.Path, downloadcache.RoutePrefix)
-		if r.URL.Path != "/mcp" && !isDownload {
+		isUpload := strings.HasPrefix(r.URL.Path, uploadcache.RoutePrefix)
+		if r.URL.Path != "/mcp" && !isDownload && !isUpload {
 			http.NotFound(w, r)
 			return
 		}
@@ -115,6 +119,10 @@ func protect(next http.Handler, options Options) http.Handler {
 		if isDownload {
 			// 领取签名只授权单个文件；不使用完整 MCP Token 或查询的 30 秒时限。
 			files.ServeHTTP(w, r)
+			return
+		}
+		if isUpload {
+			uploads.ServeHTTP(w, r)
 			return
 		}
 		auth := strings.Fields(r.Header.Get("Authorization"))

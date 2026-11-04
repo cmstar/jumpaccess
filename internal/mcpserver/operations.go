@@ -8,17 +8,22 @@ import (
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	"github.com/cmstar/jumpaccess/internal/application/downloadcache"
+	"github.com/cmstar/jumpaccess/internal/application/uploadcache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type managedHandler struct {
 	http.Handler
-	engine *agentmcp.Engine
-	cache  *downloadcache.Store
+	engine      *agentmcp.Engine
+	cache       *downloadcache.Store
+	uploadCache *uploadcache.Store
 }
 
 func (h *managedHandler) Shutdown(ctx context.Context) error {
 	err := h.engine.Shutdown(ctx)
+	if h.uploadCache != nil {
+		err = errors.Join(err, h.uploadCache.Close())
+	}
 	if h.cache != nil {
 		err = errors.Join(err, h.cache.Close())
 	}

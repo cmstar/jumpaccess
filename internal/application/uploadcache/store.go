@@ -331,6 +331,7 @@ func (s *Store) Signature(id string) (string, error) {
 type Receiver struct {
 	store    *Store
 	e        *entry
+	done     <-chan struct{}
 	file     *os.File
 	written  int64
 	finished bool
@@ -378,9 +379,9 @@ func (s *Store) BeginReceive(id, signature string) (*Receiver, error) {
 	e.view.State = "receiving"
 	s.transfers++
 	s.leases++
-	return &Receiver{store: s, e: e, file: f}, nil
+	return &Receiver{store: s, e: e, done: e.cancel, file: f}, nil
 }
-func (r *Receiver) Done() <-chan struct{} { return r.e.cancel }
+func (r *Receiver) Done() <-chan struct{} { return r.done }
 func (r *Receiver) Size() int64           { return r.e.view.Size }
 func (r *Receiver) Write(data []byte) (int, error) {
 	if r.finished {
