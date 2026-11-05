@@ -32,7 +32,7 @@ HTTP 上传缓存独立位于应用目录的 `cache/mcp-uploads`，以文件锁�
 
 MCP 默认远端时限模式的非交互命令在各自的执行通道内携带停止控制，业务命令的标准输入保持关闭。共享核心先验证控制能经实际 SSH 路径送达目标，再开放该模式；取消、确认期限和清理均归属于具体任务，不依赖网关转发 SSH 信号，也不影响后续复用连接的任务。
 
-JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、严格 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实 JumpServer 与 macOS 原生环境仍需 smoke test。
+JumpAccess 已建立单一 Go module、`cmd/jumpctl` CLI 入口和 `cmd/jumpaccess` Wails 桌面入口。跨平台应用目录、保留未知字段并校验已知字段的 TOML 配置、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 客户端和通用 ProxyCommand SSH server façade 已由 CLI 使用；GUI 已接通类型化桌面应用 API、手工 OAuth 回调、进程生命周期内自动续期、分页资源与 Alias 管理、统一主题、可持久化 Tab 工作区、多 xterm SSH 会话、独立 SFTP 文件页和 Wails 事件桥接。Windows 使用前端自绘标题栏与窗口按钮，macOS 使用隐藏内嵌标题栏并保留原生 traffic lights。真实环境与平台验证按能力记录，见 [MCP 当前验证状态](specs/agent-mcp.md#当前验证状态)和 [Linux 验证记录](specs/linux-support.md#5-验证与发布)。
 
 ## 系统范围与整体架构
 
@@ -132,7 +132,7 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 
 `sshclient.Open` 的建连超时和取消覆盖 TCP、SSH 握手、session channel、PTY 及 Shell 请求；建连完成后，该超时不再控制活动 Session。`known_hosts` 每次验证都读取当前内容，保存信任使用跨进程文件锁；等待锁响应调用方取消，并有独立的 10 秒等待上限。等待用户确认不持锁，确认后重新核对，防止并行 CLI/GUI 写入相互冲突或重复的密钥。
 
-1. 应用根据当前 Profile、Organization、Asset、Account 和 Alias 解析连接目标；资产搜索逐页查找首个完整匹配，找到即停止，账号保留唯一性与交互选择规则。
+1. 应用根据当前 Profile、Organization、Asset、Account 和 Alias 解析连接目标；人用入口的资产搜索逐页查找首个完整匹配，账号保留唯一性与交互选择规则。MCP 名称查询须确认资产和账号唯一，歧义时返回候选与查询范围，不能选择首项。
 2. 在创建新连接前检查 Access Token；临近过期时使用 Refresh Token 刷新。多个 CLI 进程通过 Profile 级文件锁避免并发轮换 Refresh Token。
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
@@ -184,7 +184,7 @@ SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校�
 
 `internal/clitransfer` 的进度显示在每个文件成功完成后追加 `Elapsed` 和 `Avg`，沿用 CLI 的 ` - ` 分隔符，统计口径、时间精度及速度单位与 GUI 一致。上传在本地文件选择结束、调用 `zmodem.Send` 前记录带单调时钟的 `time.Now()`，下载在创建文件后的首个进度回调记录；直到协议报告保存成功或远端确认完成才输出统计。首个进度回调的偏移作为本次传输起点，平均速度按最终偏移减去起点后的有效字节数计算，排除上传续传时远端已有内容，也不重复累计重传字节。下一文件（即使同名）重置计时；取消、失败、断连和远端跳过不显示该文件的成功统计。
 
-`internal/downloads` 提供系统目录解析：Windows Known Folder 遵循用户重定向，macOS CGO 构建通过 Foundation 读取 Downloads；非原生构建回退到用户 `Downloads`，路径不可用时由 CLI 请求另选目录。`jumpctl ssh --download-dir` 只覆盖本次连接，不修改持久配置。非终端 I/O 和 `jumpctl proxy` 保持透传。
+`internal/downloads` 提供系统目录解析：Windows Known Folder 遵循用户重定向，macOS CGO 构建通过 Foundation 读取 Downloads；Linux 及 macOS 无 CGO 构建使用 `~/Downloads`，不读取 `XDG_DOWNLOAD_DIR`，路径不可用时由 CLI 请求另选目录。`jumpctl ssh --download-dir` 只覆盖本次连接，不修改持久配置。非终端 I/O 和 `jumpctl proxy` 保持透传。
 
 ### 通用 ProxyCommand
 
@@ -228,11 +228,11 @@ OAuth Token 不读取或写入 ProxyCommand 凭据存储。ProxyCommand façade 
 - Windows Credential Manager / macOS Keychain / Linux 私密文件：仅保存 ProxyCommand host key。
 - 支持 SSH `ProxyCommand` 的客户端：通过标准输入输出调用通用代理模式。
 
-## 需要实现验证的边界
+## 兼容性验证边界
 
-以下事项在编码阶段通过上游实现分析、模拟测试或本机 smoke test 验证，不应提前描述为已实现：
+实现、自动化测试和真实环境验收分别描述。已通过的目标与版本不自动代表其他 JumpServer 部署、终端客户端或平台；下列边界需随相关变更继续核对：
 
-- OAuth MFA、Token 交换、私有协议注册/IPC 和 Refresh Token 轮换的真实服务器兼容性。
+- OAuth MFA、Token 交换和 Refresh Token 轮换的真实服务器兼容性；私有协议注册／IPC 仍属未实现范围，不能由手工回调成功推定已支持。
 - Organization、Asset、Account、Connection Token 和连接 URL 的真实服务器兼容性与版本差异。
 - ProxyCommand 与真实终端客户端的兼容性，以及窗口变化、信号和退出状态的真实环境表现。
-- Windows 与 macOS 凭据文件权限及构建产物的实际行为。
+- Windows、macOS 与 Linux 凭据文件权限及构建产物的实际行为；构建成功不能替代对应平台的运行验收。

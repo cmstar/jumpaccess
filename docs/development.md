@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、进程生命周期内自动续期、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口、多 xterm SSH 会话和独立 SFTP 文件传输。真实 JumpServer 和 macOS 原生环境仍待 smoke test；实际状态以测试和当前命令帮助为准。
+Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准备协议、直接 SSH 和通用 ProxyCommand 已经建立；Wails GUI 已接通类型化资源 API、手工 OAuth 回调、进程生命周期内自动续期、Profile/Organization、分页资产与行内 Alias 管理、GUI 偏好、可持久化 Tab 工作区、无标准标题栏窗口、多 xterm SSH 会话和独立 SFTP 文件传输。CLI 与 GUI 共用 MCP 核心，CLI 已支持 Linux。真实环境验证按能力和平台分别记录，见 [MCP 当前验证状态](specs/agent-mcp.md#当前验证状态)与 [Linux 验证记录](specs/linux-support.md#5-验证与发布)；不能把某一入口或历史版本的结果扩展到其他范围。
 
 ## 技术栈、版本与开发约束
 
@@ -18,7 +18,7 @@ Go 工程、CLI 配置能力、OAuth Token 生命周期、JumpServer 连接准�
 
 ## CLI 与 GUI 共同行为变更
 
-[Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用和命令执行行为。分阶段交付时应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 CLI 与 GUI 均已接入配置、Token、HTTP 服务及共享工具，CLI 提供前台日志，GUI 提供工作区与连接管理。本轮 CLI 接入以本机自动化与集成测试为验证范围，macOS 原生与真实 Agent 客户端仍需分别验收。
+[Agent MCP 设计](specs/agent-mcp.md)也遵循本节约束：完整交付须分别验证 CLI、GUI 的启动与管理，以及相同的 Agent 接入、连接复用、命令执行和文件传输行为。分阶段交付时应明确中间阶段的实际能力；共享核心对既有人用行为的修改仍同步验证两端。当前 CLI 与 GUI 均已接入配置、Token、HTTP 服务及共享工具，CLI 提供前台日志，GUI 提供工作区与连接管理。已执行的真实环境验证及客户端、平台边界统一记录于方案的[当前验证状态](specs/agent-mcp.md#当前验证状态)。
 
 以产品能力判断修改范围。CLI 和 GUI 都支持的功能，其业务规则、结果和通用终端输出属于共同契约；代码是否物理共享、用户示例来自哪一端、先定位到哪个文件，都不能据此缩小为单端修改。用户未明确限定入口时，默认要求两端同时生效。
 
@@ -229,7 +229,7 @@ CLI 传输运行 `go test -race ./internal/zmodem ./internal/clitransfer ./inter
 ## 许可证与发布物
 
 - JumpAccess 自身采用根目录 `LICENSE` 中的 MIT License；README 只使用链接到该文件的许可证徽章，不另设重复章节。
-- 当前 Windows 和 macOS 生产依赖使用 MIT、ISC、Apache-2.0、BSD-2-Clause 或 BSD-3-Clause，没有 GPL、AGPL、LGPL 等 copyleft 依赖。依赖版本、版权声明和完整条款汇总在 `THIRD-PARTY-NOTICES.txt`。
+- 当前 CLI 与 Windows／macOS GUI 的生产依赖使用 MIT、ISC、Apache-2.0、BSD-2-Clause 或 BSD-3-Clause，没有 GPL、AGPL、LGPL 等 copyleft 依赖。依赖版本、版权声明和完整条款汇总在 `THIRD-PARTY-NOTICES.txt`。
 - `LICENSE` 和 `THIRD-PARTY-NOTICES.txt` 通过 Go `embed` 编译进 `jumpctl`，`jumpctl licenses` 必须在单个可执行文件中保持可用；普通 `go build` 不需要复制额外文件即可保留可读声明。
 - 正式 ZIP、tar 或安装包仍应把两份文本作为独立文件一并分发，方便不执行程序的接收者阅读。嵌入是单文件分发的保障，不替代正式归档中的显式材料。
 - 新增或升级生产依赖时，必须重新检查目标平台的实际 package graph，更新第三方声明，并验证 `jumpctl licenses`。只用于测试、文档生成且不进入发布二进制的模块不需要混入发布声明。

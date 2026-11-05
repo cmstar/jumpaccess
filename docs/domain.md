@@ -59,6 +59,8 @@ Refresh Token 已失效时，需要用户重新执行交互登录；在凭据变
 
 ### 目标解析
 
+以下为人用 CLI／GUI 的目标解析规则。MCP 的名称查询要求唯一匹配，有歧义时返回候选而不选择首项，见 [MCP 目标解析](specs/agent-mcp.md#目标解析与最短调用流程)。
+
 显式 Account 引用按 ID 精确匹配，或按名称、Alias、Username 忽略大小写匹配。多个 Account 匹配同一引用时必须报歧义；CLI 连接、GUI 创建 Alias 和修改绑定账号共用该规则，不能通过取第一项隐式消除歧义。
 
 1. 根据显式参数或当前设置确定 Profile 和 Organization。

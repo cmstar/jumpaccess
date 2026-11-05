@@ -17,7 +17,7 @@ Remove credentials and production data from logs, configuration, and attachments
 
 ## 影响范围 / Scope
 
-<!-- CLI、GUI、Windows、macOS 以及兼容性影响；共同能力说明两端的处理，不受影响或入口专属时注明理由。 / Describe effects on CLI, GUI, Windows, macOS, and compatibility. For shared behavior, explain both entry points; explain any unaffected or entry-specific scope. -->
+<!-- CLI、GUI、Windows、macOS、Linux 以及兼容性影响；共同能力说明两端的处理，不受影响或入口专属时注明理由。 / Describe effects on CLI, GUI, Windows, macOS, Linux, and compatibility. For shared behavior, explain both entry points; explain any unaffected or entry-specific scope. -->
 
 ## 验证情况 / Testing
 

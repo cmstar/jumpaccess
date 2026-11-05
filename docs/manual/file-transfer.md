@@ -82,7 +82,7 @@ sz report.txt app.log
 jumpctl ssh web
 ```
 
-交互终端会自动识别远端的 `rz` / `sz`。下载默认保存到本机系统“下载”目录：Windows 遵循 Known Folder 的目录重定向，macOS 正式构建读取系统 Downloads 目录。
+交互终端会自动识别远端的 `rz` / `sz`。Windows 下载默认遵循 Known Folder 的目录重定向，macOS 正式构建读取系统 Downloads 目录；Linux 使用 `~/Downloads`，不读取 `XDG_DOWNLOAD_DIR`。目录不可用或需要其他位置时，通过 `--download-dir` 显式指定。
 
 需要为本次连接指定保存位置时，在建立连接时添加 `--download-dir`。Windows 示例：
 
