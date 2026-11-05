@@ -112,7 +112,10 @@ func run() int {
 				return err
 			}
 			defer upstream.Close()
-			signer, err := (sshhostkey.SignerStore{Backend: nativeCredentials}).LoadOrCreate()
+			signer, err := (sshhostkey.SignerStore{
+				Backend: nativeCredentials,
+				LockDir: filepath.Join(rootDir, "locks"),
+			}).LoadOrCreate(ctx)
 			if err != nil {
 				return err
 			}

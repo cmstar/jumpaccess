@@ -190,6 +190,8 @@ ProxyCommand 有两层独立主机信任：
 
 OAuth Token 不读取或写入 ProxyCommand 凭据存储。ProxyCommand façade 的稳定 Ed25519 host key 在 Windows/macOS 使用原生凭据存储，在 Linux 使用应用根目录下的 `ssh/proxy_host_ed25519_key`，与 OAuth Token 文件分离。Linux 的 `ssh` 目录权限为 `0700`，密钥文件为 `0600`，依赖当前用户所有权与 Unix 文件权限保护，无需桌面 Keyring。
 
+各平台在读取、首次生成和保存 ProxyCommand host key 时，统一持有应用根目录 `locks/ssh-proxy-host-key.lock` 的跨进程锁，确保并发首次连接复用同一把密钥。锁等待遵循调用者上下文，最长 10 秒；已有密钥无法解析时返回错误，不自动覆盖。
+
 ## 外部集成
 
 - JumpServer：提供 OAuth、资源查询和连接准备接口；首个参考基线为 Client `v4.1.6` 对应行为。

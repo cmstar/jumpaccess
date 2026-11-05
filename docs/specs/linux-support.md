@@ -21,6 +21,7 @@ Go 核心业务可跨平台复用，但上游缺少 Linux 应用目录、文件�
 - 应用根目录：`$XDG_CONFIG_HOME/JumpAccess`，未设置时为 `~/.config/JumpAccess`；使用 Go `os.UserConfigDir()` 解析。
 - OAuth：沿用应用根目录 `credentials` 中每个 Profile 一个文件及现有摘要文件名。
 - ProxyCommand：稳定主机私钥位于应用根目录的 `ssh/proxy_host_ed25519_key`；首次生成后持续复用，与 OAuth Token 及上游 `known_hosts` 分离。
+- 主机私钥的读取、首次生成和保存整体使用应用根目录 `locks/ssh-proxy-host-key.lock` 的跨进程锁；同时首次连接的进程复用同一把密钥。等待锁遵循连接上下文，最长 10 秒；密钥损坏时返回错误，不自动重建。
 - 私密目录为当前用户所有的 `0700`，文件为 `0600`；读取拒绝符号链接、非普通文件、错误所有者和不符权限。写入使用同目录临时文件、刷盘、原子替换和目录同步。
 - 文件锁复用现有锁接口，以 `unix.Flock` 实现竞争与释放；不改变上层配置更新和 Token 生命周期规则。
 - Windows Credential Manager 与 macOS Keychain 行为保持原样。
