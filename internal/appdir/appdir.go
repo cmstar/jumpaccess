@@ -25,7 +25,7 @@ func Root() (string, error) {
 }
 
 // RootFor exposes the platform decision separately from OS discovery so that
-// both supported layouts can be verified on either development platform.
+// supported layouts can be verified on any development platform.
 func RootFor(goos, localAppData, userConfigDir string) (string, error) {
 	switch goos {
 	case "windows":
@@ -33,7 +33,7 @@ func RootFor(goos, localAppData, userConfigDir string) (string, error) {
 			return "", fmt.Errorf("LOCALAPPDATA is not set")
 		}
 		return filepath.Join(localAppData, directoryName), nil
-	case "darwin":
+	case "darwin", "linux":
 		if strings.TrimSpace(userConfigDir) == "" {
 			return "", fmt.Errorf("user config directory is empty")
 		}

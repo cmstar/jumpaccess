@@ -107,20 +107,23 @@ then paste it here and press Enter:
 OAuth callback URL: `, instruction, authorization.URL); err != nil {
 		return credential.Token{}, fmt.Errorf("write OAuth instructions: %w", err)
 	}
+	var browserResult <-chan error
 	if !f.NoBrowser {
-		if err := f.OpenBrowser(authorization.URL); err != nil {
-			return credential.Token{}, fmt.Errorf("open authorization URL: %w", err)
-		}
+		result := make(chan error, 1)
+		// Linux 启动器可能随浏览器持续运行；接收回调不应依赖浏览器关闭。
+		// 缓冲结果允许登录完成或取消后，启动器在退出时自行完成回收。
+		go func() { result <- f.OpenBrowser(authorization.URL) }()
+		browserResult = result
 	}
 
-	rawCallback, err := readCallbackLine(ctx, f.Input)
+	rawCallback, err := readCallbackLine(ctx, f.Input, browserResult)
 	if err != nil {
 		return credential.Token{}, err
 	}
 	return authorization.Complete(ctx, rawCallback, f.now())
 }
 
-func readCallbackLine(ctx context.Context, input io.Reader) (string, error) {
+func readCallbackLine(ctx context.Context, input io.Reader, browserResult <-chan error) (string, error) {
 	type result struct {
 		value string
 		err   error
@@ -134,17 +137,24 @@ func readCallbackLine(ctx context.Context, input io.Reader) (string, error) {
 		resultCh <- result{value: strings.TrimSpace(value), err: err}
 	}()
 
-	select {
-	case <-ctx.Done():
-		return "", fmt.Errorf("wait for manual OAuth callback: %w", ctx.Err())
-	case result := <-resultCh:
-		if result.err != nil {
-			return "", fmt.Errorf("read manual OAuth callback: %w", result.err)
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("wait for manual OAuth callback: %w", ctx.Err())
+		case err := <-browserResult:
+			if err != nil {
+				return "", fmt.Errorf("open authorization URL: %w; retry with --no-browser to authorize manually", err)
+			}
+			browserResult = nil
+		case result := <-resultCh:
+			if result.err != nil {
+				return "", fmt.Errorf("read manual OAuth callback: %w", result.err)
+			}
+			if result.value == "" {
+				return "", fmt.Errorf("manual OAuth callback URL is empty")
+			}
+			return result.value, nil
 		}
-		if result.value == "" {
-			return "", fmt.Errorf("manual OAuth callback URL is empty")
-		}
-		return result.value, nil
 	}
 }
 

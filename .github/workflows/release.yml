@@ -240,6 +240,61 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+  build-linux-cli:
+    name: 构建 Linux CLI (${{ matrix.arch }})
+    needs: [verify, verify-native]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: 检出标签代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: 构建并压缩 Linux CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$GITHUB_WORKSPACE/release-assets"
+          staging="$RUNNER_TEMP/jumpctl"
+          mkdir -p "$assets" "$staging"
+          GOOS=linux GOARCH=${{ matrix.arch }} go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=$VERSION" \
+            -o "$staging/jumpctl" \
+            ./cmd/jumpctl
+          chmod 0755 "$staging/jumpctl"
+          cp LICENSE THIRD-PARTY-NOTICES.txt "$staging/"
+          archive="$assets/jumpctl-v$VERSION-linux-${{ matrix.arch }}.tar.gz"
+          tar -czf "$archive" -C "$staging" jumpctl LICENSE THIRD-PARTY-NOTICES.txt
+          tar -tzf "$archive" | grep -Fx jumpctl
+
+      - name: 保存 Linux CLI 发布物
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-linux-cli-${{ matrix.arch }}
+          path: release-assets/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   build-darwin-gui:
     name: 构建 macOS Universal GUI
     needs: [verify, verify-native]
@@ -333,6 +388,7 @@ jobs:
       - verify-native
       - build-windows
       - build-darwin-cli
+      - build-linux-cli
       - build-darwin-gui
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -361,6 +417,8 @@ jobs:
             "jumpaccess-$GITHUB_REF_NAME-windows-amd64.zip"
             "jumpctl-$GITHUB_REF_NAME-darwin-amd64.tar.gz"
             "jumpctl-$GITHUB_REF_NAME-darwin-arm64.tar.gz"
+            "jumpctl-$GITHUB_REF_NAME-linux-amd64.tar.gz"
+            "jumpctl-$GITHUB_REF_NAME-linux-arm64.tar.gz"
             "jumpaccess-$GITHUB_REF_NAME-darwin-universal.zip"
           )
           for asset in "${expected[@]}"; do

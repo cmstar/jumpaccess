@@ -21,6 +21,12 @@ func TestCommandForUsesPlatformFileLauncher(t *testing.T) {
 			wantName: "open",
 			wantArgs: []string{"/Users/alice/Library/Application Support/JumpAccess/config.toml"},
 		},
+		{
+			goos:     "linux",
+			path:     "/home/alice/.config/JumpAccess/config.toml",
+			wantName: "xdg-open",
+			wantArgs: []string{"/home/alice/.config/JumpAccess/config.toml"},
+		},
 	}
 
 	for _, test := range tests {

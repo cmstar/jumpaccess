@@ -23,6 +23,7 @@
 | --- | --- | --- |
 | Agent MCP 接入 | [Agent MCP 接入设计](agent-mcp.md) | CLI 前台服务、配置与日志及 GUI 工作区均已接入共享核心；CLI 本机自动化与集成验证，macOS 原生及真实 Agent 客户端待验收；文件传输详见独立方案 |
 | Agent MCP 文件传输 | [Agent MCP 文件传输设计](agent-mcp-file-transfer.md) | CLI／GUI 共用下载、本机上传及 HTTP 中转；接收与提交分别去重，远端共用暂存还原和排他发布；HTTP 中转等待人工验收 |
+| Linux CLI 支持 | [Linux CLI 支持设计](linux-support.md) | 实现、五项原生 CI、本机自动化及本轮 WSL2 amd64 CLI 真实环境验收通过 |
 
 ## 历史版本索引
 

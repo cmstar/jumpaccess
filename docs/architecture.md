@@ -47,7 +47,7 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 - 核心实现采用 Go，并保持单一 module。
 - 桌面入口采用 Wails 2.14，前端采用 React、TypeScript 和 Vite；Wails 仅位于表现层，不进入共享核心。
 - Wails 的 `bindings` build tag 入口只提供可反射的桌面适配器与默认窗口参数，不装配运行时服务或读取用户数据；真实桌面入口才解析应用目录并校验配置。
-- OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；Windows Credential Manager 与 macOS Keychain 只承载 ProxyCommand host key。
+- OAuth Token 使用应用根目录内受严格权限保护的 Profile 独立文件；ProxyCommand host key 在 Windows/macOS 使用原生凭据存储，在 Linux 使用独立私密文件。
 - SSH 使用 `golang.org/x/crypto/ssh`，SFTP 使用 `github.com/pkg/sftp`；OAuth 与 JumpServer API 通过 Go 标准库 `net/http` 实现。CLI 使用 Cobra，TOML 读写使用 `github.com/BurntSushi/toml`；具体版本以根目录 `go.mod` 为准。
 
 ## 系统组成与模块职责
@@ -64,7 +64,7 @@ JumpAccess 使用单个 Go module `github.com/cmstar/jumpaccess` 承载共享能
 | 配置 | `internal/config` 管理 Profile、Alias、行为配置以及 MCP 网络设置与访问 Token；校验已知字段并原子保存 TOML，与 `internal/guiconfig` 共用 `internal/configfile` 保留其他版本写入的未知字段和较高版本号；OAuth 凭据独立保存 |
 | GUI 偏好 | `internal/guiconfig` 独立读取和原子保存 `gui.toml`，按应用外观、终端、Tab 和 MCP 启动行为分组承载主题、终端配色 ID、字体、字号、行高、光标样式与闪烁、右键、多行粘贴警告与回车复制选区等交互、窗口状态和 Tab 顺序/活动项。内置 `terminal-schemes.json` 同时供 Go 校验与前端渲染读取；预览与会话共用终端渲染参数。设置 UI 将终端样式、终端背景图与终端行为拆为同级面板；背景图保存在 `[terminal.background]`，其余共用 `[terminal]`。SSH/SFTP Tab 只保存重连所需描述符，不保存终端输出、目录、传输队列、live session ID 或秘密；该文件不进入 CLI 配置 schema |
 | 系统字体 | `internal/systemfont` 隔离 Windows GDI 与 macOS CoreText 字体枚举，向桌面表现层提供已安装等宽字体族；不支持的平台返回空候选并由前端回退到通用 `monospace` 与手工输入 |
-| 凭据存储 | `internal/credential` 已实现跨平台私有文件后端，并保留 Windows Credential Manager 与 macOS Keychain 作为 ProxyCommand host key 存储 |
+| 凭据存储 | `internal/credential` 已实现跨平台私有文件后端；ProxyCommand host key 在 Windows/macOS 使用原生凭据存储，在 Linux 使用独立私密文件 |
 | JumpServer 集成 | `internal/jumpserver` 已实现 Organization、Asset、Account、Connection Token 和 `jms://` client-url 协议；`internal/application/connect` 负责资产首个匹配解析、账号选择与连接准备 |
 | SSH | `internal/sshclient` 提供 CLI 与 GUI 共用的可注入数据流会话；`internal/application/sshsession` 管理多个 GUI 会话、输入、窗口变化、取消、状态与批量输出；`internal/sshproxy` 将本地 SSH server session 映射到上游 SSH client channel；`internal/sshhostkey` 维护两层主机信任 |
 | SFTP | `internal/sftpclient` 在独立 SSH transport 上打开 SFTP subsystem，复用 gateway 主机信任；`internal/application/sftpsession` 管理目录、文件操作和进程内传输队列，流式 I/O 留在 Go，前端只接收元数据与进度 |
@@ -115,7 +115,7 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 ### 浏览器登录
 
 1. 用户执行独立的认证命令。
-2. 程序生成 PKCE 和防伪状态，默认启动系统浏览器；CLI 指定 `--no-browser` 时只打印授权地址并等待手工回调，浏览器可以位于另一台能访问 JumpServer 的电脑上，无需同时指定 `--manual`。
+2. 程序生成 PKCE 和防伪状态，默认启动系统浏览器；CLI 并发接收手工回调和启动器结果，Linux 的 `xdg-open` 持续运行不阻塞授权，等待回调期间打开失败则报错并提示使用 `--no-browser`。CLI 指定 `--no-browser` 时只打印授权地址并等待手工回调，浏览器可以位于另一台能访问 JumpServer 的电脑上，无需同时指定 `--manual`。
 3. JumpServer 完成授权后生成 `jms://auth/callback`。当前开发版由用户把该链接或包含它的确认页 URL 粘贴回终端；发布版计划由已注册的私有协议处理程序自动接收。
 4. 程序严格校验回调目标和 `state`，使用原登录进程持有的 PKCE verifier 交换 Token，并把敏感 Token 原子写入该 Profile 的私有凭据文件。
 5. Profile、Alias 等非敏感信息继续保存在 TOML 配置中。
@@ -197,7 +197,7 @@ SFTP 连接准备使用 `protocol=sftp`、`connect_method=sftp_client`，并校�
 
 ProxyCommand 有两层独立主机信任：
 
-1. 外部 SSH 客户端验证 JumpAccess façade 的稳定 Ed25519 host key；私钥保存在操作系统安全凭据存储。
+1. 外部 SSH 客户端验证 JumpAccess façade 的稳定 Ed25519 host key；私钥在 Windows/macOS 使用操作系统凭据存储，在 Linux 使用应用根目录下权限受限的 `ssh/proxy_host_ed25519_key`。
 2. JumpAccess 使用应用根目录的 `known_hosts` 验证上游 JumpServer gateway。Proxy 模式不接受未知密钥，用户需先通过直接 SSH 审阅指纹。
 
 ## 数据与平台边界
@@ -208,19 +208,22 @@ ProxyCommand 有两层独立主机信任：
 
 - Windows：`%LOCALAPPDATA%\JumpAccess`
 - macOS：`~/Library/Application Support/JumpAccess`
+- Linux：`$XDG_CONFIG_HOME/JumpAccess`，未设置 `XDG_CONFIG_HOME` 时为 `~/.config/JumpAccess`
 
 共享的 Profile、Organization、Alias 和连接行为保存在根目录的 `config.toml`；应用外观、终端显示与交互、Tab 行为、MCP 自动启动偏好、窗口状态和 Tab 工作区单独保存在 `gui.toml`，CLI 不读取后者。窗口状态使用显示器标识、显示器工作区内的相对坐标和普通窗口尺寸保存；启动时先在隐藏状态下解析目标显示器、约束到当前可见工作区，再显示或最大化窗口。原显示器不存在时回退到主显示器居中，分辨率或工作区变化时收回越界部分。窗口最大化退出时保存最大化标记并保留最近的普通窗口边界；普通状态退出时更新显示器、坐标和大小；由自绘按钮最小化前记录普通边界，恢复获得焦点时校正到原显示器。工作区在 Tab 增删、切换或排序后串行保存；重启时恢复顺序与活动项，SSH/SFTP Tab 一律以断连状态恢复且不自动连接。配置写入使用同一应用目录中的跨进程锁串行化 read-modify-write，避免并发修改相互覆盖。`known_hosts` 也位于该根目录下。OAuth Access Token 与 Refresh Token 位于 `credentials` 子目录，每个 Profile 对应一个 JSON 文件；文件名使用 `oauth/` 加精确 Profile 名的 SHA-256 摘要，因此不受文件系统非法字符、保留名或路径长度影响，也不会因字符替换发生碰撞。Profile 本身不按文件名规则规范化。
 
-`credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
+`credentials` 是敏感数据边界。Windows 为目录和文件设置不继承的受保护 DACL，只允许当前用户与 `SYSTEM`；macOS 与 Linux 要求目录归当前用户所有且权限为 `0700`，文件权限为 `0600`。读取时拒绝重解析点或符号链接、错误所有者和过宽权限；更新时在同目录创建私有临时文件、刷盘并原子替换。
 
-OAuth Token 不读取或写入原生凭据存储。ProxyCommand façade 的稳定 Ed25519 host key 单独保存在原生凭据存储中，与 OAuth Token 文件分离。
+OAuth Token 不读取或写入 ProxyCommand 凭据存储。ProxyCommand façade 的稳定 Ed25519 host key 在 Windows/macOS 使用原生凭据存储，在 Linux 使用应用根目录下的 `ssh/proxy_host_ed25519_key`，与 OAuth Token 文件分离。Linux 的 `ssh` 目录权限为 `0700`，密钥文件为 `0600`，依赖当前用户所有权与 Unix 文件权限保护，无需桌面 Keyring。
+
+各平台在读取、首次生成和保存 ProxyCommand host key 时，统一持有应用根目录 `locks/ssh-proxy-host-key.lock` 的跨进程锁，确保并发首次连接复用同一把密钥。锁等待遵循调用者上下文，最长 10 秒；已有密钥无法解析时返回错误，不自动覆盖。
 
 ## 外部集成
 
 - JumpServer：提供 OAuth、资源查询和连接准备接口；首个参考基线为 Client `v4.1.6` 对应行为。
 - 系统浏览器：承载用户授权和可能存在的 MFA 流程。
 - 文件系统与平台 ACL：保存并保护 OAuth Token。
-- Windows Credential Manager / macOS Keychain：仅保存 ProxyCommand host key。
+- Windows Credential Manager / macOS Keychain / Linux 私密文件：仅保存 ProxyCommand host key。
 - 支持 SSH `ProxyCommand` 的客户端：通过标准输入输出调用通用代理模式。
 
 ## 需要实现验证的边界

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -98,7 +99,50 @@ func TestManualFlowNoBrowserCompletesFromPrintedURL(t *testing.T) {
 	}
 }
 
-func TestManualFlowCompletesAuthorizationFromPastedCallback(t *testing.T) {
+func TestManualFlowObservesBrowserFailureAndCancellation(t *testing.T) {
+	var provider *httptest.Server
+	provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(Metadata{
+			ClientID: "client-id", AuthorizationEndpoint: provider.URL + "/authorize", TokenEndpoint: provider.URL + "/token",
+		})
+	}))
+	defer provider.Close()
+	launcherFailure := errors.New("launcher failed")
+	for _, mode := range []string{"launcher failure", "canceled while browser is running"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			reader, writer := io.Pipe()
+			defer reader.Close()
+			defer writer.Close()
+			want := launcherFailure
+			if mode != "launcher failure" {
+				want = context.Canceled
+			}
+			flow := ManualFlow{
+				HTTPClient: provider.Client(), Input: reader, Output: io.Discard,
+				OpenBrowser: func(string) error {
+					if mode == "launcher failure" {
+						return launcherFailure
+					}
+					cancel()
+					return nil
+				},
+			}
+			_, err := flow.Login(ctx, provider.URL)
+			if !errors.Is(err, want) {
+				t.Fatalf("Login error = %v, want %v", err, want)
+			}
+			if mode == "launcher failure" && !strings.Contains(err.Error(), "--no-browser") {
+				t.Fatalf("missing manual authorization guidance: %v", err)
+			}
+		})
+	}
+}
+
+func TestManualFlowCompletesWhileBrowserIsRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	var tokenForm url.Values
 	var provider *httptest.Server
 	provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,12 +184,14 @@ func TestManualFlowCompletesAuthorizationFromPastedCallback(t *testing.T) {
 				_, _ = io.WriteString(callbackWriter, callback+"\n")
 				_ = callbackWriter.Close()
 			}()
-			return nil
+			// xdg-open 可能直到浏览器关闭才退出，登录不能等待它退出。
+			<-ctx.Done()
+			return ctx.Err()
 		},
 		Now: func() time.Time { return time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC) },
 	}
 
-	token, err := flow.Login(context.Background(), provider.URL)
+	token, err := flow.Login(ctx, provider.URL)
 	if err != nil {
 		t.Fatalf("Login returned error: %v", err)
 	}

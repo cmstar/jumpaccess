@@ -43,7 +43,11 @@ func run() int {
 		return 1
 	}
 	configuration := core.Configuration
-	nativeCredentials := credential.NewNativeBackend()
+	nativeCredentials, err := credential.NewNativeBackendForRoot(rootDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	manager := core.AuthManager
 	authService := core.Auth
 	authService.ManualLoginFlow = func(ctx context.Context, site string, options authapp.LoginOptions) (credential.Token, error) {
@@ -110,7 +114,10 @@ func run() int {
 				return err
 			}
 			defer upstream.Close()
-			signer, err := (sshhostkey.SignerStore{Backend: nativeCredentials}).LoadOrCreate()
+			signer, err := (sshhostkey.SignerStore{
+				Backend: nativeCredentials,
+				LockDir: filepath.Join(rootDir, "locks"),
+			}).LoadOrCreate(ctx)
 			if err != nil {
 				return err
 			}
