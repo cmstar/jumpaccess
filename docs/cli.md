@@ -113,6 +113,8 @@ jumpctl auth login --profile work --no-browser
 
 程序向 stderr 打印完整授权地址，等待手工粘贴回调，不调用本机浏览器。将授权地址复制到可以访问 JumpServer 的浏览器中，完成授权后按下文复制回调。`--no-browser` 无需搭配 `--manual`，也允许两者同时使用；单独使用 `--manual` 仍会打开浏览器。
 
+Linux 默认通过 `xdg-open` 启动浏览器，接收回调无需等待浏览器退出；等待回调期间若启动器不存在或非零退出，命令报错并提示使用 `--no-browser` 重试。Linux 的 `config edit` 同样检查启动器退出结果；如果系统关联的编辑器以前台方式运行，命令会等待编辑器关闭。
+
 保持原登录进程运行，并在 `behavior.oauth_timeout`（默认 5 分钟）内粘贴回调；超时后重新发起登录并使用新的授权地址。Token 由运行 CLI 的机器交换和保存。CLI 当前正式支持 Windows、macOS，以及 Ubuntu 24.04 LTS 上的 Linux amd64/arm64。Ubuntu 22.04 LTS 预期兼容但尚未纳入持续验证；Ubuntu 20.04 LTS 及更早版本不在正式支持范围，未列出的更新 LTS 版本也不自动获得支持承诺。
 
 程序发起 API 请求前会按需刷新。直接 SSH 和 ProxyCommand 运行期间还会定期检查；刷新成功只影响后续 API 请求，刷新失败会写入 stderr，但不会关闭已经建立的 SSH Session。

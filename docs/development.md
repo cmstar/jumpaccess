@@ -229,7 +229,7 @@ GUI 构建脚本保持兼容 macOS 系统 Bash：启用 `set -u` 时，参数数
 
 `.github/workflows/native.yml` 在分支 push、PR 和手工触发时运行，也供发布工作流调用。Windows amd64、macOS Intel 与 Apple Silicon runner 都启用 CGO，执行全量 Go 测试、`go vet`、CLI 构建及 Wails GUI 构建；无需等到打版本标签才发现平台编译问题。需要 Keychain 授权的显式集成测试仍按上文方式手工运行，macOS CI 会编译该测试但不启用它。
 
-Linux CLI 使用 Ubuntu 24.04 LTS 的 amd64、arm64 原生 runner（`ubuntu-24.04`、`ubuntu-24.04-arm`），以 `CGO_ENABLED=0` 执行全量 Go 测试、`go vet`、CLI 构建和帮助 smoke；凭据、文件锁、应用目录及系统打开适配另以 `CGO_ENABLED=1` 执行 race 测试。Linux 不构建 Wails GUI。Ubuntu 22.04 LTS 仅为预期兼容；其他 LTS 或发行版需独立验证后更新支持矩阵。
+Linux CLI 使用 Ubuntu 24.04 LTS 的 amd64、arm64 原生 runner（`ubuntu-24.04`、`ubuntu-24.04-arm`），以 `CGO_ENABLED=0` 执行全量 Go 测试、`go vet`、CLI 构建和帮助 smoke；凭据、文件锁、应用目录、系统打开适配及 OAuth 另以 `CGO_ENABLED=1` 执行 race 测试。Linux 不构建 Wails GUI。Ubuntu 22.04 LTS 仅为预期兼容；其他 LTS 或发行版需独立验证后更新支持矩阵。
 
 Windows 与 macOS 的检查和发布构建统一设置 `CGO_CFLAGS`、`CGO_CXXFLAGS` 的 `-Werror`，把 C/C++/Objective-C 编译器已启用的警告提升为错误；`CGO_LDFLAGS` 在 Windows GCC/GNU ld 工具链使用 `-Wl,--fatal-warnings`，在 macOS 使用 `-Wl,-fatal_warnings`，让链接警告也返回失败。差异只在工具链参数，失败策略相同。Go 类型错误本来就会令构建失败。这里不将 npm、Actions 平台提示等所有含有 warning 字样的日志一律判为编译失败，也不额外开启 `-Weverything`。
 
@@ -271,7 +271,7 @@ Linux CLI 从仓库根目录执行（无需前端或 Wails）：
 
 ```bash
 CGO_ENABLED=0 go test -count=1 ./...
-CGO_ENABLED=1 go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen
+CGO_ENABLED=1 go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen ./internal/oauth
 CGO_ENABLED=0 go vet ./...
 CGO_ENABLED=0 go build -trimpath -o /tmp/jumpctl ./cmd/jumpctl
 node --test scripts/*.test.mjs

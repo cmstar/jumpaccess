@@ -138,7 +138,7 @@ jobs:
       - name: 运行 Linux 平台 race 测试
         env:
           CGO_ENABLED: "1"
-        run: go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen
+        run: go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen ./internal/oauth
 
       - name: 运行 Linux Go 静态检查
         run: go vet ./...
