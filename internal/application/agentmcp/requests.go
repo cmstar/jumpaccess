@@ -13,9 +13,21 @@ import (
 
 // Fault 只携带适合向 Agent 返回的信息，不透传凭据或上游原始响应。
 type Fault struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable"`
+	Code       string          `json:"code"`
+	Message    string          `json:"message"`
+	Retryable  bool            `json:"retryable"`
+	Resolution *ResolutionHint `json:"resolution,omitempty"`
+}
+
+// ResolutionHint 只提供当前解析范围和有界公开候选，不携带上游响应或凭据。
+type ResolutionHint struct {
+	Profile      string        `json:"profile,omitempty"`
+	Organization string        `json:"organization,omitempty"`
+	AssetID      string        `json:"asset_id,omitempty"`
+	NextTool     string        `json:"next_tool"`
+	Assets       []AssetView   `json:"assets,omitempty"`
+	Accounts     []AccountView `json:"accounts,omitempty"`
+	Truncated    bool          `json:"truncated,omitempty"`
 }
 
 func (f *Fault) Error() string          { return f.Code + ": " + f.Message }

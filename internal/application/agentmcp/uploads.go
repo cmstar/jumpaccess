@@ -109,10 +109,10 @@ func normalizeUpload(in UploadInput) (UploadInput, int, error) {
 	if wait < 0 || wait > 5000 || in.TimeoutMS < 1 || in.TimeoutMS > 3600000 || len(in.LocalPaths) == 0 || len(in.LocalPaths) > 100 {
 		return in, wait, fault("INVALID_ARGUMENT", "上传需提供 1–100 个本机绝对路径，等待不超过 5 秒，任务时限不超过 1 小时")
 	}
-	if (in.ConnectionID == "") == (in.Target.Profile == "") || (in.ConnectionID != "" && in.Target != (Target{})) {
+	if (in.ConnectionID == "") == (in.Target == (Target{})) {
 		return in, wait, fault("INVALID_ARGUMENT", "请提供明确目标或 connection_id，不能同时提供")
 	}
-	if len(in.Target.Profile)+len(in.Target.Organization)+len(in.Target.AssetID)+len(in.Target.AccountID)+len(in.Target.Alias)+len(in.ConnectionID) > 4096 {
+	if len(in.Target.Profile)+len(in.Target.Name)+len(in.Target.Organization)+len(in.Target.AssetID)+len(in.Target.AccountID)+len(in.Target.Alias)+len(in.ConnectionID) > 4096 {
 		return in, wait, fault("INVALID_ARGUMENT", "上传目标标识过长")
 	}
 	if !path.IsAbs(in.RemoteDirectory) || strings.ContainsRune(in.RemoteDirectory, 0) || !utf8.ValidString(in.RemoteDirectory) || len(in.RemoteDirectory) > 4096 {

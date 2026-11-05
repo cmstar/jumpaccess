@@ -51,10 +51,10 @@ type uploadSourceMetadata struct {
 
 func normalizeUploadSource(in PrepareUploadInput) (PrepareUploadInput, error) {
 	in.RequestKey = ""
-	if (in.ConnectionID == "") == (in.Target.Profile == "") || (in.ConnectionID != "" && in.Target != (Target{})) {
+	if (in.ConnectionID == "") == (in.Target == (Target{})) {
 		return in, fault("INVALID_ARGUMENT", "请提供明确目标或 connection_id，不能同时提供")
 	}
-	if len(in.Target.Profile)+len(in.Target.Organization)+len(in.Target.AssetID)+len(in.Target.AccountID)+len(in.Target.Alias)+len(in.ConnectionID) > 4096 {
+	if len(in.Target.Profile)+len(in.Target.Name)+len(in.Target.Organization)+len(in.Target.AssetID)+len(in.Target.AccountID)+len(in.Target.Alias)+len(in.ConnectionID) > 4096 {
 		return in, fault("INVALID_ARGUMENT", "上传目标标识过长")
 	}
 	if !path.IsAbs(in.RemoteDirectory) || !utf8.ValidString(in.RemoteDirectory) || len(in.RemoteDirectory) > 4096 || strings.ContainsRune(in.RemoteDirectory, 0) {

@@ -115,6 +115,21 @@ jumpctl mcp serve --color never > mcp.log 2>&1
 
 颜色默认 `--color auto`，终端支持 ANSI 时保留 GUI 对应的颜色，重定向到文件或管道时使用纯文本；`always` 强制保留，`never` 关闭。具体颜色由终端主题决定。完整选项见 [CLI 命令参考](../cli.md#mcp-server)。
 
+## 按名称直接连接
+
+已知别名或资产名称时，可以直接说“连接 test207 并执行……”。Agent 首次调用 `get_server_info` 获取实例和请求代号后，即可调用：
+
+```json
+{
+  "target": {"name": "test207"},
+  "request_key": "实例:代号:新生成的UUID"
+}
+```
+
+以上是 `open_connection` 参数示意，实际请求键须使用查询所得值。省略 `profile` 时读取当前 Profile；也可显式指定。名称优先匹配别名，否则查找唯一的资产名称、地址或 UUID。组织默认沿用别名或当前组织，没有账号绑定时只自动选择唯一托管账号；有歧义时返回查询范围和候选，明确选择后再发起新请求。不会修改当前配置或自动跨 Profile 搜索。
+
+正常流程不必先调用 `list_profiles`、`list_aliases` 或 `list_assets`。已有 `connection_id` 时可直接执行命令，不必固定增加 `get_connection`；若打开请求还没有返回连接 ID，保留原键和参数继续等待。网络或登录失败按错误原因处理，不通过枚举资源代替排障。上传、下载及 HTTP 上传准备也接受相同的 `target.name`，已知远端路径时无需先打开命令连接。
+
 ## 让 Agent 下载文件
 
 可以直接说：“把 work 环境 prod-db 上最新的应用日志下载到我的下载目录，完成后告诉我保存位置。”支持单个文件、多个文件、目录和正在写入的日志，也可以指定保存位置。

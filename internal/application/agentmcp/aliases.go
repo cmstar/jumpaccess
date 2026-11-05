@@ -25,6 +25,11 @@ type AliasView struct {
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var errAmbiguous = errors.New("ambiguous asset")
 
+type ambiguousAssets struct{ candidates []AssetView }
+
+func (*ambiguousAssets) Error() string { return errAmbiguous.Error() }
+func (*ambiguousAssets) Unwrap() error { return errAmbiguous }
+
 func (q *Queries) ListAliases(ctx context.Context, input AliasesInput) (Page[AliasView], error) {
 	profile, err := q.profile(input.Profile)
 	if err != nil {
@@ -94,6 +99,7 @@ func (q *Queries) uniqueAsset(ctx context.Context, profile, org, reference strin
 		return q.resources.GetAssetByID(ctx, profile, org, reference)
 	}
 	var match string
+	var first AssetView
 	offset := 0
 	seen := make(map[string]bool)
 	for range 100 {
@@ -118,9 +124,10 @@ func (q *Queries) uniqueAsset(ctx context.Context, profile, org, reference strin
 			}
 			if asset.ID == reference || strings.EqualFold(asset.Name, reference) || strings.EqualFold(asset.Address, reference) {
 				if match != "" && match != asset.ID {
-					return jumpserver.AssetDetail{}, errAmbiguous
+					return jumpserver.AssetDetail{}, &ambiguousAssets{candidates: []AssetView{first, assetView(asset)}}
 				}
 				match = asset.ID
+				first = assetView(asset)
 			}
 		}
 		if len(page.Results) > 0 && !progress {

@@ -31,7 +31,7 @@ func TestOperationDiscoveryEpochErrorsAndRuntimeOwnership(t *testing.T) {
 	var engine *agentmcp.Engine
 	r := agentmcp.NewRuntime(settings, "gui", func(info agentmcp.Instance, cfg config.MCP, token string) http.Handler {
 		engine = agentmcp.NewEngine(agentmcp.EngineOptions{Instance: info.ID, Resolve: func(context.Context, agentmcp.Target) (agentmcp.ResolvedTarget, error) {
-			return agentmcp.ResolvedTarget{}, &agentmcp.Fault{Code: "TARGET_INCOMPLETE", Message: "synthetic"}
+			return agentmcp.ResolvedTarget{}, &agentmcp.Fault{Code: "TARGET_INCOMPLETE", Message: "synthetic", Resolution: &agentmcp.ResolutionHint{Profile: "p", NextTool: "list_organizations"}}
 		}})
 		return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Engine: engine})
 	})
@@ -64,6 +64,9 @@ func TestOperationDiscoveryEpochErrorsAndRuntimeOwnership(t *testing.T) {
 	opened := callOperation[agentmcp.OpenResult](t, session, "open_connection", map[string]any{"target": map[string]any{"profile": "p"}, "request_key": status.Instance.ID + ":1:00000000-0000-4000-8000-000000000001"})
 	if !opened.OK || opened.Data.Error.Code != "TARGET_INCOMPLETE" {
 		t.Fatalf("open %+v", opened)
+	}
+	if opened.Data.Error.Resolution == nil || opened.Data.Error.Resolution.Profile != "p" || opened.Data.Error.Resolution.NextTool != "list_organizations" {
+		t.Fatalf("HTTP 结果缺少解析提示：%+v", opened)
 	}
 	invalid := callOperation[agentmcp.ExecutionView](t, session, "execute_command", map[string]any{"connection_id": "old:c:1", "request_key": status.Instance.ID + ":1:00000000-0000-4000-8000-000000000002", "command": "true", "cwd": "/"})
 	if invalid.OK || invalid.Error.Code != "INSTANCE_CHANGED" || invalid.Error.Details["accepted"] != false {

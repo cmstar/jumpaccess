@@ -25,7 +25,7 @@ type IdentitySource interface {
 	EnsureFresh(context.Context, string) (credential.Token, error)
 }
 
-// Connector 只读取明确的目标；不修改当前选择，不发起交互登录或主机信任弹窗。
+// Connector 读取默认选择并将唯一目标固定为 ID；不修改配置，不发起交互登录或主机信任弹窗。
 type Connector struct {
 	Config     ConfigReader
 	Auth       IdentitySource
@@ -36,38 +36,32 @@ type Connector struct {
 }
 
 func (c Connector) Resolve(ctx context.Context, in Target) (ResolvedTarget, error) {
-	p, err := c.Queries.profile(in.Profile)
-	if err != nil {
+	if err := validateTargetForm(in); err != nil {
 		return ResolvedTarget{}, err
+	}
+	cfg, err := c.Config.Load()
+	if err != nil {
+		return ResolvedTarget{}, queryError(err)
+	}
+	if in.Profile == "" {
+		in.Profile = cfg.CurrentProfile
+	}
+	if strings.TrimSpace(in.Profile) == "" {
+		return ResolvedTarget{}, &Fault{Code: "PROFILE_REQUIRED", Message: "未设置当前 Profile，请用 list_profiles 选择后显式提供 profile", Resolution: &ResolutionHint{NextTool: "list_profiles"}}
+	}
+	p, exists := cfg.Profiles[in.Profile]
+	if !exists {
+		return ResolvedTarget{}, &Fault{Code: "PROFILE_NOT_FOUND", Message: "Profile 不存在，请用 list_profiles 选择有效配置", Resolution: &ResolutionHint{Profile: in.Profile, NextTool: "list_profiles"}}
 	}
 	identity, err := c.Auth.Identity(ctx, in.Profile)
 	if err != nil {
 		return ResolvedTarget{}, queryError(err)
 	}
-	if in.Alias != "" {
-		if in.Organization != "" || in.AssetID != "" || in.AccountID != "" {
-			return ResolvedTarget{}, fault("INVALID_ARGUMENT", "Alias 与完整目标不能同时提供")
-		}
-		a, ok := p.Aliases[in.Alias]
-		if !ok {
-			return ResolvedTarget{}, fault("TARGET_NOT_FOUND", "Alias 不存在")
-		}
-		in.Organization = a.Organization
-		if in.Organization == "" {
-			in.Organization = p.Organization
-		}
-		if in.Organization == "" || a.Account == "" {
-			return ResolvedTarget{}, fault("TARGET_INCOMPLETE", "Alias 必须确定组织和账号")
-		}
-		asset, err := c.Queries.uniqueAsset(ctx, in.Profile, in.Organization, a.Asset)
+	if in.Name != "" || in.Alias != "" {
+		in, err = c.resolveNamedTarget(ctx, cfg, in)
 		if err != nil {
-			return ResolvedTarget{}, fault("TARGET_AMBIGUOUS", "Alias 资产无法唯一确定")
+			return ResolvedTarget{}, err
 		}
-		account, err := connect.ResolvePermittedAccount(asset.Accounts, a.Account)
-		if err != nil {
-			return ResolvedTarget{}, fault("TARGET_AMBIGUOUS", "Alias 账号无法唯一确定")
-		}
-		in.AssetID, in.AccountID, in.Alias = asset.ID, account.ID, ""
 	}
 	if !identifier.MatchString(in.Organization) || !uuid.MatchString(in.AssetID) || !identifier.MatchString(in.AccountID) || strings.HasPrefix(in.AccountID, "@") {
 		return ResolvedTarget{}, fault("INVALID_ARGUMENT", "需要明确的组织 ID、资产 UUID 和托管账号 ID")

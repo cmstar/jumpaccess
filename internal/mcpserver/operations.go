@@ -39,7 +39,7 @@ func (h *managedHandler) CloseConnection(ctx context.Context, in agentmcp.CloseI
 }
 
 func registerOperations(server *mcp.Server, instance string, e *agentmcp.Engine, cache *downloadcache.Store) {
-	addOperation(server, instance, "open_connection", "按明确目标打开或复用共享 SSH 连接。request_key 格式为实例:当前 request_epoch:UUID；重试须保留原键和参数。关闭的逻辑 ID 不可重新打开。", false, e.Open, e)
+	addOperation(server, instance, "open_connection", "已知目标时直接提供 target.name（别名、资产名称、地址或 UUID），无需预先 list_profiles、list_aliases 或 list_assets。profile 省略时只读当前 Profile；别名优先，组织默认取别名或 Profile，唯一托管账号自动采用。多目标或多账号返回错误及 resolution 查询范围与候选，按原因补充 organization/account_id；网络或认证错误不应触发资源枚举。仍兼容 alias 或完整 ID 目标。request_key 格式为实例:当前 request_epoch:UUID；重试保留原键及参数，目标一经解析即固定。已有 connection_id 可直接执行命令，无需固定调用 get_connection；opening 且尚无 ID 时以原键重试。关闭的逻辑 ID 不可重新打开。", false, e.Open, e)
 	addOperation(server, instance, "list_connections", "分页查看共享连接与实际 SSH 状态；查询不会重连或延长闲置时间。", true, e.ConnectionsPage, e)
 	addOperation(server, instance, "get_connection", "查看逻辑连接及最近仍保留的未知任务。空未知列表不能证明历史任务均已停止。", true, e.GetConnection, e)
 	addOperation(server, instance, "close_connection", "关闭共享连接会影响所有 Agent。if_idle 只关闭空闲连接；drain 阻止新任务并等待；force 尽力停止，无法确认时远端可能继续运行。", false, e.CloseConnection, e)
@@ -84,6 +84,9 @@ func addOperation[In, Out any](server *mcp.Server, instance, name, description s
 			problem.Retryable = query.Retryable
 		}
 		problem.Details = map[string]any{"request_epoch": engine.RequestEpoch()}
+		if known != nil && known.Resolution != nil {
+			problem.Details["resolution"] = known.Resolution
+		}
 		if name == "download_files" {
 			problem.Details["accepted_this_call"] = false
 			problem.Details["download_id"] = nil

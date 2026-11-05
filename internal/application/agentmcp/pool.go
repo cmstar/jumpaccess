@@ -16,7 +16,8 @@ import (
 )
 
 type Target struct {
-	Profile      string `json:"profile"`
+	Profile      string `json:"profile,omitempty" jsonschema:"省略时使用当前 Profile，只读取不修改配置"`
+	Name         string `json:"name,omitempty" jsonschema:"别名、资产名称、地址或 UUID；优先匹配别名，不能与 alias 或 asset_id 同时提供"`
 	Organization string `json:"organization,omitempty"`
 	AssetID      string `json:"asset_id,omitempty"`
 	AccountID    string `json:"account_id,omitempty"`

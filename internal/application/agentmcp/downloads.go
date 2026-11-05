@@ -115,10 +115,10 @@ func normalizeDownloadForMode(in DownloadInput, mode string) (DownloadInput, int
 	if wait < 0 || wait > 5000 || in.TimeoutMS < 1 || in.TimeoutMS > 3600000 || len(in.RemotePaths) == 0 || len(in.RemotePaths) > 100 {
 		return in, wait, fault("INVALID_ARGUMENT", "下载需提供 1–100 个绝对路径，等待不超过 5 秒，任务时限不超过 1 小时")
 	}
-	if (in.ConnectionID == "") == (in.Target.Profile == "") || (in.ConnectionID != "" && in.Target != (Target{})) {
+	if (in.ConnectionID == "") == (in.Target == (Target{})) {
 		return in, wait, fault("INVALID_ARGUMENT", "请提供明确目标或 connection_id，不能同时提供")
 	}
-	if len(in.Target.Profile)+len(in.Target.Organization)+len(in.Target.AssetID)+len(in.Target.AccountID)+len(in.Target.Alias)+len(in.ConnectionID) > 4096 {
+	if len(in.Target.Profile)+len(in.Target.Name)+len(in.Target.Organization)+len(in.Target.AssetID)+len(in.Target.AccountID)+len(in.Target.Alias)+len(in.ConnectionID) > 4096 {
 		return in, wait, fault("INVALID_ARGUMENT", "下载目标标识过长")
 	}
 	in.RemotePaths = slices.Clone(in.RemotePaths)

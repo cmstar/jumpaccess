@@ -280,6 +280,8 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 ## 当前验证入口
 
+MCP 名称目标的回归覆盖默认 Profile、别名优先、组织与账号覆盖、唯一托管账号、跨页歧义、查询失败分类及有限候选；同键重试在当前 Profile 或别名变化后仍返回原目标。连接、上传、下载和 HTTP 上传准备均需覆盖省略 Profile 的名称入口，HTTP 集成分别验证 CLI、GUI 宿主，资源列表查询继续要求显式范围。
+
 MCP 文件传输的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 文件传输集成测试在 macOS 上直接运行，需预先安装 Python 3 与 `lrzsz`；Windows 需显式设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志；测试临时目录先解析为真实路径，避免 macOS 的系统目录链接触发远端拒绝链接的校验。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 和 `python3 -B internal/application/agentmcp/upload_remote_test.py`，分别验证下载有限读取、上传隔离还原、冲突及部分发布、清理时的目录身份；完整覆盖需在 POSIX 环境执行。上传集成测试还覆盖本机准备、受限 SFTP 映射、真实 `rz` 回退、取消清理及大清单输入，Windows 通过 WSL 原生文件系统验证排他发布，不以挂载盘上的文件系统兼容结果代替。ZMODEM 独立互操作测试见上文 CLI 传输约定，未启用所需环境时的跳过不代表真实网关验收通过。
 
 HTTP 上传回归覆盖准备与提交的独立去重、未收齐禁止提交、接收失败后重试、单对象写入、就绪禁止覆盖、身份复核和任务结束清理；运行 `go test -race ./internal/application/uploadcache ./internal/application/agentmcp ./internal/mcpserver`。以真实 HTTP 请求验证空闲／总时限、取消和服务停止，缓存用可控时钟验证到期；清理告警不得在持有任务受理锁时同步回调共享历史。
