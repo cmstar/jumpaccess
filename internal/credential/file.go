@@ -13,7 +13,9 @@ import (
 const credentialFileSuffix = ".json"
 
 type fileBackend struct {
-	directory string
+	directory     string
+	fixedFileName string
+	fixedKey      string
 }
 
 // NewFileBackend stores each opaque credential key in its own private file.
@@ -21,6 +23,14 @@ type fileBackend struct {
 // collapse distinct profile names to the same filesystem name.
 func NewFileBackend(directory string) Backend {
 	return fileBackend{directory: directory}
+}
+
+func newFixedFileBackend(path, key string) Backend {
+	return fileBackend{
+		directory:     filepath.Dir(path),
+		fixedFileName: filepath.Base(path),
+		fixedKey:      key,
+	}
 }
 
 func (b fileBackend) Get(key string) ([]byte, error) {
@@ -139,6 +149,12 @@ func (b fileBackend) path(key string) (string, error) {
 	}
 	if key == "" {
 		return "", fmt.Errorf("credential key is empty")
+	}
+	if b.fixedFileName != "" {
+		if key != b.fixedKey {
+			return "", fmt.Errorf("unsupported credential key")
+		}
+		return filepath.Join(b.directory, b.fixedFileName), nil
 	}
 	digest := sha256.Sum256([]byte(key))
 	return filepath.Join(b.directory, fmt.Sprintf("%x%s", digest, credentialFileSuffix)), nil

@@ -21,6 +21,7 @@
 
 | 主题 | 文档链接 | 状态 |
 | --- | --- | --- |
+| Linux CLI 支持 | [Linux CLI 支持设计](linux-support.md) | 实现、五项原生 CI、本机自动化及本轮 WSL2 amd64 CLI 真实环境验收通过 |
 
 ## 历史版本索引
 
