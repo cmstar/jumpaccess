@@ -34,7 +34,7 @@ func TestStagedUploadThroughRemoteRestoreAndFallback(t *testing.T) {
 			}
 			defer cache.Close()
 			opts.UploadCache = cache
-			local := t.TempDir()
+			local := uploadSourceTestDirectory(t)
 			source := filepath.Join(local, "config.txt")
 			content := []byte("HTTP staged config\n")
 			os.WriteFile(source, content, 0600)
@@ -162,7 +162,7 @@ func TestUploadThroughSSHAndSFTPFallback(t *testing.T) {
 	for _, mode := range []string{"gzip", "raw", "empty", "empty_archive", "directory", "fallback"} {
 		t.Run(mode, func(t *testing.T) {
 			opts, directory, stage := uploadLinuxFixture(t)
-			local := t.TempDir()
+			local := uploadSourceTestDirectory(t)
 			original := bytes.Repeat([]byte("upload config line\n"), 4000)
 			if strings.HasPrefix(mode, "empty") {
 				original = nil
@@ -240,7 +240,7 @@ func TestUploadConflictAndCancellation(t *testing.T) {
 	for _, conflict := range []bool{true, false} {
 		t.Run(map[bool]string{true: "conflict", false: "cancel"}[conflict], func(t *testing.T) {
 			opts, directory, stage := uploadLinuxFixture(t)
-			source := filepath.Join(t.TempDir(), "file.txt")
+			source := filepath.Join(uploadSourceTestDirectory(t), "file.txt")
 			os.WriteFile(source, []byte("new data"), 0600)
 			destination := filepath.Join(directory, "destination")
 			os.Mkdir(destination, 0700)

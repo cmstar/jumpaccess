@@ -12,10 +12,20 @@ import (
 	"testing"
 )
 
+func uploadSourceTestDirectory(t *testing.T) string {
+	t.Helper()
+	// 系统临时根可能经过链接；样例内的链接仍按上传规则拒绝。
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return directory
+}
+
 func TestPrepareUploadContentAndCleanup(t *testing.T) {
 	for _, format := range []string{"gzip", "raw", "tar.gz"} {
 		t.Run(format, func(t *testing.T) {
-			base := t.TempDir()
+			base := uploadSourceTestDirectory(t)
 			name := "config.txt"
 			if format == "raw" {
 				name = "bundle.zip"
@@ -41,7 +51,15 @@ func TestPrepareUploadContentAndCleanup(t *testing.T) {
 				t.Fatalf("format = %s", p.Format)
 			}
 			if format == "raw" {
-				if p.File.Name() != source {
+				sourceInfo, err := os.Stat(source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				preparedInfo, err := p.File.Stat()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !os.SameFile(sourceInfo, preparedInfo) {
 					t.Fatal("raw file was copied")
 				}
 				got, _ := io.ReadAll(p.File)
@@ -94,7 +112,7 @@ func TestPrepareUploadContentAndCleanup(t *testing.T) {
 }
 
 func TestPrepareUploadLimitsConflictsAndCancellation(t *testing.T) {
-	base := t.TempDir()
+	base := uploadSourceTestDirectory(t)
 	source := filepath.Join(base, "large.txt")
 	os.WriteFile(source, bytes.Repeat([]byte("a"), 100000), 0600)
 	p, err := prepareUpload(context.Background(), []string{source}, 1000)
@@ -129,7 +147,7 @@ func TestPrepareUploadLimitsConflictsAndCancellation(t *testing.T) {
 }
 
 func TestPrepareUploadMissingSourceHasDistinctError(t *testing.T) {
-	_, err := prepareUpload(context.Background(), []string{filepath.Join(t.TempDir(), "missing")}, 1<<30)
+	_, err := prepareUpload(context.Background(), []string{filepath.Join(uploadSourceTestDirectory(t), "missing")}, 1<<30)
 	var f *Fault
 	if !errors.As(err, &f) || f.Code != "LOCAL_SOURCE_NOT_FOUND" {
 		t.Fatalf("missing source: %v", err)
