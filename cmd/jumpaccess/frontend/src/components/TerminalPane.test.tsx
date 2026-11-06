@@ -743,3 +743,25 @@ test('切走 Tab 后关闭粘贴确认并忽略迟到的剪贴板读取，不向
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(terminalMock.inputs).toEqual([])
 })
+
+test('重连保留终端时取消旧粘贴，并允许新会话重新上报相同目录', async () => {
+  let resolve!: (value: string) => void
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: () => new Promise<string>(done => { resolve = done }) } })
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
+  const onActionsChange = vi.fn()
+  const onCurrentDirectoryChange = vi.fn()
+  const output = new TerminalOutput()
+  const view = (session: SessionState) => <TerminalPane backend={backend} onActionsChange={onActionsChange} onCurrentDirectoryChange={onCurrentDirectoryChange} output={output} preferences={preferences} session={session} />
+  const { rerender } = render(view(activeSession))
+  act(() => terminalMock.oscHandlers.get(7)?.('file://host/srv'))
+  let paste!: Promise<void>
+  act(() => { paste = onActionsChange.mock.calls.at(-1)![0].paste() })
+  rerender(view({ ...activeSession, id: '', status: 'closed' }))
+  rerender(view({ ...activeSession, id: 'next' }))
+  await act(async () => { resolve('old\ncommand'); await paste })
+  expect(terminalMock.inputs).toEqual([])
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  act(() => terminalMock.oscHandlers.get(7)?.('file://host/srv'))
+  expect(onCurrentDirectoryChange.mock.calls).toEqual([['/srv'], ['/srv']])
+  expect(terminalMock.instances).toBe(1)
+})

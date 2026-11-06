@@ -87,6 +87,156 @@ test('建连返回前的输出等待终端挂载并解析后确认，不被字�
   expect(terminalWrites).toContain(data)
 })
 
+test.each(['Enter', 'toolbar'])('%s 重连复用原终端，提前到达的新输出追加在旧内容之后', async trigger => {
+  let output!: (event: SessionOutput) => void
+  let state!: (event: SessionState) => void
+  let connected!: (session: SessionState) => void
+  const live: SessionState = { id: 'first', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const acknowledgeSSHOutput = vi.fn().mockResolvedValue(undefined)
+  const backend = makeBackend({
+    acknowledgeSSHOutput,
+    onSessionOutput: handler => { output = handler; return () => {} },
+    onSessionState: handler => { state = handler; return () => {} },
+    startSSHSession: vi.fn().mockResolvedValueOnce(live).mockImplementation(() => new Promise<SessionState>(resolve => { connected = resolve })),
+  })
+  terminalWrites.length = 0
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await screen.findByRole('button', { name: '重新连接' })
+  act(() => output({ id: live.id, data: 'keep-before-reconnect\r\n' }))
+  await waitFor(() => expect(terminalWrites).toContain('keep-before-reconnect\r\n'))
+  const instances = terminalOptions.length
+  if (trigger === 'Enter') {
+    act(() => state({ ...live, status: 'closed' }))
+    act(() => terminalKeyHandlers.at(-1)?.(new KeyboardEvent('keydown', { key: 'Enter' })))
+  } else {
+    await user.click(screen.getByRole('button', { name: '重新连接' }))
+  }
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledTimes(2))
+  act(() => output({ id: 'second', data: 'early-welcome\r\n', sequence: 1 }))
+  await act(async () => {})
+  expect(acknowledgeSSHOutput).not.toHaveBeenCalled()
+  await act(async () => connected({ ...live, id: 'second' }))
+  await waitFor(() => expect(acknowledgeSSHOutput).toHaveBeenCalledWith('second', 1))
+  act(() => output({ id: 'second', data: 'new-shell> ' }))
+  expect(terminalOptions).toHaveLength(instances)
+  expect(terminalWrites.join('')).toMatch(/keep-before-reconnect[\s\S]*Connection closed\.[\s\S]*Reconnecting \.\.\.[\s\S]*early-welcome[\s\S]*new-shell>/)
+  expect(terminalWrites.filter(text => text.includes('keep-before-reconnect'))).toHaveLength(1)
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(terminalOptions).toHaveLength(instances)
+})
+
+test('连续重连失败保留原终端，每次都追加重连与断连提示并允许再试', async () => {
+  let output!: (event: SessionOutput) => void
+  let state!: (event: SessionState) => void
+  const live: SessionState = { id: 'first', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const backend = makeBackend({
+    onSessionOutput: handler => { output = handler; return () => {} },
+    onSessionState: handler => { state = handler; return () => {} },
+    startSSHSession: vi.fn().mockResolvedValueOnce(live).mockRejectedValueOnce(new Error('offline-1')).mockRejectedValueOnce(new Error('offline-2')).mockResolvedValue({ ...live, id: 'last' }),
+  })
+  terminalWrites.length = 0
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  act(() => output({ id: live.id, data: 'valuable-output\r\n' }))
+  await waitFor(() => expect(terminalWrites).toContain('valuable-output\r\n'))
+  const instances = terminalOptions.length
+  act(() => state({ ...live, status: 'closed' }))
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    act(() => terminalKeyHandlers.at(-1)?.(new KeyboardEvent('keydown', { key: 'Enter' })))
+    await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledTimes(attempt + 1))
+    if (attempt < 3) await screen.findByText(`offline-${attempt}`)
+  }
+  await waitFor(() => expect(screen.getByRole('button', { name: '重新连接' })).toBeEnabled())
+  expect(terminalOptions).toHaveLength(instances)
+  expect(terminalWrites.join('').match(/Reconnecting \.\.\./g)).toHaveLength(3)
+  expect(terminalWrites.join('').match(/Connection closed\./g)).toHaveLength(3)
+  expect(terminalWrites.filter(text => text.includes('valuable-output'))).toHaveLength(1)
+})
+
+test.each(['restored', 'failed', 'active'])('%s Tab 没有 SSH 输出时重连清掉旧连接提示', async initial => {
+  let output!: (event: SessionOutput) => void
+  const live: SessionState = { id: 'first', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const startSSHSession = vi.fn()
+  if (initial === 'failed') startSSHSession.mockRejectedValueOnce(new Error('offline'))
+  if (initial === 'active') startSSHSession.mockResolvedValueOnce(live)
+  startSSHSession.mockResolvedValue({ ...live, id: 'next' })
+  const backend = makeBackend({
+    startSSHSession,
+    onSessionOutput: handler => { output = handler; return () => {} },
+    ...(initial === 'restored' ? { bootstrap: vi.fn().mockResolvedValue({
+      ...bootstrapState,
+      workspace: { activeTabId: 'ssh-restored', tabs: [{ id: 'ssh-restored', type: 'ssh', profile: 'production', organization: 'org-1', target: 'production-web', account: 'account-1', alias: 'production-web', assetId: 'asset-1', assetName: 'prod-web-01' }] },
+    }) } : {}),
+  })
+  render(<App backend={backend} />)
+  if (initial !== 'restored') await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await screen.findByLabelText('production-web SSH 终端')
+  if (initial !== 'active') await waitFor(() => expect(terminalState.screens.at(-1)?.join('')).toContain('Connection closed.'))
+  else await waitFor(() => expect(screen.getByRole('button', { name: '重新连接' })).toBeEnabled())
+  const instances = terminalOptions.length
+  if (initial === 'active') await userEvent.click(screen.getByRole('button', { name: '重新连接' }))
+  else act(() => terminalKeyHandlers.at(-1)?.(new KeyboardEvent('keydown', { key: 'Enter' })))
+  await waitFor(() => expect(startSSHSession).toHaveBeenCalledTimes(initial === 'restored' ? 1 : 2))
+  await waitFor(() => expect(screen.getByRole('button', { name: '重新连接' })).toBeEnabled())
+  act(() => output({ id: 'next', data: 'welcome\r\nnew-shell> ' }))
+  const screenText = terminalState.screens.at(-1)?.join('')
+  expect(screenText).toContain('Reconnecting ...')
+  expect(screenText).toContain('welcome\r\nnew-shell> ')
+  expect(screenText).not.toContain('Connection closed.')
+  expect(screenText).not.toContain('Press Enter to reconnect')
+  expect(terminalOptions).toHaveLength(instances + 1)
+})
+
+test('从未收到 SSH 输出时连续重试失败只留下本次连接提示', async () => {
+  const backend = makeBackend({ startSSHSession: vi.fn().mockRejectedValue(new Error('offline')) })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(terminalState.screens.at(-1)?.join('')).toContain('Connection closed.'))
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    act(() => terminalKeyHandlers.at(-1)?.(new KeyboardEvent('keydown', { key: 'Enter' })))
+    await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledTimes(attempt + 1))
+    await waitFor(() => expect(terminalState.screens.at(-1)?.join('')).toContain('Connection closed.'))
+    const text = terminalState.screens.at(-1)!.join('')
+    expect(text.match(/Connection closed\./g)).toHaveLength(1)
+    expect(text.match(/Reconnecting \.\.\./g)).toHaveLength(1)
+  }
+})
+
+test.each([false, true])('旧输出解析完才建立新连接，等待期间关闭 Tab=%s', async close => {
+  let output!: (event: SessionOutput) => void
+  let state!: (event: SessionState) => void
+  const live: SessionState = { id: 'first', status: 'active', title: 'production-web', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }
+  const backend = makeBackend({
+    onSessionOutput: handler => { output = handler; return () => {} },
+    onSessionState: handler => { state = handler; return () => {} },
+    startSSHSession: vi.fn().mockResolvedValueOnce(live).mockResolvedValue({ ...live, id: 'next' }),
+  })
+  render(<App backend={backend} />)
+  await userEvent.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '重新连接' })).toBeEnabled())
+  await waitFor(() => expect(screen.getByLabelText('production-web SSH 终端')).toBeInTheDocument())
+  const callbacks: Array<() => void> = []
+  terminalState.parseCallbacks = callbacks
+  try {
+    act(() => output({ id: live.id, data: '\x1b[>c' }))
+    act(() => state({ ...live, status: 'closed' }))
+    act(() => terminalKeyHandlers.at(-1)?.(new KeyboardEvent('keydown', { key: 'Enter' })))
+    await act(async () => {})
+    expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+    if (close) {
+      await userEvent.click(screen.getByRole('button', { name: '关闭 production-web Tab' }))
+      await userEvent.click(await screen.findByRole('button', { name: '关闭 Tab' }))
+    }
+    await act(async () => { while (callbacks.length) callbacks.shift()!() })
+    expect(backend.startSSHSession).toHaveBeenCalledTimes(close ? 1 : 2)
+  } finally {
+    terminalState.parseCallbacks = undefined
+  }
+})
+
 test('MCP 自动启动在配置页顶部独立保存，不保存表单草稿或改变运行状态', async () => {
   const backend = createPreviewBackend()
   const save = vi.spyOn(backend, 'savePreferences')
@@ -283,15 +433,19 @@ const { terminalKeyHandlers, terminalOptions, terminalOscHandlers, terminalState
     pasted: [] as string[],
     selection: '',
     selectionHandler: undefined as (() => void) | undefined,
+    parseCallbacks: undefined as Array<() => void> | undefined,
+    screens: [] as string[][],
   },
   terminalWrites: [] as string[],
 }))
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
-    constructor(public options: Record<string, unknown>) { terminalOptions.push(options) }
+    screen: string[] = []
+    constructor(public options: Record<string, unknown>) { terminalOptions.push(options); terminalState.screens.push(this.screen) }
     cols = 120
     rows = 34
+    buffer = { normal: { cursorY: 0, baseY: 0, getLine: () => undefined }, active: { type: 'normal' } }
     parser = {
       registerOscHandler: (ident: number, handler: (data: string) => boolean | Promise<boolean>) => {
         terminalOscHandlers.set(ident, handler)
@@ -300,7 +454,12 @@ vi.mock('@xterm/xterm', () => ({
     }
     loadAddon() {}
     open() {}
-    write(value: string, parsed?: () => void) { terminalWrites.push(value); parsed?.() }
+    write(value: string, parsed?: () => void) {
+      terminalWrites.push(value)
+      this.screen.push(value)
+      if (parsed && terminalState.parseCallbacks) terminalState.parseCallbacks.push(parsed)
+      else parsed?.()
+    }
     reset() {}
     focus() {}
     getSelection() { return terminalState.selection }
@@ -1019,7 +1178,7 @@ test('断连 SSH Tab 连按 Enter 只启动一次重连', async () => {
     terminalKeyHandlers.at(-1)?.(enter)
   })
 
-  expect(backend.startSSHSession).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledTimes(1))
   resolveStart({
     id: 'reconnected-1', status: 'connecting', title: 'production-web', profile: 'production',
     organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '',

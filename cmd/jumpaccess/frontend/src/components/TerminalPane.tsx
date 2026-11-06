@@ -9,6 +9,7 @@ import { synchronizeTerminalViewportBackground } from './terminalViewport'
 import { terminalDisplayOptions } from '../model/terminalTheme'
 import { useTerminalBackground } from './TerminalBackground'
 import type { TerminalOutput } from '../model/terminalOutput'
+import { writeTerminalStatus } from './terminalStatus'
 
 interface TerminalPaneProps {
   active?: boolean
@@ -180,7 +181,7 @@ export function TerminalPane({ active = true, backend, onActionsChange, onCurren
     void requestPaste()
   }
 
-  // 输出流代表一轮连接；断连清空 Session ID 时仍保留已解析历史。
+  // 输出流与 Tab 同寿命；更换 SSH 会话时继续使用已解析历史。
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -315,7 +316,10 @@ export function TerminalPane({ active = true, backend, onActionsChange, onCurren
       fitAndReport()
       if (activeRef.current) terminal.focus()
     })
-    const unsubscribeOutput = output.subscribe((data, parsed) => terminal.write(data, parsed))
+    const unsubscribeOutput = output.subscribe(
+      (data, parsed) => terminal.write(data, parsed),
+      (data, parsed) => writeTerminalStatus(terminal, data, parsed),
+    )
     return () => {
       cancelAnimationFrame(frame)
       unsubscribeOutput()
@@ -348,6 +352,10 @@ export function TerminalPane({ active = true, backend, onActionsChange, onCurren
     })
     return () => cancelAnimationFrame(frame)
   }, [active, session.id, output])
+
+  useEffect(() => {
+    currentDirectoryRef.current = ''
+  }, [session.id])
 
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.options.scrollback = preferences.terminalScrollbackLines

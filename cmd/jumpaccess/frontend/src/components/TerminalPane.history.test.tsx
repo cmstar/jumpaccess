@@ -82,7 +82,7 @@ test('真实终端缩窄后按折行清理，放宽不恢复已经删除的历�
   expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('4abcdefghijk')
 })
 
-test('断连清空会话 ID 后保留已解析历史，只有重连的新输出流才重建终端', async () => {
+test('断连与重连保留同一终端及历史，输入和尺寸更新切换到新会话', async () => {
   const backend = createPreviewBackend()
   const write = vi.spyOn(backend, 'writeSSHSession').mockResolvedValue(undefined)
   const resize = vi.spyOn(backend, 'resizeSSHSession').mockResolvedValue(undefined)
@@ -103,11 +103,89 @@ test('断连清空会话 ID 后保留已解析历史，只有重连的新输出�
   terminals[0].resize(90, 24)
   expect(write).not.toHaveBeenCalled()
   expect(resize).not.toHaveBeenCalled()
-  const fresh = new TerminalOutput()
-  output.dispose()
-  rerender(view({ ...session, id: 'ssh-reconnected' }, fresh))
-  expect(terminals).toHaveLength(2)
-  expect(terminals[1].buffer.active.getLine(0)?.translateToString(true)).toBe('')
-  terminals[1].input('whoami\r', true)
+  await act(async () => { output.writeStatus('\r\nReconnecting ...\r\n'); await output.drain() })
+  rerender(view({ ...session, id: 'ssh-reconnected' }))
+  expect(terminals).toHaveLength(1)
+  expect(terminals[0].buffer.active.getLine(0)?.translateToString(true)).toBe('keep-before-disconnect')
+  terminals[0].input('whoami\r', true)
   expect(write).toHaveBeenLastCalledWith('ssh-reconnected', 'whoami\r')
+  terminals[0].resize(80, 24)
+  expect(resize).toHaveBeenLastCalledWith('ssh-reconnected', 80, 24)
+})
+
+test.each(['normal', 'alternate'])('%s 屏幕断线后保留最后内容，恢复终端模式并在末尾追加提示', async mode => {
+  const backend = createPreviewBackend()
+  const preferences = (await backend.bootstrap()).preferences
+  const output = new TerminalOutput()
+  render(<TerminalPane backend={backend} output={output} preferences={preferences} session={session} />)
+  const terminal = terminals[0]
+  terminal.resize(80, 6)
+  await act(async () => {
+    output.write('shell-history\r\n$ ')
+    if (mode === 'alternate') output.write('\x1b[?1049h')
+    output.write('\x1b[4;1Himportant-last-screen\x1b[1;1H\x1b[31m\x1b[?25l\x1b[?1003h\x1b[?1006h\x1b[?2004h\x1b[?1h\x1b[2;3r')
+    // 断线可能截断一个控制序列；本地提示必须仍然可见。
+    output.write('\x1b]0;unfinished-title')
+    output.writeStatus('\r\nConnection closed.\r\n\r\nPress Enter to reconnect ...\r\n')
+    output.writeStatus('\r\nReconnecting ...\r\n')
+    output.write('new-shell> ')
+    await output.drain()
+  })
+  const lines = Array.from({ length: terminal.buffer.active.length }, (_, i) => terminal.buffer.active.getLine(i)!.translateToString(true))
+  expect(terminal.buffer.active.type).toBe('normal')
+  expect(lines.join('\n')).toMatch(/shell-history[\s\S]*important-last-screen[\s\S]*Connection closed\.[\s\S]*Reconnecting \.\.\.[\s\S]*new-shell>/)
+  expect(terminal.modes).toMatchObject({ applicationCursorKeysMode: false, bracketedPasteMode: false, mouseTrackingMode: 'none' })
+  const prompt = lines.findIndex(text => text === 'new-shell> ')
+  expect(terminal.buffer.active.getLine(prompt)?.getCell(0)?.isFgDefault()).toBeTruthy()
+})
+
+test.each([0, 1, 5])('多轮连接共用 %i 行历史额度，关闭才销毁终端', async limit => {
+  const backend = createPreviewBackend()
+  const preferences = { ...(await backend.bootstrap()).preferences, terminalScrollbackLines: limit }
+  const output = new TerminalOutput()
+  const { unmount } = render(<TerminalPane backend={backend} output={output} preferences={preferences} session={session} />)
+  const terminal = terminals[0]
+  const dispose = vi.spyOn(terminal, 'dispose')
+  terminal.resize(80, 4)
+  await act(async () => {
+    output.write('old-history\r\n'.repeat(20))
+    output.writeStatus('\r\nConnection closed.\r\n')
+    output.writeStatus('\r\nReconnecting ...\r\n')
+    output.write('new-history\r\n'.repeat(20))
+    await output.drain()
+  })
+  expect(terminals).toHaveLength(1)
+  expect(terminal.buffer.active.baseY).toBe(limit)
+  expect(terminal.buffer.active.length).toBe(limit + terminal.rows)
+  expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('new-history')
+  expect(dispose).not.toHaveBeenCalled()
+  unmount()
+  expect(dispose).toHaveBeenCalledOnce()
+})
+
+test('只有本地提示时更换输出队列，真实终端从第一行显示当前重连状态', async () => {
+  const backend = createPreviewBackend()
+  const preferences = (await backend.bootstrap()).preferences
+  const old = new TerminalOutput()
+  const view = (output: TerminalOutput) => <TerminalPane backend={backend} output={output} preferences={preferences} session={{ ...session, id: '', status: 'closed' }} />
+  const { rerender } = render(view(old))
+  await act(async () => {
+    old.writeStatus('Connection closed.\r\n\r\nPress Enter to reconnect ...\r\n')
+    await old.drain()
+  })
+  expect(terminals[0].buffer.active.getLine(0)?.translateToString(true)).toBe('Connection closed.')
+  const next = new TerminalOutput()
+  old.dispose()
+  rerender(view(next))
+  await act(async () => {
+    next.writeStatus('Reconnecting ...\r\n')
+    next.write('welcome\r\n')
+    await next.drain()
+  })
+  expect(terminals).toHaveLength(2)
+  const terminal = terminals[1]
+  expect(terminal.buffer.active.baseY).toBe(0)
+  expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('Reconnecting ...')
+  expect(terminal.buffer.active.getLine(1)?.translateToString(true)).toBe('welcome')
+  expect(terminal.buffer.active.getLine(2)?.translateToString(true)).toBe('')
 })

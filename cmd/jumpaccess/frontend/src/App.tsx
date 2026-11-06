@@ -475,7 +475,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     if (disconnectedPrompts.current.has(tabID)) return
     disconnectedPrompts.current.add(tabID)
     const output = outputFor(tabID)
-    output.write(`${output.hasOutput ? '\r\n' : ''}${disconnectedMessage}`)
+    output.writeStatus(`${output.hasOutput ? '\r\n' : ''}${disconnectedMessage}`)
   }
 
   function clearSessionDirectory(tabID: string) {
@@ -963,6 +963,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         if (connectionAttempts.current.get(tab.id) !== attempt || !workspaceRef.current.tabs.some(item => item.id === tab.id)) return
         dispatchTabs({ type: 'session-state', sessionID, status: 'closed', error: '' })
         clearSessionLatency(sessionID)
+        appendDisconnectedPrompt(tab.id)
         await beginSSHConnection(current.id, current.descriptor, true)
       } finally {
         if (connectionAttempts.current.get(tab.id) === attempt) connectionAttempts.current.delete(tab.id)
@@ -978,8 +979,20 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     connectionAttempts.current.set(tabID, attempt)
     dispatchTabs({ type: 'begin-connection', tabID, reconnecting })
     clearSessionDirectory(tabID)
-    removeTerminalOutput(tabID)
+    disconnectedPrompts.current.delete(tabID)
+    let output = outputFor(tabID)
+    if (reconnecting && !output.hasSSHOutput) {
+      // 恢复的 Tab 或从未收到输出的连接只有本地提示，可以从空屏开始。
+      removeTerminalOutput(tabID)
+      output = outputFor(tabID)
+    }
+    if (reconnecting) output.writeStatus(`${output.hasOutput ? '\r\n' : ''}Reconnecting ...\r\n`)
     try {
+      if (reconnecting) {
+        // 旧输出中的终端查询不能在新会话绑定后产生应答。
+        await output.drain()
+        if (connectionAttempts.current.get(tabID) !== attempt || !workspaceRef.current.tabs.some(item => item.id === tabID)) return
+      }
       const session = await backend.startSSHSession({
         profile: descriptor.profile,
         organization: descriptor.organization,
@@ -998,12 +1011,13 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         return
       }
       const pendingOutput = earlyOutput.current.get(session.id)
-      if (pendingOutput) {
-        removeTerminalOutput(tabID)
-        terminalOutputs.current.set(tabID, pendingOutput)
-        earlyOutput.current.delete(session.id)
-      }
       dispatchTabs({ type: 'attach-session', tabID, sessionID: session.id })
+      if (pendingOutput) {
+        earlyOutput.current.delete(session.id)
+        // 接入原 Tab 队列，保持旧内容与输出确认；不能用早到数据替换终端。
+        pendingOutput.forwardTo(output)
+        void pendingOutput.drain().then(() => pendingOutput.dispose())
+      }
       const pendingState = pendingSessionStates.current.get(session.id)
       if (session.status === 'active' && pendingState?.status !== 'active') void transferFor(session.id)?.probe()
       pendingSessionStates.current.delete(session.id)

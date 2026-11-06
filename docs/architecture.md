@@ -96,7 +96,7 @@ flowchart TD
 
 GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名称未占用并写入；CLI `alias set` 继续使用允许替换的 `SetAlias`。二者复用同一配置修改 Module，但保留创建与设置的不同契约。
 
-每个 SSH Tab 持有独立的 xterm 实例，切换页面只隐藏或显示终端，后台继续解析输出；关闭 Tab、重新连接或退出应用时释放对应实例。历史由 xterm 按 `terminal.scrollback_lines` 管理，默认 10,000，接受 0–50,000 的整数；各 Tab 独立计算，不共享额度。自动折行计入显示行数，窗口缩小导致超限时沿用 xterm 的即时裁剪行为。`model/terminalOutput` 只排队尚未解析的输出，xterm 写回调完成后释放；事件桥在文本解析完成或 ZMODEM 数据处理完成后确认输出块，关闭时解除等待。不再另存固定字符额度的长期原始历史，也不在切换 Tab 时重放输出。后台终端保留最后的网格尺寸，激活时重新 fit，隐藏时不抢焦点。
+每个 SSH Tab 持有独立的 xterm 实例，切换页面只隐藏或显示终端，后台继续解析输出；有 SSH 输出时重连沿用同一实例与输出队列，关闭 Tab 或退出应用时才释放；从未收到 SSH 输出、仅有本地连接提示时，重连更换空队列并重建终端，清除旧提示。历史由 xterm 按 `terminal.scrollback_lines` 管理，默认 10,000，接受 0–50,000 的整数；各 Tab 独立计算，不共享额度。自动折行计入显示行数，窗口缩小导致超限时沿用 xterm 的即时裁剪行为。`model/terminalOutput` 只排队尚未解析的输出，xterm 写回调完成后释放；事件桥在文本解析完成或 ZMODEM 数据处理完成后确认输出块，关闭时解除等待。不再另存固定字符额度的长期原始历史，也不在切换 Tab 时重放输出。后台终端保留最后的网格尺寸，激活时重新 fit，隐藏时不抢焦点。断连与重连提示同样排队，待旧输出解析完成后恢复终端模式并追加；备用屏幕的最后画面转为普通文本追加到主缓冲，颜色与交互状态不延续。建连返回前的待解析输出整体接入原 Tab 队列，保持顺序与解析后确认。
 
 `model/useHostKeyPrompts` 按请求 ID 排队，异步决定仅移除对应请求，已失效的请求不会堵住后续确认。资产授权详情属于 Profile/Organization 上下文，切换上下文必须清理旧详情及待处理操作。
 
@@ -139,7 +139,7 @@ GUI 新建 Alias 使用 `settings.CreateAlias`，在配置锁内原子检查名�
 3. 应用通过 JumpServer API 获取创建 SSH 会话所需的短期连接信息。
 4. SSH 会话建立后，其生命周期与 OAuth Access Token 解耦。后续 Token 刷新或刷新失败不得主动中断已有会话。
 
-直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
+直接模式在 CLI 终端支持 Account 选择；GUI 从资产连接时若存在多个 Account 会先要求明确选择，从 Alias 连接时使用其绑定 Account，未绑定时同样要求选择。GUI 允许多个 SSH Tab 并行存在，通过 Wails 事件批量传递终端输出，并在桌面程序退出时关闭全部活动会话。活动 GUI Session 使用需要应答的 SSH keepalive global request 测量 JumpAccess 到 JumpServer SSH 网关的往返延迟，立即探测一次并每 3 秒更新；延迟通过独立 Wails 事件传递，不写入终端数据或持久化工作区，也不表示网关到最终 Asset 的链路耗时。GUI 远端断开或连接失败只会清理 live session，不会移除 Tab；终端追加 `Connection closed.` 与 `Press Enter to reconnect ...`，仅无修饰键 Enter 触发重连。回车及工具栏重连都在原内容后追加 `Reconnecting ...` 和新连接输出，有 SSH 输出的 Tab 在失败重试时保留之前的显示，所有连接共用该 Tab 的历史行数额度；仅有本地连接提示时重连从空屏开始。CLI 直接 SSH 没有内置回车重连循环，输出由外部终端管理；ProxyCommand 继续字节透传。两种直接模式在首次遇到未知 gateway 主机密钥时都显示 SHA-256 指纹并要求明确确认；GUI 的确认请求与具体会话 context 绑定，取消会话会解除等待。信任记录写入应用根目录下的 `known_hosts`；已知主机密钥变化始终失败。GUI 的 OAuth 刷新监督器使用独立 context，随桌面进程启动和停止，每轮重新读取配置与凭据并检查所有保存了 Refresh Token 的 Profile；它只为后续 API 请求维护 Token，不拥有 SSH client/session。
 
 ### 桌面 SSH 全屏
 
