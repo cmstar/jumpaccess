@@ -265,7 +265,7 @@ macOS GUI 的原生检查与 Universal 发布构建通过 `-extld` 使用 `scrip
 
 `.github/workflows/release.yml` 监听 `v*.*.*` 标签，并进一步校验版本格式。`vX.Y.Z` 为正式版；带合法非正式尾缀的 `vX.Y.Z-...` 均为非正式版，不限于 `pre`，也包括 `alpha`、`beta`、`rc`、`nightly` 和自定义尾缀；当前不支持 `+build` 元数据。标签指向的提交必须已经包含该工作流。版本排序、发布说明和 Agent 发布操作的完整规则见[版本发布规范](standards/release.md)。发布顺序为：
 
-1. 在 Windows runner 上运行 `go test ./...`、`go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64/arm64 与 Linux amd64/arm64 的原生测试和构建。
+1. 在 Windows runner 上通过 `go run ./scripts/testgo` 运行全部 Go 测试，再运行 `go vet ./...`、前端测试、前端生产构建和发布脚本测试；随后调用跨平台持续检查，完成 Windows amd64、macOS amd64/arm64 与 Linux amd64/arm64 的原生测试和构建。
 2. 在 Windows amd64 runner 上构建 `jumpctl.exe` 与 Wails `jumpaccess.exe`，分别连同许可证文件压缩为 ZIP；不生成 NSIS 安装程序。
 3. 在 Intel 与 Apple Silicon macOS runner 上原生构建对应架构的 `jumpctl`，保持 CGO 与 Keychain 能力，并使用 tar.gz 保留可执行权限。
 4. 在 Apple Silicon macOS runner 上使用 Wails `darwin/universal` 构建同时包含 x86_64、arm64 的 `JumpAccess.app`，再连同许可证文件压缩为 ZIP。
@@ -282,6 +282,46 @@ GitHub 托管 runner 已提供发布步骤使用的 `gh`，本机不要求安装
 
 ## 当前验证入口
 
+### Go 测试与防火墙
+
+Windows、macOS、Linux 的本地开发和 CI 统一使用 `go run ./scripts/testgo`，仅依赖项目已有的 Go 工具链。本文其他位置的 `go test` 表达待验证的包与选项；常规执行时通过此入口传入对应参数。入口按包执行 `go test -c`，再从 `.tmp/testbin/<包的仓库相对目录>/<包末级名称>.test` 直接运行；Windows 自动加 `.exe` 后缀，根包使用 `_root` 目录。例如 MCP 测试在 Windows 固定为 `.tmp/testbin/internal/mcpserver/mcpserver.test.exe`，在 macOS、Linux 固定为同目录下的 `mcpserver.test`。每次都会先编译，编译失败不运行旧文件；测试的工作目录仍为对应包目录。
+
+```powershell
+# 默认运行全部包，各测试执行一次，单包超时 10 分钟。
+go run ./scripts/testgo
+# 指定包并启用 race；各平台均以空格分隔包路径，选项放在包列表之前。
+go run ./scripts/testgo -race ./internal/application/agentmcp ./internal/mcpserver
+# 筛选测试、重复执行、设置超时和详细输出。
+go run ./scripts/testgo -run 'TestLAN|TestTLS' -count 2 -timeout 2m -v ./internal/mcpserver
+```
+
+入口还支持 `-skip`、`-short` 和 `-tags`；构建标签同时用于枚举包和编译。它串行执行各包，首次编译或测试失败即返回非零退出码，不使用 Go 测试结果缓存。同一仓库的入口复用项目跨平台文件锁互斥，等待可通过 Ctrl+C 取消，避免覆盖正在运行的二进制。入口要求 GOOS／GOARCH 与当前运行平台一致，不用于交叉平台测试，也不代理 benchmark、fuzz 或 coverage 等专用参数；这些专项任务仍使用原生 Go 命令。
+
+普通 `go test` 在各平台都会使用临时构建路径；仅加 `-o` 只是保存副本，不保证从该路径执行。`go run` 启动的测试管理程序本身不监听网络；真正可能监听网络的测试二进制始终从固定路径运行。入口不创建、删除或修改防火墙规则；已有临时程序规则需另行清理。
+
+各系统的授权机制不同：Windows 普通程序规则使用完整路径；macOS 也有按应用授权入站连接的防火墙，是否提示还受签名与策略影响；Linux 常见防火墙主要按服务、端口和网络区域管理流量。固定路径可以稳定程序位置，但不承诺所有系统都能永远复用一次授权。各平台日常测试都应避免不必要的外部网卡监听。机制参考：[Microsoft](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules)、[Apple](https://support.apple.com/guide/mac-help/mh34041/mac)、[firewalld](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/configuring_firewalls_and_packet_filters/using-and-configuring-firewalld)。
+
+日常 HTTP、HTTPS、SSH 集成测试只监听回环地址，端口仍由系统分配，以避免与正在运行的应用冲突。MCP 的 LAN 配置校验，以及 IPv4／IPv6 通配监听下的 Host、Origin 和 Token 校验，由不绑定网卡的配置测试和内存 HTTP 请求覆盖；LAN 模式的真实 HTTP 请求默认走 `127.0.0.1`。全网卡监听测试 `TestLANWildcardListener` 仅在显式设置 `JUMPACCESS_TEST_LAN=1` 时启用，可能触发所在系统的防火墙提示或拦截。PowerShell 示例：
+
+```powershell
+$env:JUMPACCESS_TEST_LAN = '1'
+try {
+    go run ./scripts/testgo -run '^TestLANWildcardListener$' ./internal/mcpserver
+} finally {
+    Remove-Item Env:JUMPACCESS_TEST_LAN
+}
+```
+
+macOS、Linux 的 shell 示例：
+
+```bash
+JUMPACCESS_TEST_LAN=1 go run ./scripts/testgo -run '^TestLANWildcardListener$' ./internal/mcpserver
+```
+
+此用例验证全网卡绑定及本机客户端请求，不代表已经验证跨设备 LAN 连通性。默认跳过此用例不能记作真实 LAN 验收通过。
+
+### 按功能验证
+
 MCP 名称目标的回归覆盖默认 Profile、别名优先、组织与账号覆盖、唯一托管账号、跨页歧义、查询失败分类及有限候选；同键重试在当前 Profile 或别名变化后仍返回原目标。连接、上传、下载和 HTTP 上传准备均需覆盖省略 Profile 的名称入口，HTTP 集成分别验证 CLI、GUI 宿主，资源列表查询继续要求显式范围。
 
 MCP 文件传输的常规测试包含任务去重、长等待、取消、容量、历史回收、归档校验与路径约束。POSIX 文件传输集成测试在 macOS 上直接运行，需预先安装 Python 3 与 `lrzsz`；Windows 需显式设置 `JUMPACCESS_TEST_WSL` 为本机发行版名，`JUMPACCESS_TEST_LRZSZ_WSL_DIR` 为该环境中包含 `sz`／`rz` 的目录，然后运行 `go test -race ./internal/application/agentmcp`。这些测试使用模拟 SSH 网关及临时样例文件，不读取业务日志；测试临时目录先解析为真实路径，避免 macOS 的系统目录链接触发远端拒绝链接的校验。另运行 `python3 -B internal/application/agentmcp/download_remote_test.py` 和 `python3 -B internal/application/agentmcp/upload_remote_test.py`，分别验证下载有限读取、上传隔离还原、冲突及部分发布、清理时的目录身份；完整覆盖需在 POSIX 环境执行。上传集成测试还覆盖本机准备、受限 SFTP 映射、真实 `rz` 回退、取消清理及大清单输入，Windows 通过 WSL 原生文件系统验证排他发布，不以挂载盘上的文件系统兼容结果代替。ZMODEM 独立互操作测试见上文 CLI 传输约定，未启用所需环境时的跳过不代表真实网关验收通过。
@@ -297,8 +337,8 @@ Linux CLI 从仓库根目录执行（无需前端或 Wails；文件传输集成�
 ```bash
 python3 -B internal/application/agentmcp/download_remote_test.py
 python3 -B internal/application/agentmcp/upload_remote_test.py
-CGO_ENABLED=0 go test -count=1 ./...
-CGO_ENABLED=1 go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen ./internal/oauth
+CGO_ENABLED=0 go run ./scripts/testgo
+CGO_ENABLED=1 go run ./scripts/testgo -race ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen ./internal/oauth
 CGO_ENABLED=0 go vet ./...
 CGO_ENABLED=0 go build -trimpath -o /tmp/jumpctl ./cmd/jumpctl
 node --test scripts/*.test.mjs
@@ -307,7 +347,7 @@ node --test scripts/*.test.mjs
 以下命令从仓库根目录开始执行；前端 npm 脚本通过 `--prefix` 定位到前端目录，Wails 命令在桌面入口目录执行：
 
 ```powershell
-go test ./...
+go run ./scripts/testgo
 go vet ./...
 go build -trimpath ./cmd/jumpctl
 npm --prefix cmd/jumpaccess/frontend ci

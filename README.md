@@ -125,11 +125,14 @@ wails doctor
 
 本地测试和运行：
 
-```
-go test ./...
+```powershell
+# Windows、macOS、Linux 共用固定路径测试入口。
+go run ./scripts/testgo
 go vet ./...
 go run ./cmd/jumpctl
 ```
+
+指定包、race 和筛选参数见[Go 测试入口](docs/development.md#go-测试与防火墙)，仅依赖项目已有的 Go 工具链。
 
 ### 构建 CLI
 

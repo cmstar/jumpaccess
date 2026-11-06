@@ -182,12 +182,24 @@ func TestTLSListenerUsesConfiguredCertificate(t *testing.T) {
 }
 
 func TestLANHTTPStillRequiresTokenAndChecksOrigin(t *testing.T) {
+	testLANHTTPAuthentication(t, "127.0.0.1")
+}
+
+func TestLANWildcardListener(t *testing.T) {
+	if os.Getenv("JUMPACCESS_TEST_LAN") != "1" {
+		t.Skip("全网卡监听需显式设置 JUMPACCESS_TEST_LAN=1")
+	}
+	testLANHTTPAuthentication(t, "0.0.0.0")
+}
+
+func testLANHTTPAuthentication(t *testing.T, host string) {
+	t.Helper()
 	r, settings, token := runtimeFixture(t)
 	cfg, err := settings.Config()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.ListenHost, cfg.AllowLAN = "0.0.0.0", true
+	cfg.ListenHost, cfg.AllowLAN = host, true
 	if err := settings.SaveConfig(context.Background(), cfg); err != nil {
 		t.Fatal("LAN HTTP 配置应可保存", err)
 	}

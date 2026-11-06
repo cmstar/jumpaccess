@@ -78,7 +78,7 @@ jobs:
           python3 -B internal/application/agentmcp/upload_remote_test.py
 
       - name: 运行原生 Go 测试
-        run: go test -count=1 ./...
+        run: go run ./scripts/testgo
 
       - name: 运行原生 Go 静态检查
         run: go vet ./...
@@ -153,12 +153,12 @@ jobs:
           python3 -B internal/application/agentmcp/upload_remote_test.py
 
       - name: 运行 Linux Go 测试
-        run: go test -count=1 ./...
+        run: go run ./scripts/testgo
 
       - name: 运行 Linux 平台 race 测试
         env:
           CGO_ENABLED: "1"
-        run: go test -race -count=1 ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen ./internal/oauth
+        run: go run ./scripts/testgo -race ./internal/credential ./internal/filelock ./internal/appdir ./internal/systemopen ./internal/oauth
 
       - name: 运行 Linux Go 静态检查
         run: go vet ./...

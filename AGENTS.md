@@ -30,6 +30,7 @@ JumpAccess 使用单一 Go module，提供 CLI `jumpctl` 和 Wails 桌面 GUI `j
 - Agent 在 `docs/decisions/` 新增决策文档（包括草案、补录和替代记录）前，必须先说明拟记录的主题和新增理由，取得用户明确确认后才能编写，不得先创建再请求确认。对功能实现、技术方案或一般性“同步更新文档”的同意不构成新增授权；用户已明确要求新增该决策文档时，无须重复确认。
 - 历史决策正文保留原意，不随代码演进改写；决策变化先读 [docs/decisions/README.md](docs/decisions/README.md)，只维护状态、范围、链接和索引，追加带日期的后续说明。
 - 生产行为变更采用 RED–GREEN–REFACTOR，并在结束前运行与修改最相关的检查。
+- Go 测试统一使用 `go run ./scripts/testgo` 固定测试可执行文件的运行路径，Windows、macOS、Linux 使用相同入口；指定包和 race 等参数的方式见 [Go 测试入口](docs/development.md#go-测试与防火墙)。日常网络测试只绑定回环地址，全网卡监听仅在显式设置 `JUMPACCESS_TEST_LAN=1` 时运行。
 - 不把产品能力写成 Tabby 专用能力；`ProxyCommand` 面向所有兼容客户端。
 - 不提交密码、Token、Cookie、私钥、生产数据或含秘密的测试输出；真实账号只用于本机手工 smoke test。
 - 用户明确要求“在当前版本上创建并推送 `v...`”或同义发布指令时，已授权按[版本发布规范](docs/standards/release.md)刷新已发布版本信息、编写并预览发布说明、验证、提交本次范围、创建和推送目标标签，以及跟进发布工作流；不重复索要发布确认。仅要求准备或预览时不推送。保留无关未提交内容，范围确有歧义时才澄清；已有标签或 Release 冲突不得自动覆盖或强推。

@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: 运行 Go 测试
-        run: go test ./...
+        run: go run ./scripts/testgo
 
       - name: 运行 Go 静态检查
         run: go vet ./...
