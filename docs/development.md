@@ -108,7 +108,7 @@ docs/               # 长期项目知识
 | [cli.md](cli.md) | 当前 CLI 对外契约；命令、参数、输出或兼容性变化时同步更新，继续保留现有路径 |
 | [standards/README.md](standards/README.md) | 专项规范用途、维护约定及规范索引；新增或修改专项约束时维护 |
 | [releases/README.md](releases/README.md) | 按版本保存的用户可读发布说明；正文随对应版本提交，编写与发布规则见[版本发布规范](standards/release.md) |
-| [decisions/README.md](decisions/README.md) | 决策的历史依据与当前、历史两类索引；重要取舍或有效范围变化时维护状态与后续说明 |
+| [decisions/README.md](decisions/README.md) | 决策的历史依据与当前、历史两类索引；Agent 新增决策文档（含草案、补录和替代记录）须事先取得用户明确确认；重要取舍或有效范围变化时维护状态与后续说明 |
 | [specs/README.md](specs/README.md) | 当前需求与设计、历史版本两类索引；具体方案确定、实施或替代时更新状态和引用 |
 | [runbooks/README.md](runbooks/README.md) | 操作手册与验证状态索引；流程需要独立交接，或命令、环境、权限变化时维护 |
 
