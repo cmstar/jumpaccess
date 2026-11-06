@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const CurrentVersion = 15
+const CurrentVersion = 16
 
 // 前后端共用此内置方案目录，避免可选项与持久化校验不一致。
 //
@@ -73,6 +73,7 @@ type Downloads struct {
 }
 
 type Terminal struct {
+	ScrollbackLines       int        `toml:"scrollback_lines"`
 	Background            Background `toml:"background"`
 	ColorScheme           string     `toml:"color_scheme"`
 	FontFamily            string     `toml:"font_family"`
@@ -182,6 +183,7 @@ func Default() Config {
 			Theme: "system",
 		},
 		Terminal: Terminal{
+			ScrollbackLines:       10000,
 			Background:            Background{TransparencyPercent: 70, FitMode: "cover", PositionXPercent: 50, PositionYPercent: 50},
 			ColorScheme:           "nord",
 			FontFamily:            "monospace",
@@ -275,6 +277,9 @@ func decodeLegacy(data []byte, version int) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.Terminal.ScrollbackLines < 0 || c.Terminal.ScrollbackLines > 50000 {
+		return fmt.Errorf("terminal.scrollback_lines must be between 0 and 50000")
+	}
 	switch c.Downloads.Mode {
 	case "ask", "automatic", "remember", "custom":
 	default:

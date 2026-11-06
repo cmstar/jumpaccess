@@ -58,7 +58,8 @@ import { TerminalSchemeSelect } from './components/TerminalSchemeSelect'
 import { TerminalBackgroundProvider, TerminalBackgroundSurface } from './components/TerminalBackground'
 import { TerminalBackgroundSettings } from './components/TerminalBackgroundSettings'
 import { terminalScheme } from './model/terminalTheme'
-import { appendTerminalOutput, type TerminalOutput } from './model/terminalOutput'
+import { TerminalOutput } from './model/terminalOutput'
+import { TerminalScrollbackInput } from './components/TerminalScrollbackInput'
 import { useHostKeyPrompts } from './model/useHostKeyPrompts'
 import { type TabDisplayNames, useTabDisplayNames } from './model/useTabDisplayNames'
 import {
@@ -114,7 +115,6 @@ interface AppProps {
 }
 
 const pageSize = 100
-const terminalBufferLimit = 1024 * 1024
 const disconnectedMessage = 'Connection closed.\r\n\r\nPress Enter to reconnect ...\r\n'
 const TerminalPane = lazy(() => import('./components/TerminalPane').then((module) => ({ default: module.TerminalPane })))
 
@@ -342,18 +342,43 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const [sessionLatencies, setSessionLatencies] = useState<Record<string, SessionLatency>>({})
   const transferControllers = useRef(new Map<string, ZmodemController>())
   const [transferStates, setTransferStates] = useState<Record<string, ZmodemState>>({})
-  const earlyOutput = useRef(new Map<string, string>())
+  const earlyOutput = useRef(new Map<string, TerminalOutput>())
+  const terminalOutputs = useRef(new Map<string, TerminalOutput>())
+  const disconnectedPrompts = useRef(new Set<string>())
+
+  function outputFor(tabID: string) {
+    let output = terminalOutputs.current.get(tabID)
+    if (!output) {
+      output = new TerminalOutput()
+      terminalOutputs.current.set(tabID, output)
+    }
+    return output
+  }
+
+  function sshOutputFor(id: string) {
+    const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === id)
+    if (tab) return outputFor(tab.id)
+    let output = earlyOutput.current.get(id)
+    if (!output) {
+      output = new TerminalOutput()
+      earlyOutput.current.set(id, output)
+      if (earlyOutput.current.size > 64) {
+        const oldest = earlyOutput.current.keys().next().value!
+        earlyOutput.current.get(oldest)?.dispose()
+        earlyOutput.current.delete(oldest)
+      }
+    }
+    return output
+  }
 
   function appendSSHOutput(id: string, data: string) {
-    const tab = workspaceRef.current.tabs.find((item): item is SSHTab => item.kind === 'ssh' && item.sessionID === id)
-    if (!tab) {
-      earlyOutput.current.set(id, ((earlyOutput.current.get(id) ?? '') + data).slice(-terminalBufferLimit))
-      if (earlyOutput.current.size > 64) earlyOutput.current.delete(earlyOutput.current.keys().next().value!)
-      return
-    }
-    const pending = earlyOutput.current.get(id) ?? ''
-    earlyOutput.current.delete(id)
-    setSessionOutput(current => ({ ...current, [tab.id]: appendTerminalOutput(current[tab.id], pending + data, terminalBufferLimit) }))
+    sshOutputFor(id).write(data)
+  }
+
+  function removeTerminalOutput(tabID: string) {
+    terminalOutputs.current.get(tabID)?.dispose()
+    terminalOutputs.current.delete(tabID)
+    disconnectedPrompts.current.delete(tabID)
   }
 
   function transferFor(id: string) {
@@ -368,7 +393,6 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     }
     return controller
   }
-  const [sessionOutput, setSessionOutput] = useState<Record<string, TerminalOutput>>({})
   const [startupError, setStartupError] = useState('')
   const [aliasAsset, setAliasAsset] = useState<Asset | null>(null)
   const [aliasEditor, setAliasEditor] = useState<{ asset: Asset; alias: Alias } | null>(null)
@@ -419,7 +443,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       if (document.querySelector('[role="dialog"]')) return
       const selected = document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
       selected?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-      const terminal = document.querySelector<HTMLTextAreaElement>('.terminal-host .xterm-helper-textarea')
+      const terminal = document.querySelector<HTMLTextAreaElement>('.tab-terminal:not([hidden]) .terminal-host .xterm-helper-textarea')
       if (!terminal && selected) selected.dataset.shortcutFocus = 'true'
       const target = terminal ?? selected
       target?.focus({ preventScroll: true })
@@ -448,12 +472,10 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   }
 
   function appendDisconnectedPrompt(tabID: string) {
-    setSessionOutput((current) => {
-      const previous = current[tabID]
-      if (previous?.text.endsWith(disconnectedMessage)) return current
-      const data = `${previous?.text ? '\r\n' : ''}${disconnectedMessage}`
-      return { ...current, [tabID]: appendTerminalOutput(previous, data, terminalBufferLimit) }
-    })
+    if (disconnectedPrompts.current.has(tabID)) return
+    disconnectedPrompts.current.add(tabID)
+    const output = outputFor(tabID)
+    output.write(`${output.hasOutput ? '\r\n' : ''}${disconnectedMessage}`)
   }
 
   function clearSessionDirectory(tabID: string) {
@@ -497,9 +519,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         setOrganization(state.currentOrganization)
         workspaceRef.current = restored
         setWorkspace(restored)
-        setSessionOutput(Object.fromEntries(restored.tabs
-          .filter((tab): tab is SSHTab => tab.kind === 'ssh')
-          .map((tab) => [tab.id, { text: disconnectedMessage, start: 0 }])))
+        for (const tab of restored.tabs) if (tab.kind === 'ssh') appendDisconnectedPrompt(tab.id)
         setSessionDirectories({})
         setSessionLatencies({})
         workspaceReady.current = true
@@ -525,7 +545,11 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     })
     const offOutput = backend.onSessionOutput((event) => {
       const controller = transferFor(event.id)
-      const acknowledge = () => { if (event.sequence) void backend.acknowledgeSSHOutput?.(event.id, event.sequence).catch(() => {}) }
+      const output = sshOutputFor(event.id)
+      const acknowledge = () => {
+        // 等 xterm 消费完这批文本，才允许事件桥继续接收下一块。
+        void output.drain().then(() => event.sequence ? backend.acknowledgeSSHOutput?.(event.id, event.sequence) : undefined).catch(() => {})
+      }
       if (controller) void controller.consume(event.encoding === 'base64' ? decodeBytes(event.data) : new TextEncoder().encode(event.data)).finally(acknowledge)
       else { appendSSHOutput(event.id, event.encoding === 'base64' ? new TextDecoder().decode(decodeBytes(event.data)) : event.data); acknowledge() }
     })
@@ -554,7 +578,11 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       pendingSessionStates.current.clear()
       for (const controller of transferControllers.current.values()) controller.dispose()
       transferControllers.current.clear()
+      for (const output of earlyOutput.current.values()) output.dispose()
       earlyOutput.current.clear()
+      for (const output of terminalOutputs.current.values()) output.dispose()
+      terminalOutputs.current.clear()
+      disconnectedPrompts.current.clear()
     }
   }, [backend])
 
@@ -950,7 +978,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     connectionAttempts.current.set(tabID, attempt)
     dispatchTabs({ type: 'begin-connection', tabID, reconnecting })
     clearSessionDirectory(tabID)
-    setSessionOutput((current) => ({ ...current, [tabID]: { text: '', start: 0 } }))
+    removeTerminalOutput(tabID)
     try {
       const session = await backend.startSSHSession({
         profile: descriptor.profile,
@@ -963,13 +991,20 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       const tabStillExists = workspaceRef.current.tabs.some((item) => item.id === tabID && item.kind === 'ssh')
       if (connectionAttempts.current.get(tabID) !== attempt || !tabStillExists) {
         pendingSessionStates.current.delete(session.id)
+        earlyOutput.current.get(session.id)?.dispose()
+        earlyOutput.current.delete(session.id)
         await backend.closeSSHSession(session.id)
         clearSessionLatency(session.id)
         return
       }
+      const pendingOutput = earlyOutput.current.get(session.id)
+      if (pendingOutput) {
+        removeTerminalOutput(tabID)
+        terminalOutputs.current.set(tabID, pendingOutput)
+        earlyOutput.current.delete(session.id)
+      }
       dispatchTabs({ type: 'attach-session', tabID, sessionID: session.id })
       const pendingState = pendingSessionStates.current.get(session.id)
-      appendSSHOutput(session.id, '')
       if (session.status === 'active' && pendingState?.status !== 'active') void transferFor(session.id)?.probe()
       pendingSessionStates.current.delete(session.id)
       if (pendingState) {
@@ -1115,11 +1150,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       if (currentTab.kind === 'sftp' && currentTab.sessionID) await backend.closeSFTPSession(currentTab.sessionID)
       if (currentTab.kind === 'ssh' && currentTab.sessionID) clearSessionLatency(currentTab.sessionID)
       dispatchTabs({ type: 'close', id: currentTab.id })
-      if (currentTab.kind === 'ssh') setSessionOutput((current) => {
-        const next = { ...current }
-        delete next[currentTab.id]
-        return next
-      })
+      if (currentTab.kind === 'ssh') removeTerminalOutput(currentTab.id)
       if (currentTab.kind === 'ssh') clearSessionDirectory(currentTab.id)
       setPendingDisconnect(null)
     })
@@ -1132,7 +1163,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       removedTabs.forEach((tab) => connectionAttempts.current.delete(tab.id))
       const removedTabIDs = new Set(removedTabs.map((tab) => tab.id))
       dispatchTabs({ type: 'drop-profile', profile: item.name })
-      setSessionOutput((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedTabIDs.has(id))))
+      for (const id of removedTabIDs) removeTerminalOutput(id)
       setSessionDirectories((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedTabIDs.has(id))))
       const removedSessionIDs = new Set(removedTabs.flatMap((tab) => tab.sessionID ? [tab.sessionID] : []))
       setSessionLatencies((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedSessionIDs.has(id))))
@@ -1253,7 +1284,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         ) : null}
 
         {workspace.tabs.filter((tab): tab is SFTPTab => tab.kind === 'sftp').map((tab) => <div className="sftp-tab-content" hidden={tab.id !== workspace.activeTabID} key={tab.id}><SFTPPane active={tab.id === workspace.activeTabID} backend={backend} tab={tab} onReconnect={() => void beginSFTPConnection(tab.id, tab.descriptor)} onDisconnect={() => void requestSFTPClose(tab, true)} /></div>)}
-        {activeTab?.kind === 'ssh' ? <SSHView fullscreen={terminalFullscreen.fullscreen} backend={backend} transfer={activeTab.sessionID ? transferStates[activeTab.sessionID] : undefined} onTransferCommand={command => { if (activeTab.sessionID) void transferFor(activeTab.sessionID)?.command(command, data => backend.writeSSHSession(activeTab.sessionID!, data)) }} onCancelTransfer={() => { if (activeTab.sessionID) transferControllers.current.get(activeTab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[activeTab.id] === true} onConnectSFTP={() => void terminalFullscreen.runWindowed(() => connectSFTPFromSSH(activeTab))} currentDirectory={sessionDirectories[activeTab.id] ?? ''} latency={activeTab.sessionID ? sessionLatencies[activeTab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[activeTab.id] === directory ? current : { ...current, [activeTab.id]: directory })} onDisconnect={() => void disconnectTab(activeTab)} onRestart={() => void restartSSHConnection(activeTab)} onReconnect={() => void reconnectTab(activeTab)} output={sessionOutput[activeTab.id] ?? { text: disconnectedMessage, start: 0 }} preferences={bootstrap.preferences} tab={activeTab} /> : null}
+        {workspace.tabs.filter((tab): tab is SSHTab => tab.kind === 'ssh').map(tab => <SSHView key={tab.id} active={tab.id === workspace.activeTabID} fullscreen={terminalFullscreen.fullscreen} backend={backend} transfer={tab.sessionID ? transferStates[tab.sessionID] : undefined} onTransferCommand={command => { if (tab.sessionID) void transferFor(tab.sessionID)?.command(command, data => backend.writeSSHSession(tab.sessionID!, data)) }} onCancelTransfer={() => { if (tab.sessionID) transferControllers.current.get(tab.sessionID)?.cancel() }} canConnectSFTP={sshSFTPSupport[tab.id] === true} onConnectSFTP={() => void terminalFullscreen.runWindowed(() => connectSFTPFromSSH(tab))} currentDirectory={sessionDirectories[tab.id] ?? ''} latency={tab.sessionID ? sessionLatencies[tab.sessionID] : undefined} onCurrentDirectoryChange={(directory) => setSessionDirectories((current) => current[tab.id] === directory ? current : { ...current, [tab.id]: directory })} onDisconnect={() => void disconnectTab(tab)} onRestart={() => void restartSSHConnection(tab)} onReconnect={() => void reconnectTab(tab)} output={outputFor(tab.id)} preferences={bootstrap.preferences} tab={tab} />)}
 
         {activeTab?.kind === 'profiles' ? <section className="full-pane"><PageHeading eyebrow="连接上下文" title="Profile" description="管理 JumpServer 站点和认证状态。"><button className="button primary" onClick={() => setProfileDialog(true)}><Plus />添加 Profile</button></PageHeading><div className="profile-grid">{bootstrap.profiles.map((item) => <article className={item.name === profile ? 'profile-card current' : 'profile-card'} key={item.name}><div className="profile-card-top"><div className="profile-icon"><Layers3 /></div>{item.name === profile ? <span className="badge">使用中</span> : <button className="button secondary small" onClick={() => void run(async () => { await backend.useProfile(item.name); await reloadBootstrap(item.name) })}>启用</button>}</div><h2>{item.name}</h2><dl><div><dt>认证</dt><dd className={item.auth.loggedIn ? 'auth-ok' : 'auth-warn'}>{item.auth.loggedIn ? <><span className="status-dot" />已认证</> : <><ShieldAlert />需要登录</>}</dd></div><div><dt>Server URL</dt><dd className="profile-server-url" title={item.url}><span>{item.url}</span><button aria-label={`复制 ${item.name} Server URL`} className="profile-url-copy" onClick={() => void copyText(item.url)} title="复制 Server URL" type="button"><Copy /></button></dd></div></dl><div className="profile-card-actions">{item.auth.loggedIn ? <><button className="button ghost small" disabled={refreshingProfiles.has(item.name)} onClick={() => void refreshProfileAuth(item.name)}><RefreshCcw className={refreshingProfiles.has(item.name) ? 'spin' : ''} />{refreshingProfiles.has(item.name) ? '刷新中…' : '刷新认证'}</button><button className="button ghost small danger" onClick={() => setPendingProfileLogout(item)}><LogOut />退出</button></> : <button className="button primary small" onClick={() => void run(async () => setLoginAttempt(await backend.startLogin(item.name)))}><LogIn />登录</button>}<button aria-label={`编辑 ${item.name} Profile`} className="button ghost small" onClick={() => setEditingProfile(item)}><Pencil />编辑</button><button aria-label={`删除 ${item.name} Profile`} className="button ghost small danger" onClick={() => setPendingProfileDeletion(item)}><Trash2 />删除</button></div></article>)}{bootstrap.profiles.length === 0 ? <EmptyState title="尚未创建 Profile" action="添加 Profile" onAction={() => setProfileDialog(true)} /> : null}</div></section> : null}
 
@@ -1468,7 +1499,8 @@ function StartPage({ onAction }: { onAction: (action: SingletonTabKind | 'quick'
   </section>
 }
 
-function SSHView({ fullscreen, backend, transfer, onTransferCommand, onCancelTransfer, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onRestart, onReconnect, output, preferences, tab }: {
+function SSHView({ active, fullscreen, backend, transfer, onTransferCommand, onCancelTransfer, canConnectSFTP, onConnectSFTP, currentDirectory, latency, onCurrentDirectoryChange, onDisconnect, onRestart, onReconnect, output, preferences, tab }: {
+  active: boolean
   transfer?: ZmodemState
   onTransferCommand: (command: string) => void
   onCancelTransfer: () => void
@@ -1527,7 +1559,7 @@ function SSHView({ fullscreen, backend, transfer, onTransferCommand, onCancelTra
     : status === 'active' ? `${statusLabel} · 正在检测 JumpServer SSH 网关延迟` : statusLabel
   const showStatusBar = preferences.terminalShowStatusBar && !fullscreen
   const hideToolbar = fullscreen && preferences.terminalFullscreenHideToolbar
-  return <section className={`terminal-panel tab-terminal${showStatusBar ? '' : ' terminal-statusbar-hidden'}${hideToolbar ? ' terminal-toolbar-hidden' : ''}`}>
+  return <section hidden={!active} className={`terminal-panel tab-terminal${showStatusBar ? '' : ' terminal-statusbar-hidden'}${hideToolbar ? ' terminal-toolbar-hidden' : ''}`}>
     <div className="terminal-header" hidden={hideToolbar}>
       <div className="terminal-toolbar">
         <div className="terminal-toolbar-info">
@@ -1553,7 +1585,7 @@ function SSHView({ fullscreen, backend, transfer, onTransferCommand, onCancelTra
       </div>
       <SSHTransferProgress key={session.id} state={transfer} onCancel={onCancelTransfer} />
     </div>
-    <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output.text} outputStart={output.start} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
+    <TerminalBackgroundSurface className="terminal-screen" style={{ backgroundColor: terminalTheme.background, color: terminalTheme.foreground }}><Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}><TerminalPane active={active} backend={backend} transferBusy={transfer?.busy} onActionsChange={setTerminalActions} onCurrentDirectoryChange={onCurrentDirectoryChange} onReconnect={onReconnect} output={output} preferences={preferences} session={session} /></Suspense></TerminalBackgroundSurface>
     {showStatusBar ? <div className="terminal-statusbar"><span>SSH</span><span>xterm-256color</span><span>{tab.connectionStatus}</span>{transfer ? <span className="zmodem-status" role="status">{!transfer.checked ? '无法检测 rz/sz，可在终端手工运行' : !transfer.upload && !transfer.download ? '远程未找到 rz/sz' : 'ZMODEM 可用'}</span> : null}</div> : null}
   </section>
 }
@@ -1946,8 +1978,9 @@ function SettingsView({ backend, fontFamilies, hidden, onLicense, onOpenConfig, 
           </section>
           <TerminalBackgroundSettings backend={backend} preferences={preferences} onChange={terminalBackground => update({ terminalBackground })} />
           <section className="settings-card" id="settings-terminal-behavior">
-            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的鼠标、复制、粘贴与文件下载行为。</p></div></div>
+            <div className="settings-card-title"><SlidersHorizontal /><div><h2>终端行为</h2><p>控制 SSH 终端中的历史保留、鼠标、复制、粘贴与文件下载行为。</p></div></div>
             <div className="terminal-style-fields">
+              <TerminalScrollbackInput value={preferences.terminalScrollbackLines} onChange={terminalScrollbackLines => update({ terminalScrollbackLines })} />
               <div className="terminal-style-row">
                 <div><label htmlFor="terminal-right-click">鼠标右键</label><small className="setting-help" id="terminal-right-click-help">打开上下文菜单后，右键提供复制和粘贴操作。</small></div>
                 <select autoComplete="off" id="terminal-right-click" aria-describedby="terminal-right-click-help" value={preferences.terminalRightClickAction} onChange={(event) => update({ terminalRightClickAction: event.target.value as TerminalRightClickAction })}><option value="paste">粘贴</option><option value="context_menu">打开上下文菜单</option></select>

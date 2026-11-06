@@ -8,6 +8,7 @@ export type TerminalCursorStyle = 'block' | 'bar' | 'underline' | 'quarter_block
 export type TerminalScrollbarVisibility = 'always' | 'active' | 'hidden'
 
 export interface Preferences {
+  terminalScrollbackLines: number
   mcpAutoStart: boolean
   downloadMode: 'ask' | 'automatic' | 'remember' | 'custom'
   downloadDirectory: string
@@ -288,7 +289,7 @@ type GoPreferences = {
   Downloads: { Mode: Preferences['downloadMode']; Directory: string }
   Version: number
   Appearance: { Theme: ThemeMode }
-  Terminal: { Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; ShowStatusBar: boolean; FullscreenHideToolbar: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
+  Terminal: { ScrollbackLines: number; Background: TerminalBackground; FontFamily: string; FontSize: number; ColorScheme: string; LineHeight: number; CursorStyle: TerminalCursorStyle; CursorBlink: boolean; ScrollbarVisibility: TerminalScrollbarVisibility; ShowStatusBar: boolean; FullscreenHideToolbar: boolean; RightClickAction: TerminalRightClickAction; WarnOnMultiLinePaste: boolean; CopyOnEnter: boolean }
   Tabs: { ConfirmCloseActiveSession: boolean; ShowCloseButtons: boolean; NewTabPosition: NewTabPosition }
 }
 
@@ -420,6 +421,7 @@ function toPreferences(value: GoPreferences): Preferences {
     terminalRightClickAction: value.Terminal.RightClickAction,
     terminalWarnOnMultiLinePaste: value.Terminal.WarnOnMultiLinePaste,
     terminalCopyOnEnter: value.Terminal.CopyOnEnter,
+    terminalScrollbackLines: value.Terminal.ScrollbackLines,
     confirmCloseActiveSession: value.Tabs.ConfirmCloseActiveSession,
     showTabCloseButtons: value.Tabs.ShowCloseButtons,
     newTabPosition: value.Tabs.NewTabPosition,
@@ -448,6 +450,7 @@ function fromPreferences(value: Preferences): GoPreferences {
       RightClickAction: value.terminalRightClickAction,
       WarnOnMultiLinePaste: value.terminalWarnOnMultiLinePaste,
       CopyOnEnter: value.terminalCopyOnEnter,
+      ScrollbackLines: value.terminalScrollbackLines,
     },
     Tabs: {
       ConfirmCloseActiveSession: value.confirmCloseActiveSession,

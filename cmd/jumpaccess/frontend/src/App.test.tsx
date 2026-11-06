@@ -11,6 +11,82 @@ import { createPreviewBackend } from './lib/previewBackend'
 import { Sentry, type Session } from 'zmodem.js'
 import { decodeBytes, encodeBytes } from './lib/zmodem'
 
+test('历史保留行数位于终端行为第一项，验证边界并保存 0 和 50000', async () => {
+  const backend = createPreviewBackend()
+  const save = vi.spyOn(backend, 'savePreferences')
+  render(<App backend={backend} />)
+  fireEvent.click(await screen.findByRole('button', { name: '打开设置' }))
+  const input = screen.getByRole('spinbutton', { name: '历史保留行数' })
+  expect(input).toHaveValue(10000)
+  expect(input).toHaveAttribute('min', '0')
+  expect(input).toHaveAttribute('max', '50000')
+  expect(input.compareDocumentPosition(screen.getByLabelText('鼠标右键')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  for (const value of ['-1', '50001', '1.5', '']) {
+    fireEvent.change(input, { target: { value } })
+    fireEvent.blur(input)
+    expect(save).not.toHaveBeenCalled()
+    expect(screen.getByText('请输入 0～50,000 之间的整数。')).toBeVisible()
+  }
+  for (const value of [0, 1, 50000]) {
+    fireEvent.change(input, { target: { value: String(value) } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ terminalScrollbackLines: value })))
+  }
+})
+
+test('历史行数保存失败恢复最近成功值', async () => {
+  const backend = createPreviewBackend()
+  vi.spyOn(backend, 'savePreferences').mockRejectedValue(new Error('无法保存历史行数'))
+  render(<App backend={backend} />)
+  fireEvent.click(await screen.findByRole('button', { name: '打开设置' }))
+  const input = screen.getByRole('spinbutton', { name: '历史保留行数' })
+  fireEvent.change(input, { target: { value: '25000' } })
+  fireEvent.blur(input)
+  await screen.findByText('无法保存历史行数')
+  expect(input).toHaveValue(10000)
+})
+
+test('SSH 切到设置或其他页面后继续消费输出，切回不重建或重放终端', async () => {
+  let output!: (event: SessionOutput) => void
+  const backend = makeBackend({ onSessionOutput: handler => { output = handler; return () => {} } })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalled())
+  act(() => output({ id: 'session-1', data: 'before-switch' }))
+  await waitFor(() => expect(terminalWrites).toContain('before-switch'))
+  await user.click(screen.getByRole('tab', { name: '资产' }))
+  const count = terminalOptions.length
+  terminalWrites.length = 0
+  act(() => output({ id: 'session-1', data: 'background-output' }))
+  await waitFor(() => expect(terminalWrites).toContain('background-output'))
+  terminalWrites.length = 0
+  await user.click(screen.getByRole('tab', { name: /production-web/ }))
+  expect(terminalOptions).toHaveLength(count)
+  expect(terminalWrites).toEqual([])
+})
+
+test('建连返回前的输出等待终端挂载并解析后确认，不被字符缓存截断', async () => {
+  let output!: (event: SessionOutput) => void
+  let connected!: (session: SessionState) => void
+  const acknowledgeSSHOutput = vi.fn().mockResolvedValue(undefined)
+  const backend = makeBackend({
+    acknowledgeSSHOutput,
+    onSessionOutput: handler => { output = handler; return () => {} },
+    startSSHSession: vi.fn(() => new Promise<SessionState>(resolve => { connected = resolve })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await user.click(await screen.findByRole('button', { name: '使用 production-web 连接' }))
+  const data = 'early'.repeat(220000)
+  act(() => output({ id: 'early-session', data, sequence: 1 }))
+  await act(async () => {})
+  expect(acknowledgeSSHOutput).not.toHaveBeenCalled()
+  await act(async () => connected({ id: 'early-session', status: 'active', title: 'prod-web-01', profile: 'production', organization: 'org-1', asset: 'asset-1', account: 'account-1', error: '' }))
+  await waitFor(() => expect(acknowledgeSSHOutput).toHaveBeenCalledWith('early-session', 1))
+  expect(terminalWrites).toContain(data)
+})
+
 test('MCP 自动启动在配置页顶部独立保存，不保存表单草稿或改变运行状态', async () => {
   const backend = createPreviewBackend()
   const save = vi.spyOn(backend, 'savePreferences')
@@ -224,7 +300,7 @@ vi.mock('@xterm/xterm', () => ({
     }
     loadAddon() {}
     open() {}
-    write(value: string) { terminalWrites.push(value) }
+    write(value: string, parsed?: () => void) { terminalWrites.push(value); parsed?.() }
     reset() {}
     focus() {}
     getSelection() { return terminalState.selection }
@@ -271,7 +347,7 @@ const bootstrapState: BootstrapState = {
     terminalColorScheme: 'nord',
     terminalRightClickAction: 'paste',
     terminalWarnOnMultiLinePaste: true,
-    terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '',
+    terminalScrollbackLines: 10000, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '',
     confirmCloseActiveSession: true,
     showTabCloseButtons: true,
     newTabPosition: 'end',

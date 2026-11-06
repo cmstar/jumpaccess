@@ -26,7 +26,7 @@ const preferences: Preferences = {
   terminalScrollbarVisibility: 'active',
   terminalShowStatusBar: true,
   terminalFullscreenHideToolbar: true,
-  terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
+  terminalRightClickAction: 'paste', terminalWarnOnMultiLinePaste: true, terminalScrollbackLines: 10000, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '', confirmCloseActiveSession: true, showTabCloseButtons: true, newTabPosition: 'end',
   mcpAutoStart: false,
 }
 

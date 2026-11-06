@@ -816,6 +816,7 @@ kbd {
 }
 
 .content[hidden],
+.tab-terminal[hidden],
 .settings-page[hidden] {
   display: none;
 }
@@ -2056,7 +2057,9 @@ details > summary::-webkit-details-marker {
 .settings-card .terminal-style-row label,
 .terminal-style-fields .terminal-font-field > label { margin: 0; }
 .settings-card .terminal-style-row select,
+.settings-card #terminal-scrollback-lines,
 .terminal-style-fields .terminal-font-control input { margin-top: 0; }
+.terminal-style-row .terminal-scrollback-error { color: var(--danger); }
 .terminal-style-row > .switch { justify-self: end; }
 .terminal-style-fields .terminal-font-toggle { top: 1px; }
 .terminal-style-fields .terminal-font-field .setting-help { grid-column: 2; margin-top: 0; }

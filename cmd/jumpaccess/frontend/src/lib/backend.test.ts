@@ -38,7 +38,7 @@ test.each(['block', 'bar', 'underline', 'quarter_block'])('Wails 偏好映射双
   }
   const save = vi.fn().mockResolvedValue(undefined)
   Object.assign(preferences.Terminal, { ScrollbarVisibility: 'hidden' })
-  Object.assign(preferences.Terminal, { CopyOnEnter: false })
+  Object.assign(preferences.Terminal, { CopyOnEnter: false, ScrollbackLines: 0 })
   Object.assign(preferences.Terminal, { ShowStatusBar: false, FullscreenHideToolbar: false })
   vi.stubGlobal('go', { main: { desktopApp: { Bootstrap: vi.fn().mockResolvedValue({ preferences }), SavePreferences: save } } })
   const state = await wailsBackend.bootstrap()
@@ -46,6 +46,7 @@ test.each(['block', 'bar', 'underline', 'quarter_block'])('Wails 偏好映射双
   expect(state.preferences.newTabPosition).toBe('after_current')
   expect(state.preferences.mcpAutoStart).toBe(true)
   expect(state.preferences.terminalCopyOnEnter).toBe(false)
+  expect(state.preferences.terminalScrollbackLines).toBe(0)
   expect(state.preferences.terminalShowStatusBar).toBe(false)
   expect(state.preferences.terminalFullscreenHideToolbar).toBe(false)
   expect(state.preferences.downloadMode).toBe('remember')

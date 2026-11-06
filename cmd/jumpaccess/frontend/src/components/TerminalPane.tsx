@@ -8,15 +8,16 @@ import type { Backend, Preferences, SessionState } from '../lib/backend'
 import { synchronizeTerminalViewportBackground } from './terminalViewport'
 import { terminalDisplayOptions } from '../model/terminalTheme'
 import { useTerminalBackground } from './TerminalBackground'
+import type { TerminalOutput } from '../model/terminalOutput'
 
 interface TerminalPaneProps {
+  active?: boolean
   transferBusy?: boolean
   backend: Backend
   onActionsChange?: (actions: TerminalActions | null) => void
   onCurrentDirectoryChange?: (directory: string) => void
   onReconnect?: () => void
-  output: string
-  outputStart?: number
+  output: TerminalOutput
   preferences: Preferences
   session: SessionState
 }
@@ -68,7 +69,7 @@ function currentDirectoryFromOSC7(payload: string): string | undefined {
   }
 }
 
-export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, outputStart = 0, preferences, session, transferBusy = false }: TerminalPaneProps) {
+export function TerminalPane({ active = true, backend, onActionsChange, onCurrentDirectoryChange, onReconnect, output, preferences, session, transferBusy = false }: TerminalPaneProps) {
   const backgroundVisible = !!useTerminalBackground().image
   const paneRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -76,8 +77,11 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const terminalRef = useRef<Terminal | null>(null)
   const initialDisplay = useRef(preferences)
   const fitRef = useRef<(() => void) | null>(null)
-  const writtenRef = useRef(0)
-  const historyReplayRef = useRef(false)
+  const activeRef = useRef(active)
+  activeRef.current = active
+  initialDisplay.current = preferences
+  const sessionIDRef = useRef(session.id)
+  sessionIDRef.current = session.id
   const currentDirectoryRef = useRef('')
   const currentDirectoryChangeRef = useRef(onCurrentDirectoryChange)
   const actionsChangeRef = useRef(onActionsChange)
@@ -93,6 +97,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null)
   const pendingPasteRef = useRef<PendingPaste | null>(null)
   const clipboardReadInFlightRef = useRef(false)
+  const pasteRevisionRef = useRef(0)
   currentDirectoryChangeRef.current = onCurrentDirectoryChange
   actionsChangeRef.current = onActionsChange
   reconnectRef.current = onReconnect
@@ -104,40 +109,42 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
   function closePasteWarning(refocus: boolean) {
     pendingPasteRef.current = null
     setPendingPaste(null)
-    if (refocus) requestAnimationFrame(() => terminalRef.current?.focus())
+    if (refocus) requestAnimationFrame(() => { if (activeRef.current) terminalRef.current?.focus() })
   }
 
   function sendPastedText(text: string, expectedSessionID: string) {
-    if (transferBusyRef.current) return
+    if (!activeRef.current || transferBusyRef.current) return
     const terminal = terminalRef.current
-    if (!terminal || statusRef.current !== 'active' || session.id !== expectedSessionID) return
+    if (!terminal || statusRef.current !== 'active' || sessionIDRef.current !== expectedSessionID) return
     terminal.input(textForTerminalInput(text), true)
     terminal.focus()
   }
 
   async function requestPaste(providedText?: string) {
-    if (transferBusyRef.current) return
+    if (!activeRef.current || transferBusyRef.current) return
     const terminal = terminalRef.current
+    const revision = pasteRevisionRef.current
+    const sessionID = sessionIDRef.current
     const readsClipboard = providedText === undefined
     if (!terminal || statusRef.current !== 'active' || pendingPasteRef.current || (readsClipboard && clipboardReadInFlightRef.current)) return
     if (readsClipboard) clipboardReadInFlightRef.current = true
     let refocus = true
     try {
       const text = providedText ?? await navigator.clipboard?.readText()
-      if (!text || terminalRef.current !== terminal || statusRef.current !== 'active') return
+      if (!text || !activeRef.current || revision !== pasteRevisionRef.current || terminalRef.current !== terminal || statusRef.current !== 'active') return
       if (warnOnMultiLinePasteRef.current && /[\r\n]/.test(text)) {
-        const pending = { sessionID: session.id, text }
+        const pending = { sessionID, text }
         pendingPasteRef.current = pending
         setPendingPaste(pending)
         refocus = false
         return
       }
-      sendPastedText(text, session.id)
+      sendPastedText(text, sessionID)
     } catch {
       // Clipboard access can be denied by the host WebView; leave the terminal unchanged.
     } finally {
       if (readsClipboard) clipboardReadInFlightRef.current = false
-      if (refocus) terminal.focus()
+      if (refocus && activeRef.current && terminalRef.current === terminal) terminal.focus()
     }
   }
 
@@ -164,7 +171,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     } catch {
       // Clipboard access can be denied by the host WebView; leave the selection intact.
     } finally {
-      if (!clearOnSuccess && terminalRef.current === terminal) terminal.focus()
+      if (!clearOnSuccess && activeRef.current && terminalRef.current === terminal) terminal.focus()
     }
   }
 
@@ -173,6 +180,7 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     void requestPaste()
   }
 
+  // 输出流代表一轮连接；断连清空 Session ID 时仍保留已解析历史。
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -182,7 +190,9 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       ...display,
       allowProposedApi: false,
       convertEol: false,
-      scrollback: 10_000,
+      scrollback: initialDisplay.current.terminalScrollbackLines,
+      cols: 120,
+      rows: 34,
     })
     const fit = new TerminalFitAddon()
     terminal.loadAddon(fit)
@@ -221,8 +231,6 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       void requestPaste(text)
     }
     host.addEventListener('paste', onPaste, true)
-    writtenRef.current = 0
-    historyReplayRef.current = true
     currentDirectoryRef.current = ''
     const osc7 = terminal.parser.registerOscHandler(7, (payload) => {
       if (statusRef.current !== 'active') return false
@@ -235,10 +243,11 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       return true
     })
     const fitAndReport = () => {
+      if (!activeRef.current) return
       try {
         fit.fit()
-        if (session.id) {
-          void backend.resizeSSHSession(session.id, terminal.cols, terminal.rows)
+        if (sessionIDRef.current) {
+          void backend.resizeSSHSession(sessionIDRef.current, terminal.cols, terminal.rows)
         }
       } catch {
         // WebView may report a zero-sized host while switching views; the next resize retries.
@@ -294,19 +303,22 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
     })
     const input = terminal.onData((data) => {
       if (transferBusyRef.current) return
-      if (statusRef.current === 'active' && !historyReplayRef.current) void backend.writeSSHSession(session.id, data)
+      if (statusRef.current === 'active' && sessionIDRef.current) void backend.writeSSHSession(sessionIDRef.current, data)
     })
     const resized = terminal.onResize(({ cols, rows }) => {
-      if (session.id) void backend.resizeSSHSession(session.id, cols, rows)
+      if (sessionIDRef.current) void backend.resizeSSHSession(sessionIDRef.current, cols, rows)
     })
     const observer = new ResizeObserver(fitAndReport)
     fitRef.current = fitAndReport
     observer.observe(host)
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       fitAndReport()
-      terminal.focus()
+      if (activeRef.current) terminal.focus()
     })
+    const unsubscribeOutput = output.subscribe((data, parsed) => terminal.write(data, parsed))
     return () => {
+      cancelAnimationFrame(frame)
+      unsubscribeOutput()
       observer.disconnect()
       host.removeEventListener('contextmenu', onContextMenu)
       host.removeEventListener('paste', onPaste, true)
@@ -322,9 +334,25 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       fitRef.current = null
       actionsChangeRef.current?.(null)
       pendingPasteRef.current = null
-      historyReplayRef.current = false
     }
-  }, [backend, session.id])
+  }, [backend, output])
+
+  useEffect(() => {
+    pasteRevisionRef.current++
+    setContextMenu(null)
+    closePasteWarning(false)
+    if (!active) return
+    const frame = requestAnimationFrame(() => {
+      fitRef.current?.()
+      terminalRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [active, session.id, output])
+
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.scrollback = preferences.terminalScrollbackLines
+    fitRef.current?.()
+  }, [preferences.terminalScrollbackLines])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -366,26 +394,6 @@ export function TerminalPane({ backend, onActionsChange, onCurrentDirectoryChang
       window.removeEventListener('blur', dismissOnBlur)
     }
   }, [contextMenu])
-
-  useEffect(() => {
-    const terminal = terminalRef.current
-    if (!terminal) return
-    const end = outputStart + output.length
-    if (end < writtenRef.current) {
-      terminal.reset()
-      writtenRef.current = 0
-      historyReplayRef.current = true
-    }
-    const next = output.slice(Math.max(0, writtenRef.current - outputStart))
-    if (next) {
-      terminal.write(next, () => {
-        if (terminalRef.current === terminal) historyReplayRef.current = false
-      })
-    } else {
-      historyReplayRef.current = false
-    }
-    writtenRef.current = end
-  }, [output, outputStart, session.id])
 
   const hasSelection = terminalRef.current?.hasSelection() ?? false
   const canPaste = session.status === 'active'

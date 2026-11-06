@@ -3,6 +3,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { TerminalPane } from './TerminalPane'
+import { TerminalOutput } from '../model/terminalOutput'
+
+const outputs = new Map<string, TerminalOutput>()
+function outputOf(text: string) {
+  let output = outputs.get(text)
+  if (!output) { output = new TerminalOutput(); output.write(text); outputs.set(text, output) }
+  return output
+}
 import { TerminalBackgroundProvider } from './TerminalBackground'
 import type { Backend, Preferences, SessionState } from '../lib/backend'
 
@@ -66,18 +74,6 @@ vi.mock('@xterm/xterm', () => ({
   },
 }))
 
-test('历史窗口移动超过一整段缓存时继续显示保留尾部，不重建终端', () => {
-  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
-  const { rerender } = render(<TerminalPane backend={backend} output="abcd" outputStart={0} preferences={preferences} session={activeSession} />)
-  const instances = terminalMock.instances
-  terminalMock.writes.length = 0
-  rerender(<TerminalPane backend={backend} output="wxyz" outputStart={20} preferences={preferences} session={activeSession} />)
-  expect(terminalMock.writes).toEqual(['wxyz'])
-  rerender(<TerminalPane backend={backend} output="wxyz" outputStart={24} preferences={preferences} session={activeSession} />)
-  expect(terminalMock.writes).toEqual(['wxyz', 'wxyz'])
-  expect(terminalMock.instances).toBe(instances)
-})
-
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit() {}
@@ -99,7 +95,7 @@ const preferences: Preferences = {
   terminalColorScheme: 'nord',
   terminalRightClickAction: 'paste',
   terminalWarnOnMultiLinePaste: true,
-  terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '',
+  terminalScrollbackLines: 10000, terminalCopyOnEnter: true, downloadMode: 'ask', downloadDirectory: '',
   confirmCloseActiveSession: true,
   showTabCloseButtons: true,
   newTabPosition: 'end',
@@ -136,7 +132,7 @@ function setupEnterCopy(session = activeSession, transferBusy = false) {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
   const onReconnect = vi.fn()
   const onActionsChange = vi.fn()
-  const view = (enabled: boolean) => <TerminalPane backend={backend} onReconnect={onReconnect} onActionsChange={onActionsChange} output="" preferences={{ ...preferences, terminalCopyOnEnter: enabled }} session={session} transferBusy={transferBusy} />
+  const view = (enabled: boolean) => <TerminalPane backend={backend} onReconnect={onReconnect} onActionsChange={onActionsChange} output={outputOf("")} preferences={{ ...preferences, terminalCopyOnEnter: enabled }} session={session} transferBusy={transferBusy} />
   const rendered = render(view(true))
   return { ...rendered, view, backend, writeText, onReconnect, onActionsChange }
 }
@@ -269,7 +265,7 @@ test('启用和关闭背景图不重建终端，保留选区及输入通道', as
   vi.stubGlobal('Image', class { naturalWidth = 100; naturalHeight = 100; src = ''; onerror = null; set onload(value: (() => void) | null) { loaded = value } })
   try {
     const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined), readTerminalBackground: vi.fn().mockResolvedValue('data:image/png;base64,test') } as unknown as Backend
-    const view = (enabled: boolean) => <TerminalBackgroundProvider backend={backend} settings={{ ...defaultTerminalBackground, enabled, filePath: 'a.png' }}><TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} /></TerminalBackgroundProvider>
+    const view = (enabled: boolean) => <TerminalBackgroundProvider backend={backend} settings={{ ...defaultTerminalBackground, enabled, filePath: 'a.png' }}><TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} /></TerminalBackgroundProvider>
     const { rerender } = render(view(false))
     terminalMock.selection = '保留选区'
     rerender(view(true))
@@ -288,7 +284,7 @@ test('启用和关闭背景图不重建终端，保留选区及输入通道', as
 
 test('滚动条开关即时生效，保留终端历史、选区及输入通道', () => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
-  const view = (terminalScrollbarVisibility: 'always' | 'active' | 'hidden') => <TerminalPane backend={backend} output="history" preferences={{ ...preferences, terminalScrollbarVisibility }} session={activeSession} />
+  const view = (terminalScrollbarVisibility: 'always' | 'active' | 'hidden') => <TerminalPane backend={backend} output={outputOf("history")} preferences={{ ...preferences, terminalScrollbarVisibility }} session={activeSession} />
   const { rerender } = render(view('active'))
   const host = screen.getByLabelText('production-web SSH 终端')
   expect(host).toHaveAttribute('data-terminal-scrollbar-visibility', 'active')
@@ -311,15 +307,17 @@ test('滚动条开关即时生效，保留终端历史、选区及输入通道',
 
 test('ZMODEM 传输期间暂停终端输入，完成后恢复', () => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
-  const { rerender } = render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} transferBusy />)
+  const { rerender } = render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} transferBusy />)
   act(() => terminalMock.dataHandler?.('x'))
   expect(backend.writeSSHSession).not.toHaveBeenCalled()
-  rerender(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} transferBusy={false} />)
+  rerender(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} transferBusy={false} />)
   act(() => terminalMock.dataHandler?.('pwd\r'))
   expect(backend.writeSSHSession).toHaveBeenCalledWith('session-1', 'pwd\r')
 })
 
 beforeEach(() => {
+  for (const output of outputs.values()) output.dispose()
+  outputs.clear()
   terminalMock.dataHandler = undefined
   terminalMock.keyHandler = undefined
   terminalMock.instances = 0
@@ -340,7 +338,7 @@ test.each([
   ["'0xProto Nerd Font Mono'", "'0xProto Nerd Font Mono'"],
 ])('SSH 使用字体配置 %s 初始化并原地更新字体，保留输出和选区', (terminalFontFamily, expected) => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
-  const view = (font: string) => <TerminalPane backend={backend} output="history" preferences={{ ...preferences, terminalFontFamily: font }} session={activeSession} />
+  const view = (font: string) => <TerminalPane backend={backend} output={outputOf("history")} preferences={{ ...preferences, terminalFontFamily: font }} session={activeSession} />
   const { rerender } = render(view(terminalFontFamily))
   expect(terminalMock.options?.fontFamily).toBe(expected)
   const instances = terminalMock.instances
@@ -358,16 +356,16 @@ test.each([
 test('配色和字体即时更新且保留终端选区，外围主题不改变终端配色', () => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
   const initial = { ...preferences, terminalColorScheme: 'nord' }
-  const { rerender } = render(<TerminalPane backend={backend} output="history" preferences={initial} session={activeSession} />)
+  const { rerender } = render(<TerminalPane backend={backend} output={outputOf("history")} preferences={initial} session={activeSession} />)
   const instances = terminalMock.instances
   terminalMock.selection = 'history'
   const changed = { ...initial, terminalColorScheme: 'catppuccin-latte', terminalFontFamily: 'Consolas', terminalFontSize: 18 }
-  rerender(<TerminalPane backend={backend} output="history" preferences={changed} session={activeSession} />)
+  rerender(<TerminalPane backend={backend} output={outputOf("history")} preferences={changed} session={activeSession} />)
   expect(terminalMock.instances).toBe(instances)
   expect(terminalMock.options).toMatchObject({ fontFamily: 'Consolas', fontSize: 18, theme: { background: '#eff1f5', red: '#d20f39' } })
   expect(terminalMock.selection).toBe('history')
   expect(screen.getByLabelText('production-web SSH 终端')).toHaveStyle({ backgroundColor: '#eff1f5' })
-  rerender(<TerminalPane backend={backend} output="history" preferences={{ ...changed, theme: 'dark' }} session={activeSession} />)
+  rerender(<TerminalPane backend={backend} output={outputOf("history")} preferences={{ ...changed, theme: 'dark' }} session={activeSession} />)
   expect(terminalMock.instances).toBe(instances)
   expect(terminalMock.options?.theme?.background).toBe('#eff1f5')
 })
@@ -379,13 +377,13 @@ test.each([
   { change: { terminalCursorBlink: false }, expected: { cursorBlink: false } },
 ])('行高和光标设置 $change 即时更新，不重建终端且重新报告尺寸', ({ change, expected }) => {
   const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
-  const { rerender } = render(<TerminalPane backend={backend} output="history" preferences={preferences} session={activeSession} />)
+  const { rerender } = render(<TerminalPane backend={backend} output={outputOf("history")} preferences={preferences} session={activeSession} />)
   const instances = terminalMock.instances
   const writes = terminalMock.writeCallbacks.length
   terminalMock.selection = 'history'
   vi.mocked(backend.resizeSSHSession).mockClear()
   const changed = { ...preferences, ...change }
-  rerender(<TerminalPane backend={backend} output="history" preferences={changed} session={activeSession} />)
+  rerender(<TerminalPane backend={backend} output={outputOf("history")} preferences={changed} session={activeSession} />)
   expect(terminalMock.options).toMatchObject(expected)
   expect(screen.getByLabelText('production-web SSH 终端')).toHaveAttribute('data-terminal-cursor-style', changed.terminalCursorStyle)
   expect(terminalMock.instances).toBe(instances)
@@ -404,7 +402,7 @@ test('终端动作随选区变化并复用复制粘贴实现', async () => {
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
 
-  render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+  render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output={outputOf("")} preferences={preferences} session={activeSession} />)
   expect(onActionsChange.mock.calls.at(-1)?.[0]?.canCopy).toBe(false)
 
   terminalMock.selection = 'selected output'
@@ -428,7 +426,7 @@ test('Ctrl + Insert 和 Shift + Insert 调用终端复制粘贴', async () => {
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
-  render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+  render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} />)
 
   const copy = new KeyboardEvent('keydown', { key: 'Insert', ctrlKey: true, cancelable: true })
   const paste = new KeyboardEvent('keydown', { key: 'Insert', shiftKey: true, cancelable: true })
@@ -452,7 +450,7 @@ test('默认右键读取剪贴板并通过终端粘贴', async () => {
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
 
-  render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+  render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} />)
   fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
 
   await waitFor(() => expect(terminalMock.inputs).toEqual(['printf hello']))
@@ -469,7 +467,7 @@ test('多行或末尾换行的粘贴默认显示预览，确认后才按普通�
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
 
-  render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+  render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output={outputOf("")} preferences={preferences} session={activeSession} />)
   await onActionsChange.mock.calls.at(-1)?.[0].paste()
 
   const dialog = await screen.findByRole('dialog', { name: '多行粘贴警告' })
@@ -493,13 +491,13 @@ test('取消多行粘贴不会写入终端，关闭警告后则直接发送', as
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
-  const { rerender } = render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+  const { rerender } = render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output={outputOf("")} preferences={preferences} session={activeSession} />)
 
   await onActionsChange.mock.calls.at(-1)?.[0].paste()
   fireEvent.click(await screen.findByRole('button', { name: '取消' }))
   expect(terminalMock.inputs).toEqual([])
 
-  rerender(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={{ ...preferences, terminalWarnOnMultiLinePaste: false }} session={activeSession} />)
+  rerender(<TerminalPane backend={backend} onActionsChange={onActionsChange} output={outputOf("")} preferences={{ ...preferences, terminalWarnOnMultiLinePaste: false }} session={activeSession} />)
   await onActionsChange.mock.calls.at(-1)?.[0].paste()
   await waitFor(() => expect(terminalMock.inputs).toEqual(['echo first\recho second']))
   expect(screen.queryByRole('dialog', { name: '多行粘贴警告' })).not.toBeInTheDocument()
@@ -511,7 +509,7 @@ test('终端原生 paste 事件也经过多行警告', async () => {
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
-  render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+  render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} />)
 
   fireEvent.paste(screen.getByLabelText('production-web SSH 终端'), {
     clipboardData: { getData: () => 'first\nsecond' },
@@ -529,11 +527,11 @@ test('等待确认时断开 Session 会取消粘贴', async () => {
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
-  const { rerender } = render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={activeSession} />)
+  const { rerender } = render(<TerminalPane backend={backend} onActionsChange={onActionsChange} output={outputOf("")} preferences={preferences} session={activeSession} />)
 
   await onActionsChange.mock.calls.at(-1)?.[0].paste()
   expect(await screen.findByRole('dialog', { name: '多行粘贴警告' })).toBeInTheDocument()
-  rerender(<TerminalPane backend={backend} onActionsChange={onActionsChange} output="" preferences={preferences} session={disconnectedSession} />)
+  rerender(<TerminalPane backend={backend} onActionsChange={onActionsChange} output={outputOf("")} preferences={preferences} session={disconnectedSession} />)
 
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '多行粘贴警告' })).not.toBeInTheDocument())
   expect(terminalMock.inputs).toEqual([])
@@ -550,14 +548,14 @@ test('上下文菜单按选区和连接状态提供复制、粘贴', async () =>
   } as unknown as Backend
   const menuPreferences = { ...preferences, terminalRightClickAction: 'context_menu' as const }
 
-  const { rerender } = render(<TerminalPane backend={backend} output="" preferences={menuPreferences} session={activeSession} />)
+  const { rerender } = render(<TerminalPane backend={backend} output={outputOf("")} preferences={menuPreferences} session={activeSession} />)
   fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
   expect(screen.getByRole('menuitem', { name: '复制' })).toBeEnabled()
   expect(screen.getByRole('menuitem', { name: '粘贴' })).toBeEnabled()
   fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('selected output'))
 
-  rerender(<TerminalPane backend={backend} output="" preferences={menuPreferences} session={disconnectedSession} />)
+  rerender(<TerminalPane backend={backend} output={outputOf("")} preferences={menuPreferences} session={disconnectedSession} />)
   fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
   expect(screen.getByRole('menuitem', { name: '复制' })).toBeEnabled()
   expect(screen.getByRole('menuitem', { name: '粘贴' })).toBeDisabled()
@@ -568,9 +566,9 @@ test('切换右键行为即时生效且不重建终端', () => {
     writeSSHSession: vi.fn().mockResolvedValue(undefined),
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
-  const { rerender } = render(<TerminalPane backend={backend} output="" preferences={preferences} session={activeSession} />)
+  const { rerender } = render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={activeSession} />)
 
-  rerender(<TerminalPane backend={backend} output="" preferences={{ ...preferences, terminalRightClickAction: 'context_menu' }} session={activeSession} />)
+  rerender(<TerminalPane backend={backend} output={outputOf("")} preferences={{ ...preferences, terminalRightClickAction: 'context_menu' }} session={activeSession} />)
   fireEvent.contextMenu(screen.getByLabelText('production-web SSH 终端'))
 
   expect(screen.getByRole('menuitem', { name: '复制' })).toBeDisabled()
@@ -583,7 +581,7 @@ test('终端字号保持设置值，不跟随应用 UI 字体缩放', () => {
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
 
-  render(<TerminalPane backend={backend} output="" preferences={preferences} session={disconnectedSession} />)
+  render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={disconnectedSession} />)
 
   expect(terminalMock.options).toMatchObject({ fontFamily: 'JetBrains Mono', fontSize: 12 })
 })
@@ -595,7 +593,7 @@ test('SSH 断开后不再把普通字符写入旧 Session', () => {
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
 
-  render(<TerminalPane backend={backend} output="" preferences={preferences} session={disconnectedSession} />)
+  render(<TerminalPane backend={backend} output={outputOf("")} preferences={preferences} session={disconnectedSession} />)
   act(() => terminalMock.dataHandler?.('x'))
 
   expect(writeSSHSession).not.toHaveBeenCalled()
@@ -608,7 +606,7 @@ test('SSH 断开后仅由无修饰键的 Enter 触发重连', () => {
     resizeSSHSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as Backend
 
-  render(<TerminalPane backend={backend} onReconnect={onReconnect} output="" preferences={preferences} session={disconnectedSession} />)
+  render(<TerminalPane backend={backend} onReconnect={onReconnect} output={outputOf("")} preferences={preferences} session={disconnectedSession} />)
 
   expect(terminalMock.keyHandler).toBeDefined()
   expect(terminalMock.keyHandler?.(new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(false)
@@ -630,7 +628,7 @@ test('恢复的断连 Tab 没有 Session ID 时不发送 resize', () => {
 
   render(<TerminalPane
     backend={backend}
-    output=""
+    output={outputOf("")}
     preferences={preferences}
     session={{ ...disconnectedSession, id: '' }}
   />)
@@ -648,7 +646,7 @@ test('连接建立期间也向远端同步最新终端尺寸', () => {
 
   render(<TerminalPane
     backend={backend}
-    output=""
+    output={outputOf("")}
     preferences={preferences}
     session={{ ...disconnectedSession, status: 'connecting' }}
   />)
@@ -667,7 +665,7 @@ test('OSC 7 上报有效远程目录时只通知一次实际变化', () => {
   render(<TerminalPane
     backend={backend}
     onCurrentDirectoryChange={onCurrentDirectoryChange}
-    output=""
+    output={outputOf("")}
     preferences={preferences}
     session={activeSession}
   />)
@@ -693,7 +691,7 @@ test('OSC 7 拒绝非文件 URI、相对路径和控制字符', () => {
   render(<TerminalPane
     backend={backend}
     onCurrentDirectoryChange={onCurrentDirectoryChange}
-    output=""
+    output={outputOf("")}
     preferences={preferences}
     session={activeSession}
   />)
@@ -708,27 +706,40 @@ test('OSC 7 拒绝非文件 URI、相对路径和控制字符', () => {
   expect(onCurrentDirectoryChange).not.toHaveBeenCalled()
 })
 
-test('重放终端历史时不把协议响应写回 SSH，完成后恢复正常输入', () => {
+test('实时输出的协议响应正常发送，切换活跃状态不重放输出', () => {
   const writeSSHSession = vi.fn().mockResolvedValue(undefined)
-  const backend = {
-    writeSSHSession,
-    resizeSSHSession: vi.fn().mockResolvedValue(undefined),
-  } as unknown as Backend
+  const backend = { writeSSHSession, resizeSSHSession: vi.fn().mockResolvedValue(undefined) } as unknown as Backend
   terminalMock.writeResponse = '\x1b[>0;276;0c'
-
-  render(<TerminalPane
-    backend={backend}
-    output="\x1b[>c"
-    preferences={preferences}
-    session={activeSession}
-  />)
-
-  expect(writeSSHSession).not.toHaveBeenCalled()
-  expect(terminalMock.writeCallbacks).toHaveLength(1)
-
-  act(() => terminalMock.writeCallbacks[0]())
-  act(() => terminalMock.dataHandler?.('pwd\r'))
-
+  const output = new TerminalOutput()
+  const view = (active: boolean) => <TerminalPane active={active} backend={backend} output={output} preferences={preferences} session={activeSession} />
+  const { rerender } = render(view(true))
+  act(() => output.write('\x1b[>c'))
   expect(writeSSHSession).toHaveBeenCalledOnce()
-  expect(writeSSHSession).toHaveBeenCalledWith('session-1', 'pwd\r')
+  expect(writeSSHSession).toHaveBeenCalledWith('session-1', terminalMock.writeResponse)
+  rerender(view(false))
+  rerender(view(true))
+  expect(writeSSHSession).toHaveBeenCalledOnce()
+  expect(terminalMock.instances).toBe(1)
+})
+
+test('切走 Tab 后关闭粘贴确认并忽略迟到的剪贴板读取，不向后台会话输入', async () => {
+  let resolve!: (value: string) => void
+  const readText = vi.fn().mockResolvedValueOnce('a\nb').mockImplementationOnce(() => new Promise<string>(done => { resolve = done }))
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText } })
+  const backend = { resizeSSHSession: vi.fn().mockResolvedValue(undefined), writeSSHSession: vi.fn() } as unknown as Backend
+  const onActionsChange = vi.fn()
+  const output = new TerminalOutput()
+  const view = (active: boolean) => <TerminalPane active={active} backend={backend} onActionsChange={onActionsChange} output={output} preferences={preferences} session={activeSession} />
+  const { rerender } = render(view(true))
+  await act(async () => onActionsChange.mock.calls.at(-1)![0].paste())
+  expect(screen.getByRole('dialog', { name: '多行粘贴警告' })).toBeInTheDocument()
+  rerender(view(false))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  rerender(view(true))
+  let paste!: Promise<void>
+  act(() => { paste = onActionsChange.mock.calls.at(-1)![0].paste() })
+  rerender(view(false))
+  await act(async () => { resolve('late\ntext'); await paste })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(terminalMock.inputs).toEqual([])
 })
