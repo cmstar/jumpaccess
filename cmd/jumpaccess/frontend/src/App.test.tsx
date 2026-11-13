@@ -1536,6 +1536,9 @@ test('在资产行内纵向展示全部 Alias，并分别绑定账号和连接',
   await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledWith(expect.objectContaining({
     profile: 'production', organization: 'org-1', target: 'production-web', account: 'account-2',
   })))
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const quick = within(await screen.findByRole('dialog', { name: '快速连接' }))
+  expect(quick.getByText('production-web').closest('[role="row"]')).toHaveTextContent('（ops）')
 })
 
 test('已有 Alias 的资产仍可从更多操作菜单继续创建', async () => {
@@ -1573,6 +1576,10 @@ test('删除 Alias 使用应用内确认对话框', async () => {
     await user.click(within(dialog).getByRole('button', { name: '确认删除 production-web' }))
     await waitFor(() => expect(backend.deleteAlias).toHaveBeenCalledWith('production', 'production-web'))
     expect(within(row).queryByText('production-web')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '新建连接' }))
+    const quick = within(await screen.findByRole('dialog', { name: '快速连接' }))
+    expect(quick.queryByText('production-web')).not.toBeInTheDocument()
+    expect(quick.getByText('web-any')).toBeInTheDocument()
   } finally {
     systemConfirm.mockRestore()
   }
@@ -1626,6 +1633,10 @@ test('编辑 Alias 名称时保留资产和默认账号', async () => {
   expect(within(row).getByText('primary-web')).toBeInTheDocument()
   expect(within(row).getByLabelText('primary-web 默认账号')).toHaveDisplayValue('deploy')
   expect(within(row).getByText('web-any')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const quick = within(await screen.findByRole('dialog', { name: '快速连接' }))
+  expect(quick.getByText('primary-web')).toBeInTheDocument()
+  expect(quick.queryByText('production-web')).not.toBeInTheDocument()
 })
 
 test('点击资产行的 Alias 区域会打开详情，但操作控件不会切换资产', async () => {
@@ -2609,6 +2620,78 @@ test('快速连接复用资产页已有数据并在本地筛选', async () => {
   expect(backend.quickSearch).not.toHaveBeenCalled()
 })
 
+test.each(['搜索命中', '搜索无结果', 'Alias 筛选'])('快速连接搜索全部已加载资产，不受资产页%s影响', async (filter) => {
+  const secondAsset = { ...assetPage.results[0], id: 'asset-2', name: 'database', address: '10.0.0.2', aliases: [] }
+  const allAssets = [...assetPage.results, secondAsset]
+  const backend = makeBackend({
+    listAssets: vi.fn(async ({ search }) => {
+      const results = search === 'missing' ? [] : search ? assetPage.results : allAssets
+      return { ...assetPage, count: results.length, results }
+    }),
+    getAsset: vi.fn(async ({ asset }) => ({ ...assetDetail, ...allAssets.find(item => item.id === asset) })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-2')
+  const assetSearch = screen.getByRole('searchbox', { name: '搜索资产或 Alias' })
+  if (filter === 'Alias 筛选') {
+    await user.click(screen.getByRole('button', { name: '筛选' }))
+    await user.click(screen.getByRole('radio', { name: '已有 Alias' }))
+  } else {
+    await user.type(assetSearch, filter === '搜索无结果' ? 'missing' : 'prod')
+  }
+  await waitFor(() => expect(screen.queryByTestId('asset-row-asset-2')).not.toBeInTheDocument())
+  const listCalls = vi.mocked(backend.listAssets).mock.calls.length
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '快速连接' }))
+  const quickSearch = dialog.getByPlaceholderText('名称、地址、Asset ID 或 Alias')
+  for (const query of ['database', '10.0.0.2', 'asset-2']) {
+    await user.clear(quickSearch)
+    await user.type(quickSearch, query)
+    expect(await dialog.findByText('database')).toBeInTheDocument()
+  }
+  await user.clear(quickSearch)
+  await user.type(quickSearch, 'production-web')
+  expect(await dialog.findByText('production-web')).toBeInTheDocument()
+  expect(dialog.queryByText('web-any')).not.toBeInTheDocument()
+  expect(backend.quickSearch).not.toHaveBeenCalled()
+  expect(backend.listAssets).toHaveBeenCalledTimes(listCalls)
+  await user.click(dialog.getByRole('button', { name: '关闭' }))
+  expect(assetSearch).toHaveValue(filter === 'Alias 筛选' ? '' : filter === '搜索无结果' ? 'missing' : 'prod')
+  expect(screen.queryByTestId('asset-row-asset-2')).not.toBeInTheDocument()
+})
+
+test('快速连接搜索已加载的各页资产，并可连接当前页以外的别名', async () => {
+  const results = Array.from({ length: 101 }, (_, index) => ({
+    ...assetPage.results[0], id: `asset-${index + 1}`, name: `server-${index + 1}`,
+    aliases: index === 0 ? assetPage.results[0].aliases : [],
+  }))
+  const backend = makeBackend({
+    listAssets: vi.fn(async ({ offset, limit }) => ({
+      ...assetPage, count: results.length, offset, limit, results: results.slice(offset, offset + limit),
+    })),
+    getAsset: vi.fn(async ({ asset }) => ({ ...assetDetail, ...results.find(item => item.id === asset) })),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByText('1–100 / 101')
+  await user.click(screen.getByRole('button', { name: '下一页' }))
+  await screen.findByText('101–101 / 101')
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '快速连接' }))
+  const quickSearch = dialog.getByPlaceholderText('名称、地址、Asset ID 或 Alias')
+  await user.type(quickSearch, 'server-101')
+  expect(await dialog.findByText('server-101')).toBeInTheDocument()
+  await user.clear(quickSearch)
+  await user.type(quickSearch, 'production-web')
+  expect(await dialog.findByText('production-web')).toBeInTheDocument()
+  await user.keyboard('{Enter}')
+  await waitFor(() => expect(backend.startSSHSession).toHaveBeenCalledWith(expect.objectContaining({
+    target: 'production-web', profile: 'production', organization: 'org-1', account: 'account-1',
+  })))
+  expect(backend.quickSearch).not.toHaveBeenCalled()
+})
+
 test('资产页没有数据时快速连接才请求 API', async () => {
   const emptyPage: AssetPage = { ...assetPage, count: 0, aliasCount: 0, results: [] }
   const backend = makeBackend({
@@ -2626,6 +2709,37 @@ test('资产页没有数据时快速连接才请求 API', async () => {
   expect(backend.quickSearch).toHaveBeenCalledWith({
     profile: 'production', organization: 'org-1', query: '', limit: 20,
   })
+})
+
+test.each(['Profile', 'Organization'])('快速连接在切换 %s 后清空已加载资产', async (context) => {
+  let finishReload!: (state: BootstrapState) => void
+  const initialState = { ...bootstrapState, profiles: [...bootstrapState.profiles, { ...bootstrapState.profiles[0], name: 'staging' }] }
+  const nextProfile = context === 'Profile' ? 'staging' : 'production'
+  const nextOrganization = context === 'Organization' ? 'org-2' : 'org-1'
+  const backend = makeBackend({
+    bootstrap: vi.fn().mockResolvedValueOnce(initialState).mockImplementation(() => new Promise(resolve => { finishReload = resolve })),
+    listOrganizations: vi.fn().mockResolvedValue([{ id: 'org-1', name: '研发中心' }, { id: 'org-2', name: '测试中心' }]),
+    listAssets: vi.fn(async ({ profile, organization }) => profile === 'production' && organization === 'org-1'
+      ? assetPage : { ...assetPage, count: 0, results: [] }),
+    quickSearch: vi.fn().mockResolvedValue([]),
+  })
+  const user = userEvent.setup()
+  render(<App backend={backend} />)
+  await screen.findByTestId('asset-row-asset-1')
+  await user.type(screen.getByRole('searchbox', { name: '搜索资产或 Alias' }), 'prod')
+  await waitFor(() => expect(backend.listAssets).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'prod' })))
+  await user.click(screen.getByRole('button', { name: context === 'Profile' ? '当前 Profile：production' : '当前 Organization：研发中心' }))
+  await user.click(screen.getByRole('option', { name: context === 'Profile' ? 'staging' : '测试中心' }))
+  await waitFor(() => expect(backend.bootstrap).toHaveBeenCalledTimes(2))
+  await act(async () => finishReload({
+    ...initialState, currentProfile: nextProfile, currentOrganization: nextOrganization,
+    profiles: initialState.profiles.map(item => item.name === nextProfile ? { ...item, organization: nextOrganization } : item),
+  }))
+  await waitFor(() => expect(backend.listAssets).toHaveBeenLastCalledWith(expect.objectContaining({ profile: nextProfile, organization: nextOrganization })))
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const quick = within(await screen.findByRole('dialog', { name: '快速连接' }))
+  expect(quick.queryByText('production-web')).not.toBeInTheDocument()
+  await waitFor(() => expect(backend.quickSearch).toHaveBeenCalledWith(expect.objectContaining({ profile: nextProfile, organization: nextOrganization })))
 })
 
 test('旧 Profile 的快速搜索迟到结果不能覆盖新 Profile', async () => {
@@ -2677,6 +2791,9 @@ test('创建 Alias 后局部更新并保留已有账号显示缓存', async () =
   expect(within(screen.getByRole('complementary', { name: '资产详情' })).getByText('new-alias')).toBeInTheDocument()
   expect(screen.getByLabelText('production-web 默认账号')).toHaveDisplayValue('deploy')
   expect(backend.listAssets).toHaveBeenCalledTimes(callsBeforeCreate)
+  await user.click(screen.getByRole('button', { name: '新建连接' }))
+  const quick = within(await screen.findByRole('dialog', { name: '快速连接' }))
+  expect(quick.getByText('new-alias').closest('[role="row"]')).toHaveTextContent('（ops）')
 })
 
 test('资产请求自动续期后同步 Profile 图标状态并仅在悬停提示显示到期时间', async () => {

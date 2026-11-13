@@ -325,6 +325,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   const [organizationRefreshKey, setOrganizationRefreshKey] = useState(0)
   const [organizationsLoading, setOrganizationsLoading] = useState(false)
   const [assets, setAssets] = useState<AssetPage>({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+  const [loadedAssets, setLoadedAssets] = useState<Asset[]>([])
   const [details, setDetails] = useState<Record<string, AssetDetail>>({})
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
   const detailContext = useRef('')
@@ -456,10 +457,10 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     return true
   }), [aliasFilter, assets.results])
   const localQuickResults = useMemo(
-    () => filterQuickAssets(assets.results, quickQuery),
-    [assets.results, quickQuery],
+    () => filterQuickAssets(loadedAssets, quickQuery),
+    [loadedAssets, quickQuery],
   )
-  const displayedQuickResults = assets.results.length > 0 ? localQuickResults : quickResults
+  const displayedQuickResults = loadedAssets.length > 0 ? localQuickResults : quickResults
 
   function dispatchTabs(action: TabAction) {
     const next = reduceTabs(workspaceRef.current, action, bootstrap?.preferences.newTabPosition)
@@ -635,6 +636,8 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   useEffect(() => {
     if (!profile || !organization || !currentProfileLoggedIn) {
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setLoadedAssets([])
+      setQuickResults([])
       setRefreshing(false)
       return
     }
@@ -645,6 +648,10 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       .then(async (page) => {
         if (cancelled) return
         setAssets(page)
+        // 搜索和翻页只改变资产页视图，快速连接保留当前上下文已加载的资产。
+        setLoadedAssets((current) => !debouncedSearch && offset === 0 && page.results.length >= page.count
+          ? page.results
+          : [...new Map([...current, ...page.results].map((asset) => [asset.id, asset])).values()])
         setLastSynced(new Date())
         setSelectedAssetID((current) => page.results.some((asset) => asset.id === current) ? current : (page.results[0]?.id ?? ''))
         await syncProfileAuth(profile)
@@ -664,7 +671,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
 
   useEffect(() => {
     if (!profile || !organization || !currentProfileLoggedIn) return
-    const wanted = [...new Map([...assets.results, ...(quickOpen ? quickResults : [])].map((asset) => [asset.id, asset])).values()].filter((asset) => !details[asset.id])
+    const wanted = [...new Map([...assets.results, ...(quickOpen ? displayedQuickResults : [])].map((asset) => [asset.id, asset])).values()].filter((asset) => !details[asset.id])
     if (!wanted.length) return
     let cancelled = false
     const context = `${profile}\0${organization}`
@@ -690,7 +697,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         })
       })
     return () => { cancelled = true }
-  }, [backend, currentProfileLoggedIn, assets.results, organization, profile, quickOpen, quickResults, refreshKey])
+  }, [backend, currentProfileLoggedIn, assets.results, organization, profile, quickOpen, displayedQuickResults, refreshKey])
 
   useEffect(() => {
     const theme = preferences?.theme ?? 'system'
@@ -745,7 +752,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   }, [backend])
 
   useEffect(() => {
-    if (!quickOpen || !profile || !organization || !currentProfileLoggedIn || assets.results.length > 0) return
+    if (!quickOpen || !profile || !organization || !currentProfileLoggedIn || loadedAssets.length > 0) return
     let cancelled = false
     const timer = window.setTimeout(() => {
       backend.quickSearch({ profile, organization, query: quickQuery.trim(), limit: 20 })
@@ -753,7 +760,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
         .catch((reason) => { if (!cancelled) showError(errorMessage(reason)) })
     }, 160)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [assets.results.length, backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
+  }, [loadedAssets.length, backend, currentProfileLoggedIn, organization, profile, quickOpen, quickQuery])
 
   async function reloadBootstrap(preferredProfile?: string) {
     const state = await backend.bootstrap()
@@ -763,6 +770,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       setDetails({})
       setDetailErrors({})
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setLoadedAssets([])
       setQuickResults([])
       setSelectedAssetID('')
       setOffset(0)
@@ -813,6 +821,8 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     await backend.updateProfileURL(item.name, url)
     if (item.name === profile) {
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setLoadedAssets([])
+      setQuickResults([])
       setDetails({})
       setSelectedAssetID('')
       setLastSynced(null)
@@ -1041,18 +1051,16 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   async function changeAliasAccount(alias: Alias, account: string) {
     await run(async () => {
       await backend.setAliasAccount({ profile, name: alias.name, account })
-      setAssets((current) => ({
-        ...current,
-        results: current.results.map((asset) => ({
-          ...asset,
-          aliases: asset.aliases.map((item) => item.name === alias.name ? { ...item, account } : item),
-        })),
-      }))
-      setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, {
-        ...detail,
-        aliases: detail.aliases.map((item) => item.name === alias.name ? { ...item, account } : item),
-      }])))
+      updateAssetAliases((asset) => asset.aliases.map((item) => item.name === alias.name ? { ...item, account } : item))
     })
+  }
+
+  function updateAssetAliases(aliasesFor: (asset: Asset) => Alias[], countDelta = 0) {
+    const update = <T extends Asset,>(asset: T): T => ({ ...asset, aliases: aliasesFor(asset) })
+    setAssets((current) => ({ ...current, aliasCount: Math.max(0, current.aliasCount + countDelta), results: current.results.map(update) }))
+    setLoadedAssets((current) => current.map(update))
+    setQuickResults((current) => current.map(update))
+    setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, update(detail)])))
   }
 
   function adjustProfileAliasCount(delta: number) {
@@ -1065,15 +1073,9 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   async function createAliasForAsset(asset: Asset, name: string, account: string) {
     await run(async () => {
       const created = await backend.createAlias({ profile, asset: asset.id, name, account })
-      setAssets((current) => ({
-        ...current,
-        aliasCount: current.aliasCount + 1,
-        results: current.results.map((item) => item.id === asset.id ? { ...item, aliases: [...item.aliases, created].sort((left, right) => left.name.localeCompare(right.name)) } : item),
-      }))
-      setDetails((current) => {
-        const detail = current[asset.id]
-        return detail ? { ...current, [asset.id]: { ...detail, aliases: [...detail.aliases, created].sort((left, right) => left.name.localeCompare(right.name)) } } : current
-      })
+      updateAssetAliases((item) => item.id === asset.id
+        ? [...item.aliases, created].sort((left, right) => left.name.localeCompare(right.name))
+        : item.aliases, 1)
       adjustProfileAliasCount(1)
       setAliasAsset(null)
     })
@@ -1085,14 +1087,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
       const replaceAlias = (aliases: Alias[]) => aliases
         .map((item) => item.name === alias.name ? renamed : item)
         .sort((left, right) => left.name.localeCompare(right.name))
-      setAssets((current) => ({
-        ...current,
-        results: current.results.map((asset) => ({ ...asset, aliases: replaceAlias(asset.aliases) })),
-      }))
-      setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, {
-        ...detail,
-        aliases: replaceAlias(detail.aliases),
-      }])))
+      updateAssetAliases((asset) => replaceAlias(asset.aliases))
       dispatchTabs({ type: 'rename-alias', profile, currentName: alias.name, newName: renamed.name })
       setAliasEditor(null)
     })
@@ -1101,12 +1096,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
   async function deleteAlias(alias: Alias) {
     await run(async () => {
       await backend.deleteAlias(profile, alias.name)
-      setAssets((current) => ({
-        ...current,
-        aliasCount: Math.max(0, current.aliasCount - 1),
-        results: current.results.map((asset) => ({ ...asset, aliases: asset.aliases.filter((item) => item.name !== alias.name) })),
-      }))
-      setDetails((current) => Object.fromEntries(Object.entries(current).map(([id, detail]) => [id, { ...detail, aliases: detail.aliases.filter((item) => item.name !== alias.name) }])))
+      updateAssetAliases((asset) => asset.aliases.filter((item) => item.name !== alias.name), -1)
       adjustProfileAliasCount(-1)
       setPendingAliasDeletion(null)
     })
@@ -1210,6 +1200,8 @@ function AppContent({ backend = wailsBackend }: AppProps) {
     await backend.logout(item.name)
     if (item.name === profile) {
       setAssets({ count: 0, offset: 0, limit: pageSize, aliasCount: 0, results: [] })
+      setLoadedAssets([])
+      setQuickResults([])
       setDetails({})
       setSelectedAssetID('')
       setLastSynced(null)
@@ -1277,7 +1269,7 @@ function AppContent({ backend = wailsBackend }: AppProps) {
           <div className="context-switchers">
             <ContextSelect ariaLabel="当前 Profile" icon={<Server />} label="Profile" onChange={(value) => void run(async () => { await backend.useProfile(value); await reloadBootstrap(value); setOffset(0); setDetails({}) })} options={bootstrap.profiles.map((item) => ({ value: item.name, label: item.name }))} value={profile} />
             <div className="context-divider" />
-            <ContextSelect ariaLabel="当前 Organization" label="Organization" onChange={(value) => void run(async () => { await backend.setOrganization(profile, value); setOrganization(value); setOffset(0); setDetails({}); await reloadBootstrap(profile) })} options={organizations.map((item) => ({ value: item.id, label: item.name }))} value={organization} />
+            <ContextSelect ariaLabel="当前 Organization" label="Organization" onChange={(value) => void run(async () => { await backend.setOrganization(profile, value); await reloadBootstrap(profile) })} options={organizations.map((item) => ({ value: item.id, label: item.name }))} value={organization} />
           </div>
         </header> : null}
 
