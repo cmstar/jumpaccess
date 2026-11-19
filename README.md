@@ -26,7 +26,7 @@ JumpAccess 是一个面向 [JumpServer](https://github.com/jumpserver/jumpserver
 
 两个宿主共用资源查询、SSH 连接复用、非交互命令执行、长任务与输出查询、超时和取消。工作目录与环境随命令传入；同一共享连接同时执行一条命令。默认远端时限要求目标具备已验证的 POSIX/Python 3 能力；显式选择本地时限时，停止跟踪不代表远端已停止。
 
-已知别名、资产名称、地址或 UUID 时，Agent 可使用 `target.name` 直接连接，省略 Profile 时读取当前配置；目标或账号不唯一时再按错误提示查询和选择。首次仍需调用 `get_server_info` 获取请求键所需的实例与代号，无需固定枚举 Profile、别名和资产；详见[按名称直接连接](docs/manual/agent-mcp.md#按名称直接连接)。
+Agent 可用 `set_alias` 创建或整体替换本地资产别名，参数与 `jumpctl alias set` 一致，见[设置资产别名](docs/manual/agent-mcp.md#设置资产别名)。已知别名、资产名称、地址或 UUID 时，Agent 可使用 `target.name` 直接连接，省略 Profile 时读取当前配置；目标或账号不唯一时再按错误提示查询和选择。首次连接仍需调用 `get_server_info` 获取请求键所需的实例与代号，无需固定枚举 Profile、别名和资产；详见[按名称直接连接](docs/manual/agent-mcp.md#按名称直接连接)。
 
 Agent 也可异步下载远端文件或目录：服务优先使用 SFTP，不可用时尝试 `sz`，自动压缩，支持持续追加的日志。下载使用独立连接，根据监听配置直接保存到运行 MCP 的电脑，或提供限时下载链接。目标需提供 POSIX/Python 3.7+，通过 `download_files` 发起，再用 `get_download` 等待结果；详见 [MCP 文件下载](docs/manual/agent-mcp.md#让-agent-下载文件)。
 

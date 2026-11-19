@@ -3,18 +3,22 @@ package mcpserver_test
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
+	"github.com/cmstar/jumpaccess/internal/mcpserver"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -75,13 +79,27 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 27 {
+	if err != nil || len(tools.Tools) != 28 {
 		t.Fatal("查询工具集合不完整", err)
 	}
 	for _, tool := range tools.Tools {
-		mutating := tool.Name == "open_connection" || tool.Name == "close_connection" || tool.Name == "execute_command" || tool.Name == "cancel_execution" || tool.Name == "download_files" || tool.Name == "cancel_download" || tool.Name == "upload_files" || tool.Name == "cancel_upload" || tool.Name == "prepare_upload" || tool.Name == "commit_upload" || tool.Name == "cancel_upload_source"
+		mutating := tool.Name == "set_alias" || tool.Name == "open_connection" || tool.Name == "close_connection" || tool.Name == "execute_command" || tool.Name == "cancel_execution" || tool.Name == "download_files" || tool.Name == "cancel_download" || tool.Name == "upload_files" || tool.Name == "cancel_upload" || tool.Name == "prepare_upload" || tool.Name == "commit_upload" || tool.Name == "cancel_upload_source"
 		if tool.InputSchema == nil || tool.OutputSchema == nil || tool.Annotations == nil || tool.Annotations.ReadOnlyHint == mutating {
 			t.Fatal("工具缺少契约或只读标记", tool.Name)
+		}
+		if tool.Name == "set_alias" {
+			var schema struct {
+				Properties map[string]any
+				Required   []string
+			}
+			raw, err := json.Marshal(tool.InputSchema)
+			if err != nil || json.Unmarshal(raw, &schema) != nil {
+				t.Fatal("无法读取 set_alias 的输入契约")
+			}
+			slices.Sort(schema.Required)
+			if !slices.Equal(schema.Required, []string{"asset", "name"}) || !slices.Equal(slices.Sorted(maps.Keys(schema.Properties)), []string{"account", "asset", "name", "organization", "profile"}) {
+				t.Fatalf("set_alias 参数与 CLI 不一致: %s", raw)
+			}
 		}
 	}
 	for _, tc := range []struct {
@@ -137,6 +155,34 @@ func TestResourceToolsThroughHTTPAndMockJumpServer(t *testing.T) {
 			}
 		})
 	}
+	t.Run("写入结果与后续别名查询", func(t *testing.T) {
+		info := callOperation[mcpserver.ServerInfo](t, session, "get_server_info", map[string]any{})
+		if !info.OK || info.Data == nil || !slices.Contains(info.Data.Capabilities, "set_alias") {
+			t.Fatalf("缺少别名写入能力: %+v", info)
+		}
+		args := map[string]string{"profile": "work", "name": "server", "asset": assetID, "account": "ops"}
+		saved := callOperation[map[string]string](t, session, "set_alias", args)
+		if !saved.OK || saved.Data == nil || !maps.Equal(*saved.Data, args) {
+			t.Fatalf("未返回实际写入的绑定: %+v", saved)
+		}
+		for _, tc := range []struct{ profile, asset, code string }{
+			{"work", "  ", "INVALID_ARGUMENT"},
+			{"missing", "different", "PROFILE_NOT_FOUND"},
+		} {
+			failed := callOperation[map[string]string](t, session, "set_alias", map[string]any{"profile": tc.profile, "name": "server", "asset": tc.asset})
+			if failed.OK || failed.Error == nil || failed.Error.Code != tc.code {
+				t.Fatalf("写入失败应返回 %s: %+v", tc.code, failed)
+			}
+		}
+		list := callOperation[agentmcp.Page[agentmcp.AliasView]](t, session, "list_aliases", map[string]any{"profile": "work"})
+		if !list.OK || list.Data == nil || len(list.Data.Items) != 1 {
+			t.Fatalf("写入后无法查询别名: %+v", list)
+		}
+		alias := list.Data.Items[0]
+		if alias.Name != "server" || alias.AssetID != assetID || alias.AccountReference != "ops" || alias.AccountID != "account" || alias.ResolutionStatus != "resolved" {
+			t.Fatalf("新绑定未生效或失败写入破坏了旧值: %+v", alias)
+		}
+	})
 	if err := core.Tokens.Delete("work"); err != nil {
 		t.Fatal(err)
 	}

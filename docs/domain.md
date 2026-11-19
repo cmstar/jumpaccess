@@ -38,7 +38,7 @@ GUI 的 MCP 单例 Tab 与服务生命周期分离，关闭 Tab 不关闭 Agent 
 
 Alias 固定归属于 Profile，必须定位一个 Asset，Account 可为空。Organization 不是独立归属：GUI 创建 Alias 时根据当前 Profile 的 Organization 查询并验证 Asset，再把该 Organization 与 Asset ID 一并保存；用户不能为同一 Alias 另选一个无关 Organization。绑定 Account 时只能从该 Asset 当前获准的 Account 中选择，清空 Account 表示连接时再询问。
 
-GUI 创建 Alias 必须在保存时原子确认名称未占用，并发创建同名 Alias 只能有一个成功；失败不能覆盖已保存映射。CLI `alias set` 保留显式设置和替换映射的能力。
+GUI 创建 Alias 必须在保存时原子确认名称未占用，并发创建同名 Alias 只能有一个成功；失败不能覆盖已保存映射。CLI 的 `jumpctl alias set` 和 MCP 的 `set_alias` 在指定或当前 Profile 中按原值保存引用。同名时整体替换映射，省略账号或组织会清除对应旧绑定。
 
 ## 关键流程
 

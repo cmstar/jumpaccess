@@ -114,17 +114,20 @@ func (s Service) lockProfile(name string) (func() error, error) {
 	return authapp.LockProfile(context.Background(), locker, name)
 }
 
-func (s Service) SetAlias(profileName, name string, alias projectconfig.Alias) error {
-	return s.saveAlias(profileName, name, alias, true)
+// SetAlias 返回写入时实际选定的 Profile，包括在配置锁内解析的当前 Profile。
+func (s Service) SetAlias(ctx context.Context, profileName, name string, alias projectconfig.Alias) (string, error) {
+	return s.saveAlias(ctx, profileName, name, alias, true)
 }
 
 // CreateAlias 在同一配置事务内检查名称与写入，防止并发创建覆盖已有 Alias。
 func (s Service) CreateAlias(profileName, name string, alias projectconfig.Alias) error {
-	return s.saveAlias(profileName, name, alias, false)
+	_, err := s.saveAlias(context.Background(), profileName, name, alias, false)
+	return err
 }
 
-func (s Service) saveAlias(profileName, name string, alias projectconfig.Alias, replace bool) error {
-	return s.Store.Update(context.Background(), func(value *projectconfig.Config) error {
+func (s Service) saveAlias(ctx context.Context, profileName, name string, alias projectconfig.Alias, replace bool) (string, error) {
+	var savedProfile string
+	err := s.Store.Update(ctx, func(value *projectconfig.Config) error {
 		resolvedName, profile, err := resolveProfile(*value, profileName)
 		if err != nil {
 			return err
@@ -137,8 +140,13 @@ func (s Service) saveAlias(profileName, name string, alias projectconfig.Alias, 
 		}
 		profile.Aliases[name] = alias
 		value.Profiles[resolvedName] = profile
+		savedProfile = resolvedName
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
+	return savedProfile, nil
 }
 
 func (s Service) SetProfileOrganization(profileName, organization string) error {
@@ -208,6 +216,12 @@ func (s Service) SetAliasAccount(profileName, name, account string) error {
 	})
 }
 
+type ProfileNotFoundError struct{ Name string }
+
+func (e *ProfileNotFoundError) Error() string {
+	return fmt.Sprintf("profile %q does not exist", e.Name)
+}
+
 func resolveProfile(value projectconfig.Config, requested string) (string, projectconfig.Profile, error) {
 	profileName := requested
 	if profileName == "" {
@@ -215,7 +229,7 @@ func resolveProfile(value projectconfig.Config, requested string) (string, proje
 	}
 	profile, ok := value.Profiles[profileName]
 	if !ok {
-		return "", projectconfig.Profile{}, fmt.Errorf("profile %q does not exist", profileName)
+		return "", projectconfig.Profile{}, &ProfileNotFoundError{Name: profileName}
 	}
 	return profileName, profile, nil
 }

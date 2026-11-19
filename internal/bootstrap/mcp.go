@@ -32,7 +32,7 @@ func (r Runtime) NewMCP(host string) *agentmcp.Runtime {
 		queries := agentmcp.NewQueries(info.ID, r.Store, r.Auth, r.Resources)
 		connector := agentmcp.Connector{Config: r.Store, Auth: r.AuthManager, Queries: queries, Connect: r.Connect, KnownHosts: filepath.Join(r.RootDir, "known_hosts"), Timeout: r.Configuration.Behavior.ConnectTimeout.Duration}
 		engine := agentmcp.NewEngine(agentmcp.EngineOptions{Instance: info.ID, History: runtime.History(), Resolve: connector.Resolve, Validate: connector.Validate, Dial: connector.Dial, OpenSFTP: connector.OpenDownloadSFTP, DialUpload: connector.DialUpload, OpenUploadSFTP: connector.OpenUploadSFTP, DeliveryMode: agentmcp.DownloadDeliveryMode(cfg), DownloadCache: cache, UploadCache: uploads})
-		return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Queries: queries, Engine: engine, Cache: cache, UploadCache: uploads})
+		return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Queries: queries, SetAlias: r.Settings.SetAlias, Engine: engine, Cache: cache, UploadCache: uploads})
 	})
 	return runtime
 }

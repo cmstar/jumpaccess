@@ -101,6 +101,26 @@ func TestGUIMCPStartsExplicitlyAndStopsWithApplication(t *testing.T) {
 	if err != nil || result.IsError {
 		t.Fatal("GUI 无法查询上传任务", err)
 	}
+	t.Run("set_alias 在指定 Profile 离线创建别名", func(t *testing.T) {
+		for _, name := range []string{"current", "work"} {
+			if err := app.AddProfile(name, "https://example.test"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		args := map[string]any{"profile": "work", "name": "db", "asset": "database", "account": "ops@example.test", "organization": "org"}
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "set_alias", Arguments: args})
+		if err != nil || result.IsError {
+			t.Fatalf("GUI 宿主写入别名失败: %v %+v", err, result)
+		}
+		stored, err := app.core.Store.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		alias := stored.Profiles["work"].Aliases["db"]
+		if stored.CurrentProfile != "current" || len(stored.Profiles["current"].Aliases) != 0 || alias.Asset != "database" || alias.Account != "ops@example.test" || alias.Organization != "org" {
+			t.Fatalf("写入的 Profile 或别名引用错误: %s %+v", stored.CurrentProfile, alias)
+		}
+	})
 	restarted, err := app.RestartMCP()
 	if err != nil || restarted.RestartRequired || restarted.Instance.ID == started.Instance.ID {
 		t.Fatal("GUI 重启未应用已保存的配置", err)

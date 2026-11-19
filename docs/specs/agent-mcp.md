@@ -2,7 +2,7 @@
 
 状态：共享核心及 CLI／GUI 宿主已接入。GUI 提供独立 MCP 工作区、连接管理、文本日志、配置、Token、启停及可选后台自动启动；CLI 提供前台服务、状态查询、配置修改与持续日志。两端通过同一核心提供资源查询、SSH 连接复用、命令任务、输出、超时与取消，以及异步文件下载、本机及 HTTP 中转上传、自动协议适配和压缩还原。支持按名称直接定位目标，并在省略 Profile 时读取当前配置；实际环境与待验收边界见[当前验证状态](#当前验证状态)。
 
-更新日期：2026-11-05。文件下载的直接保存、链接交付，以及本机上传和 HTTP 上传中转，独立维护于[文件传输设计](agent-mcp-file-transfer.md)。
+更新日期：2026-11-19。文件下载的直接保存、链接交付，以及本机上传和 HTTP 上传中转，独立维护于[文件传输设计](agent-mcp-file-transfer.md)。
 
 ## 目标与范围
 
@@ -176,6 +176,7 @@ jumpctl mcp serve --color always
 | 能力 | 工具 | 用户可观察的结果 |
 | --- | --- | --- |
 | 服务与资源发现 | 服务状态查询、`list_profiles`、`list_organizations`、`list_assets`、`get_asset`、`list_accounts`、`list_aliases` | 可用配置、认证状态、资源、账号及能力，不返回账号秘密 |
+| 设置本地资产别名 | `set_alias` | 与 `jumpctl alias set` 共用配置事务，同一 Profile 内同名整体替换，成功返回实际 Profile 与保存的绑定 |
 | 打开与查看连接 | `open_connection`、`list_connections`、`get_connection` | 获取或复用逻辑连接 ID，查看目标、状态与闲置情况 |
 | 关闭连接 | `close_connection` | 关闭指定连接，说明受影响任务；支持仅空闲时关闭、等待任务结束和强制关闭 |
 | 执行命令 | `execute_command` | 返回执行 ID、当前状态、输出和可获得的退出结果 |
@@ -183,6 +184,8 @@ jumpctl mcp serve --color always
 | 下载文件 | `download_files`、`get_download`、`list_downloads`、`cancel_download` | 发起下载、等待或查询结果、找回任务及请求取消；返回已直接保存的最终路径或待领取链接，见[独立设计](agent-mcp-file-transfer.md) |
 | 上传本机文件 | `upload_files`、`get_upload`、`list_uploads`、`cancel_upload` | 明确 `source=local`，自动压缩传输并还原发布到远端目录；查询逐项结果或请求取消，不覆盖已有目标 |
 | HTTP 中转上传 | `prepare_upload`、`get_upload_source`、`cancel_upload_source`、`commit_upload` | 申请限时接收、查询或取消暂存、提交远端上传；提交后使用已有上传任务工具 |
+
+`set_alias` 要求 `name`、`asset`，可选 `profile`、`account`、`organization`。省略 Profile 时在写锁内选定当前 Profile。资产、账号和组织引用按原值保存，省略账号或组织会清除旧绑定。调用只写本地配置，无需 JumpServer 登录或 `request_key`。新绑定在下次解析目标时生效，已打开连接继续使用原目标。
 
 ### 目标解析与最短调用流程
 
@@ -301,6 +304,7 @@ stdout 与 stderr 分别返回，保留真实退出码，包括非零退出；�
 
 | 日期与范围 | 已验证行为 | 尚未覆盖的边界 |
 | --- | --- | --- |
+| 2026-11-19，Windows CLI／GUI 宿主，回环 HTTP | 验证 `set_alias` 离线写入指定或当前 Profile、同名替换并清除旧绑定、错误返回，以及保存后按别名查询和连接 | 资产查询与 SSH 使用测试服务，此项未使用真实 JumpServer |
 | 2026-11-05，Windows CLI／GUI，真实 JumpServer | 两端分别完成 HTTP 准备、接收、提交、SFTP 传输、还原与发布，核对取消、接收并发、空闲超时与停止；GUI 另验证缓存容量和到期清理，CLI 另验证独立进程退出 | 本机回环地址接入；未代替跨设备局域网、TLS、macOS 原生及最低 Python 版本验收。详细范围见[上传验收](agent-mcp-file-transfer.md#上传验收) |
 | 2026-11-05，Windows CLI，名称直连 | 省略 Profile、组织、资产和账号 ID，仅按名称连接真实目标；业务工具依次为 `get_server_info`、`open_connection`、`execute_command`、`close_connection`。连接尚在建立时直接执行并成功返回，无资源枚举、连接或执行轮询 | 另有协议初始化和工具发现，不计为业务工具调用；未做耗时对照实验，也未重复 GUI 的真实名称直连验收 |
 | 2026-11-05，共享核心及宿主回归 | Windows 全量 Go 测试、静态检查、MCP／CLI／GUI 相关竞态检查、前端测试和两个入口构建；合并后的 Linux 回归见 [Linux 验证记录](linux-support.md#合并后验证2026-11-05) | 本轮没有 macOS 原生运行；Linux 交叉编译不等于 arm64 原生验收 |

@@ -28,7 +28,7 @@ func TestCreateAliasPreservesExistingValueWhileSetAliasReplaces(t *testing.T) {
 	if got.Profiles["work"].Aliases["production"] != original {
 		t.Fatal("CreateAlias changed existing alias")
 	}
-	if err := service.SetAlias("work", "production", replacement); err != nil {
+	if _, err := service.SetAlias(t.Context(), "work", "production", replacement); err != nil {
 		t.Fatal(err)
 	}
 	got, err = store.Load()

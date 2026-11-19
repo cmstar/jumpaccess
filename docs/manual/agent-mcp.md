@@ -117,6 +117,18 @@ jumpctl mcp serve --color never > mcp.log 2>&1
 
 颜色默认 `--color auto`，终端支持 ANSI 时保留 GUI 对应的颜色，重定向到文件或管道时使用纯文本；`always` 强制保留，`never` 关闭。具体颜色由终端主题决定。完整选项见 [CLI 命令参考](../cli.md#mcp-server)。
 
+## 设置资产别名
+
+让 Agent 调用 `set_alias`，可以在运行 MCP 服务的电脑上创建或替换别名。下面的参数等同于 `jumpctl alias set prod-db --asset db-02 --profile work --account deploy --organization org-1`。
+
+```json
+{"name":"prod-db","asset":"db-02","profile":"work","account":"deploy","organization":"org-1"}
+```
+
+`name` 和 `asset` 必填。资产可用 ID、名称或地址，账号可用 ID、别名、名称或用户名。省略 `profile` 时写入当前 Profile。即使尚未登录 JumpServer 也可以保存，资产和账号引用在查询或连接时解析。
+
+**同名会整体替换。** 例如再次发送 `{"profile":"work","name":"prod-db","asset":"db-03"}`，会把 `prod-db` 改绑到 `db-03`，同时清除先前绑定的账号和组织。要保留其中一项，请在调用中再次传入。成功后即可用 `list_aliases` 查看绑定，或按别名发起新连接。
+
 ## 按名称直接连接
 
 已知别名或资产名称时，可以直接说“连接 test207 并执行……”。Agent 首次调用 `get_server_info` 获取实例和请求代号后，即可调用：

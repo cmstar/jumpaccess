@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
@@ -62,8 +63,9 @@ func addOperation[In, Out any](server *mcp.Server, instance, name, description s
 		markCallHandled(ctx)
 		started := time.Now()
 		data, err := call(ctx, input)
-		// 执行/打开的首次受理和结果归属于各自操作记录，避免另存一份命令或输出。
-		if readOnly || err != nil || name == "close_connection" || name == "cancel_execution" || name == "cancel_download" || name == "cancel_upload" || name == "prepare_upload" || name == "cancel_upload_source" {
+		// 连接、命令和传输任务的受理已有操作记录，其余调用统一记录摘要。
+		hasTaskRecord := slices.Contains([]string{"open_connection", "execute_command", "download_files", "upload_files", "commit_upload"}, name)
+		if err != nil || !hasTaskRecord {
 			engine.RecordCall(name, err, callDetails(input, data, started))
 		}
 		result := Result[Out]{SchemaVersion: 1, ServerInstanceID: instance, OK: err == nil}

@@ -58,7 +58,7 @@ func TestUpdateProfileURLPreservesLocalContextAndRemovesCredential(t *testing.T)
 	if err := service.SetProfileOrganization("work", "org-1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SetAlias("work", "production", projectconfig.Alias{Asset: "asset-1", Account: "account-1", Organization: "org-1"}); err != nil {
+	if _, err := service.SetAlias(t.Context(), "work", "production", projectconfig.Alias{Asset: "asset-1", Account: "account-1", Organization: "org-1"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,7 +132,7 @@ func TestDeleteProfileRemovesCredentialAndSelectsNextProfile(t *testing.T) {
 	if err := service.AddProfile("backup", "https://backup.example.test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SetAlias("work", "production", projectconfig.Alias{Asset: "asset-1"}); err != nil {
+	if _, err := service.SetAlias(t.Context(), "work", "production", projectconfig.Alias{Asset: "asset-1"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,7 +185,7 @@ func TestSetAliasUsesCurrentProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := service.SetAlias("", "production", projectconfig.Alias{
+	if _, err := service.SetAlias(t.Context(), "", "production", projectconfig.Alias{
 		Asset:        "asset-1",
 		Account:      "root",
 		Organization: "org-1",
@@ -229,7 +229,7 @@ func TestDeleteAliasUsesCurrentProfile(t *testing.T) {
 	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SetAlias("", "production", projectconfig.Alias{Asset: "asset-1"}); err != nil {
+	if _, err := service.SetAlias(t.Context(), "", "production", projectconfig.Alias{Asset: "asset-1"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,10 +265,10 @@ func TestRenameAliasPreservesMappingAndRejectsCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := projectconfig.Alias{Asset: "asset-1", Account: "root", Organization: "org-1"}
-	if err := service.SetAlias("", "production", original); err != nil {
+	if _, err := service.SetAlias(t.Context(), "", "production", original); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SetAlias("", "staging", projectconfig.Alias{Asset: "asset-2"}); err != nil {
+	if _, err := service.SetAlias(t.Context(), "", "staging", projectconfig.Alias{Asset: "asset-2"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -304,7 +304,7 @@ func TestSetAliasAccountPreservesAssetAndOrganization(t *testing.T) {
 	if err := service.AddProfile("work", "https://jump.example.test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SetAlias("", "production", projectconfig.Alias{
+	if _, err := service.SetAlias(t.Context(), "", "production", projectconfig.Alias{
 		Asset:        "asset-1",
 		Organization: "org-1",
 	}); err != nil {

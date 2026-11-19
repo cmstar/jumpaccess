@@ -23,12 +23,13 @@ func newAliasCommand(deps Dependencies) *cobra.Command {
 		Use:   "set <name>",
 		Short: "Create or replace an asset alias",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return (settings.Service{Store: deps.Store}).SetAlias(profileName, args[0], projectconfig.Alias{
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := (settings.Service{Store: deps.Store}).SetAlias(cmd.Context(), profileName, args[0], projectconfig.Alias{
 				Asset:        asset,
 				Account:      account,
 				Organization: organization,
 			})
+			return err
 		},
 	}
 	set.Flags().StringVar(&asset, "asset", "", "Asset ID, name, or address")

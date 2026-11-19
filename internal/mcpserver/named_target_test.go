@@ -8,6 +8,7 @@ import (
 
 	"github.com/cmstar/jumpaccess/internal/application/agentmcp"
 	"github.com/cmstar/jumpaccess/internal/application/auth"
+	settingsapp "github.com/cmstar/jumpaccess/internal/application/settings"
 	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/cmstar/jumpaccess/internal/credential"
 	"github.com/cmstar/jumpaccess/internal/jumpserver"
@@ -56,7 +57,7 @@ func TestNamedTargetConnectsThroughHTTPForCLIAndGUI(t *testing.T) {
 				queries := agentmcp.NewQueries(info.ID, settings.Store, nil, resources)
 				connector := agentmcp.Connector{Config: settings.Store, Queries: queries, Auth: namedTargetIdentity{}}
 				engine := agentmcp.NewEngine(agentmcp.EngineOptions{Instance: info.ID, Resolve: connector.Resolve, Validate: connector.Validate, Dial: dial})
-				return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Engine: engine})
+				return mcpserver.NewHandler(mcpserver.Options{Instance: info, Config: cfg, Token: token, Engine: engine, SetAlias: (settingsapp.Service{Store: settings.Store}).SetAlias})
 			})
 			status, err := r.Start(context.Background())
 			if err != nil {
@@ -84,6 +85,17 @@ func TestNamedTargetConnectsThroughHTTPForCLIAndGUI(t *testing.T) {
 			}
 			if resources.lists.Load() != 1 || resources.gets.Load() != 1 {
 				t.Fatal("重复查询了目标资源")
+			}
+			saved := callOperation[map[string]string](t, session, "set_alias", map[string]string{"name": "builder", "asset": "server", "account": "managed"})
+			if !saved.OK || saved.Data == nil || (*saved.Data)["profile"] != "work" {
+				t.Fatalf("未返回实际写入的当前 Profile: %+v", saved)
+			}
+			byAlias := callOperation[agentmcp.OpenResult](t, session, "open_connection", map[string]any{
+				"target":      map[string]any{"name": "builder"},
+				"request_key": info.ServerInstanceID + ":1:00000000-0000-4000-8000-000000000002",
+			})
+			if !byAlias.OK || byAlias.Data == nil || byAlias.Data.Connection == nil || byAlias.Data.Connection.Target != opened.Data.Connection.Target {
+				t.Fatalf("刚写入的别名未解析到对应资产和账号: %+v", byAlias)
 			}
 		})
 	}

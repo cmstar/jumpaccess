@@ -13,6 +13,7 @@ import (
 
 	"github.com/cmstar/jumpaccess/internal/bootstrap"
 	"github.com/cmstar/jumpaccess/internal/cli"
+	"github.com/cmstar/jumpaccess/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -116,6 +117,24 @@ func TestCLIMCPHostProvidesSharedToolsAndPreservesRunningToken(t *testing.T) {
 			t.Fatalf("CLI 工具 %s 调用失败: %v %+v", name, err, result)
 		}
 	}
+	t.Run("set_alias 与 CLI 共用当前 Profile 和整体替换语义", func(t *testing.T) {
+		if err := core.Settings.AddProfile("work", "https://example.test"); err != nil {
+			t.Fatal(err)
+		}
+		set := cli.NewRoot(deps)
+		set.SetArgs([]string{"alias", "set", "db", "--asset", "old", "--account", "ops", "--organization", "org"})
+		if err := set.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		result, err := session.CallTool(clientContext, &mcp.CallToolParams{Name: "set_alias", Arguments: map[string]any{"name": "db", "asset": "192.0.2.10"}})
+		if err != nil || result.IsError {
+			t.Fatalf("MCP 替换 CLI 创建的别名失败: %v %+v", err, result)
+		}
+		stored, err := core.Store.Load()
+		if err != nil || stored.Profiles["work"].Aliases["db"] != (config.Alias{Asset: "192.0.2.10"}) {
+			t.Fatalf("旧绑定未被完整替换: %+v %v", stored.Profiles["work"].Aliases["db"], err)
+		}
+	})
 	// 另一个 CLI 进程的配置修改必须保持当前实例的鉴权快照。
 	management := deps
 	management.MCP = core.NewMCP("cli")
